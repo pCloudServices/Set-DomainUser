@@ -11,6 +11,8 @@ The PVWA Address (https://tenant.privilegecloud.cyberark.com, or on-prem URL)
 The domain of the domain user account(s).
 .PARAMETER NETBIOS
 The NETBIOS for the domain user account(s).
+.PARAMETER safe
+The safe in which to store PSM user credentials
 .PARAMETER tinaCreds
 Tenant Administrator/InstallerUser credentials
 .PARAMETER psmConnectCredentials
@@ -437,7 +439,7 @@ Function Invoke-PSMHardening {
     $CurrentLocation = Get-Location
     Set-Location $hardeningScriptRoot
     & "$hardeningScriptRoot\PSMHardening.ps1"
-    Set-Location $CurrentLocation 
+    Set-Location $CurrentLocation
 }
 
 Function Invoke-PSMConfigureAppLocker {
@@ -876,15 +878,23 @@ if (IsUserDomainJoined) {
     Write-Host "Getting PVWA address"
     $pvwaAddress = Get-PvwaAddress -psmRootInstallLocation $psmRootInstallLocation
     Write-Host "Getting domain details"
-    $domain = Get-DomainDnsName
-    $NETBIOS = Get-DomainNetbiosName
-    Write-Host "Detected the following domain names. Is this correct?"
-    Write-Host "DNS name:     $domain"
-    Write-Host "NETBIOS name: $NETBIOS"
-    $DomainConfirmPrompt = Read-Host "Please type 'y' for yes or 'n' for no."
-    if ($DomainConfirmPrompt -ne 'y') {
-        Write-Host "Please rerun the script and provide the correct domain and netbios names on the command line."
-        exit 1
+    if (!($domain)) {
+        $DomainNameAutodetected = $true
+        $domain = Get-DomainDnsName
+    }
+    if (!($NETBIOS)) {
+        $DomainNameAutodetected = $true
+        $NETBIOS = Get-DomainNetbiosName
+    }
+    If ($DomainNameAutodetected) {
+        Write-Host "Detected the following domain names. Is this correct?"
+        Write-Host "DNS name:     $domain"
+        Write-Host "NETBIOS name: $NETBIOS"
+        $DomainConfirmPrompt = Read-Host "Please type 'y' for yes or 'n' for no."
+        if ($DomainConfirmPrompt -ne 'y') {
+            Write-Host "Please rerun the script and provide the correct domain and netbios names on the command line."
+            exit 1
+        }
     }
     Write-Host "Logging in to CyberArk Privilege Cloud"
     $pvwaToken = New-ConnectionToRestAPI -pvwaAddress $pvwaAddress -tinaCreds $tinaCreds
