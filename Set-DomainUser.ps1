@@ -901,6 +901,7 @@ if (IsUserDomainJoined) {
             # Creating Platform
             Write-Host "Creating new platform"
             Duplicate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -CurrentPlatformId "7" -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
+            $Tasks += ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
             # Get platform info again so we can ensure it's activated
             $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
         }
