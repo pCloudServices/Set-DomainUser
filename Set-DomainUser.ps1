@@ -515,14 +515,17 @@ Function New-VaultAdminObject {
     $url = $pvwaAddress + "/PasswordVault/api/Accounts"
     $json = $body | ConvertTo-Json
     try {
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
+        $result = Invoke-RestMethod -Method POST -Uri $url -Body $json -Headers @{ "Authorization" = $pvwaToken } -ContentType "application/json" -ErrorVariable ResultError
+        return $result
     }
     catch {
-        If ($_.ErrorDetails.Message -like "*PASWS027E*") {
-            Write-Warning "Object with name $name already exists. Please verify whether it contains correct account details, or specify an alternative account name."
+        try {
+            $ErrorMessage = $ResultError.Message | ConvertFrom-Json
+            return $ErrorMessage
         }
-        else {
-            Write-Host $_.ErrorDetails.Message
+        catch {
+            Write-Error ("Error creating user: {0}" -f $ResultError.Message)
+            exit 1
         }
     }
 }
@@ -652,8 +655,8 @@ Function Get-PlatformStatus {
     PVWA address to run API commands on
     .PARAMETER pvwaToken
     Token to authenticate into the PVWA
-    .PARAMETER Platform
-    Platform to retrieve
+    .PARAMETER PlatformId
+    ID (string) of platform to retrieve
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -661,25 +664,25 @@ Function Get-PlatformStatus {
         [Parameter(Mandatory = $true)]
         [string]$pvwaToken,
         [Parameter(Mandatory = $true)]
-        [string]$Platform
+        [string]$PlatformId
     
     )
     try {
-        $url = $pvwaAddress + "/PasswordVault/api/Platforms/$Platform"
+        $url = $pvwaAddress + "/PasswordVault/api/Platforms/targets?search=" + $PlatformId
         $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError
-        return $Getresult
-    }
-    catch {
-        $JsonError = $_.ErrorDetails.Message | ConvertFrom-Json
-        if ($JsonError.ErrorCode -eq "PASWS037E") {
-            # Platform does not exist
-            return $false
+        # This query returns a list of platforms. Find and return just the one with an exactly matching name
+        $TargetPlatform = $Getresult.Platforms | where-object Name -eq $PlatformId
+        if ($TargetPlatform) {
+            return $TargetPlatform
         }
         else {
-            Write-Host "Error getting platform status."
-            Write-Host $_.ErrorDetails.Message
-            exit 1
+            return $false 
         }
+    }
+    catch {
+        Write-Host "Error getting platform status."
+        Write-Host $_.ErrorDetails.Message
+        exit 1
     }
 }
 
@@ -693,8 +696,8 @@ Function Activate-Platform {
     PVWA address to run API commands on
     .PARAMETER pvwaToken
     Token to authenticate into the PVWA
-    .PARAMETER Platform
-    Platform to activate
+    .PARAMETER PlatformNumId
+    Numeric ID of platform to activate
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -702,10 +705,10 @@ Function Activate-Platform {
         [Parameter(Mandatory = $true)]
         $pvwaToken,
         [Parameter(Mandatory = $true)]
-        [string]$Platform
+        [string]$PlatformNumId
     )
     try {
-        $url = $pvwaAddress + "/PasswordVault/api/Platforms/Targets/$Platform/activate"
+        $url = $pvwaAddress + "/PasswordVault/api/Platforms/Targets/$PlatformNumId/activate"
         $null = Invoke-RestMethod -Method 'Post' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
     }
     catch {
@@ -875,6 +878,12 @@ if ($null -eq $psmConnectCredentials -or $null -eq $psmAdminCredentials) {
 $BackupSuffix = (Get-Date).ToString('yyyMMdd-HHmmss')
 $DomainNameAutodetected = $false
 
+$Tasks = @(
+    "Configure PSM to use the domain accounts"
+    "Modify group policies to allow PSM users to use Remote Desktop"
+)
+
+
 if (IsUserDomainJoined) {
     # Get-Variables
     Write-Host "Getting PVWA address"
@@ -903,18 +912,23 @@ if (IsUserDomainJoined) {
     if (Test-PvwaToken -Token $pvwaToken -pvwaAddress $pvwaAddress) {
         # Get platform info
         Write-Host "Checking current platform status"
-        $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -Platform $PlatformName
+        $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
         if ($platformStatus -eq $false) {
             # function returns false if platform does not exist
             # Creating Platform
             Write-Host "Creating new platform"
             Duplicate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -CurrentPlatformId "7" -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
             # Get platform info again so we can ensure it's activated
-            $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -Platform $PlatformName
+            $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
+        }
+        else {
+            Write-Warning ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
+            $Tasks += ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
+
         }
         if ($platformStatus.Active -eq $false) {
             Write-Host "Platform is deactivated. Activating."
-            Activate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -Platform $PlatformName
+            Activate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -Platform $platformStatus.Id
         }
         #Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
         If ($UM) {
@@ -923,10 +937,32 @@ if (IsUserDomainJoined) {
         }
         #Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
         Write-Host "Onboarding PSMConnect Account in CyberArk Privilege Cloud"
-        New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $domain -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
+        $OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $domain -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
+        If ($OnboardResult.name) {
+            Write-Host "User successfully onboarded"
+        }
+        ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
+            Write-Warning "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
+            $Tasks += "Verify that the $PSMConnectAccountName object in $safe safe contains correct PSMConnect user details"
+        } 
+        Else {
+            Write-Error "Error onboarding account: {0}" -f $OnboardResult
+            exit 1
+        }
         #Creating PSMAdminConnect
         Write-Host "Onboarding PSMAdminConnect Account in CyberArk Privilege Cloud"
-        New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $domain -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
+        $OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $domain -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
+        If ($OnboardResult.name) {
+            Write-Host "User successfully onboarded"
+        }
+        ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
+            Write-Warning "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
+            $Tasks += "Verify that the $PSMAdminConnectAccountName object in $safe safe contains correct PSMAdminConnect user details"
+        } 
+        Else {
+            Write-Error "Error onboarding account: {0}" -f $OnboardResult
+            exit 1
+        }
         Write-Host "Stopping CyberArk Privileged Session Manager Service"
         Stop-Service $REGKEY_PSMSERVICE
         Write-Host "Backing up PSM configuration files and scripts"
@@ -946,9 +982,10 @@ if (IsUserDomainJoined) {
         Restart-Service $REGKEY_PSMSERVICE
         Write-Host ""
         Write-Host "All tasks completed. The following additional steps may be required:"
-        Write-Host " - Configure PSM to use the domain accounts"
-        Write-Host " - Modify group policies to allow PSM users to use Remote Desktop"
-        Write-Host " - Restart Server"
+        $Tasks += "Restart Server"
+        foreach ($Task in $Tasks) {
+            Write-Host " - $Task"
+        }
     }
     else {
         Write-Host "PVWA Token validation failed."
