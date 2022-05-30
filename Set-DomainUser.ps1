@@ -964,7 +964,7 @@ if (IsUserDomainJoined) {
         Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $domain -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
         #TODO: Update Basic_ini
         Write-Host "Adding PSMAdminConnect user to Terminal Services configuration"
-        # Adding PSMAdminConnect user to 
+        # Adding PSMAdminConnect user to Terminal Services configuration
         $AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $NETBIOS -Credentials $psmAdminCredentials -IgnoreShadowPermissionErrors:$IgnoreShadowPermissionErrors
         If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
             Write-Host "Successfully added PSMAdminConnect user to Terminal Services configuration"
