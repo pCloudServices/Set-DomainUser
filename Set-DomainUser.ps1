@@ -262,7 +262,8 @@ Function New-ConnectionToRestAPI {
         $pvwaToken = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -ContentType 'application/json'
     }
     Catch {
-        Write-Host "Could not retrieve PVWA token."
+        Write-Host "Failed to retrieve token. Response received:"
+        Write-Host "$_.Exception.Message"
         exit 1
     }
     if ($pvwaToken -match "[0-9a-zA-Z]{200,256}") {
@@ -270,7 +271,7 @@ Function New-ConnectionToRestAPI {
     }
     else {
         Write-Host "Failed to retrieve token. Response received:"
-        Write-Host $pvwaToken
+        Write-Host "$_.Exception.Message"
         exit 1
     }
 }
