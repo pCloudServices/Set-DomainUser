@@ -540,8 +540,6 @@ Function Add-AdminUserToTS {
     NETBIOS of the domain user
     .PARAMETER Credentials
     Credential of the user to setup RDP for (mainly need the username)
-    .PARAMETER IgnoreShadowPermissionErrors
-    Continue even if WMI commands to grant PSMAdminConnect user shadow permissions fail
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -556,14 +554,13 @@ Function Add-AdminUserToTS {
     #    $cmd2 = "wmic.exe /namespace:\\root\cimv2\TerminalServices PATH Win32_TSAccount WHERE ""TerminalName='RDP-Tcp' AND AccountName='$NETBIOS\\$username'"" CALL ModifyPermissions TRUE,4"
     try {
         $RDPPermissionSetting = Get-WmiObject -Class "Win32_TSPermissionsSetting" -Namespace "root\CIMV2\terminalservices" | Where-Object TerminalName -eq "RDP-Tcp"
-        $null = $RDPPermissionSetting.AddAccount($username, 0)
+        return $RDPPermissionSetting.AddAccount($username, 0)
+
     }
     catch {
-        write-host $_
-        Write-Host "Failed to add PSMAdminConnect user to Terminal Services."
-        Write-Host "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
-        if (!($IgnoreShadowPermissionErrors)) {
-            exit 1
+        return @{
+            Error       = $_.Exception.Message
+            ReturnValue = 1
         }
     }
 }
@@ -578,8 +575,6 @@ Function Add-AdminUserTSShadowPermission {
     NETBIOS of the domain user
     .PARAMETER Credentials
     Credential of the user to setup RDP for (mainly need the username)
-    .PARAMETER IgnoreShadowPermissionErrors
-    Continue even if WMI commands to grant PSMAdminConnect user shadow permissions fail
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -594,14 +589,12 @@ Function Add-AdminUserTSShadowPermission {
     #    $cmd2 = "wmic.exe /namespace:\\root\cimv2\TerminalServices PATH Win32_TSAccount WHERE ""TerminalName='RDP-Tcp' AND AccountName='$NETBIOS\\$username'"" CALL ModifyPermissions TRUE,4"
     try {
         $RDPPermissionUserSetting = Get-WmiObject -Class "Win32_TSAccount" -Namespace "root\CIMV2\terminalservices" | Where-Object TerminalName -eq "RDP-Tcp" | Where-Object AccountName -eq $username
-        $null = $RDPPermissionUserSetting.ModifyPermissions(4, $true)
+        return $RDPPermissionUserSetting.ModifyPermissions(4, $true)
     }
     catch {
-        Write-Warning $_
-        Write-Warning "Error occurred while granting PSMAdminConnect user permission to shadow sessions. Please ensure the `"Do not allow local administrators to customize permissions`" policy is disabled/not configured. For more information, see https://cyberark-customers.force.com/s/article/PSM-Unable-to-run-WMIC-command"
-        if (!($IgnoreShadowPermissionErrors)) {
-            Write-Host "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error. Exiting."
-            exit 1
+        return @{
+            Error       = $_.Exception.Message
+            ReturnValue = 1
         }
     }
 }
@@ -936,7 +929,7 @@ if (IsUserDomainJoined) {
             Set-SafePermissionsFull -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe
         }
         #Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
-        Write-Host "Onboarding PSMConnect Account in CyberArk Privilege Cloud"
+        Write-Host "Onboarding PSMConnect Account"
         $OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $domain -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
         If ($OnboardResult.name) {
             Write-Host "User successfully onboarded"
@@ -950,7 +943,7 @@ if (IsUserDomainJoined) {
             exit 1
         }
         #Creating PSMAdminConnect
-        Write-Host "Onboarding PSMAdminConnect Account in CyberArk Privilege Cloud"
+        Write-Host "Onboarding PSMAdminConnect Account"
         $OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $domain -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
         If ($OnboardResult.name) {
             Write-Host "User successfully onboarded"
@@ -971,9 +964,47 @@ if (IsUserDomainJoined) {
         Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $domain -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
         #TODO: Update Basic_ini
         Write-Host "Adding PSMAdminConnect user to Terminal Services configuration"
-        Add-AdminUserToTS -NETBIOS $NETBIOS -Credentials $psmAdminCredentials -IgnoreShadowPermissionErrors:$IgnoreShadowPermissionErrors
-        Write-Host "Granting PSMAdminConnect user permission to shadow sessions"
-        Add-AdminUserTSShadowPermission -NETBIOS $NETBIOS -Credentials $psmAdminCredentials -IgnoreShadowPermissionErrors:$IgnoreShadowPermissionErrors
+        # Adding PSMAdminConnect user to 
+        $AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $NETBIOS -Credentials $psmAdminCredentials -IgnoreShadowPermissionErrors:$IgnoreShadowPermissionErrors
+        If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
+            Write-Host "Successfully added PSMAdminConnect user to Terminal Services configuration"
+            # Grant shadow permission only if first command was succesful
+            Write-Host "Granting PSMAdminConnect user permission to shadow sessions"
+            $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $NETBIOS -Credentials $psmAdminCredentials -IgnoreShadowPermissionErrors:$IgnoreShadowPermissionErrors
+            If ($AddAdminUserTSShadowPermissionResult.ReturnValue -eq 0) {
+                Write-Host "Successfully granted PSMAdminConnect permission to shadow sessions"
+            }
+            else {
+                # Failed to grant permission (2nd command)
+                write-host $AddAdminUserTSShadowPermissionResult.Error
+                Write-Warning "Failed to grant PSMAdminConnect permission to shadow sessions."
+                if ($IgnoreShadowPermissionErrors) {
+                    Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"  
+                    $Tasks += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
+
+                }
+                else {
+                    Write-Host "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
+                    Write-Host "Exiting."
+                    exit 1
+                }
+            }
+        }
+        else {
+            # Failed to add user (1st command)
+            write-host $AddAdminUserToTSResult.Error
+            Write-Host "Failed to add PSMAdminConnect user to Terminal Services."
+            if ($IgnoreShadowPermissionErrors) {
+                Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
+                $Tasks += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
+
+            }
+            else {
+                Write-Host "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
+                Write-Host "Exiting."
+                exit 1
+            }
+        }
         Write-Host "Running PSM Hardening script"
         Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation
         Write-Host "Running PSM Configure AppLocker script"
