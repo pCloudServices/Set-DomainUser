@@ -663,8 +663,8 @@ Function Get-PlatformStatus {
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Platforms/targets?search=" + $PlatformId
         $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError
-        # This query returns a list of platforms. Find and return just the one with an exactly matching name
-        $TargetPlatform = $Getresult.Platforms | where-object Name -eq $PlatformId
+        # This query returns a list of platforms where the name contains the search string. Find and return just the one with an exactly matching name.
+        $TargetPlatform = $Getresult.Platforms | Where-Object Name -eq $PlatformId
         if ($TargetPlatform) {
             return $TargetPlatform
         }
@@ -823,11 +823,6 @@ if ($null -eq $psmAdminCredentials) {
     }
 }
 
-if ($null -eq $psmAdminCredentials) {
-    Write-Error "PSMAdminConnect credentials not provided. Exiting."
-    exit 1
-}
-
 if ($TestPsmAdminCredentials) {
     if (ValidateCredentials -domain $domain -Credential $psmAdminCredentials) {
         Write-Host "PSMAdminConnect user credentials validated"
@@ -862,20 +857,15 @@ if ($null -eq $tinaCreds) {
     }
 }
 
-if ($null -eq $psmConnectCredentials -or $null -eq $psmAdminCredentials) {
-    exit 1
-}
-
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $BackupSuffix = (Get-Date).ToString('yyyMMdd-HHmmss')
 $DomainNameAutodetected = $false
 
 $Tasks = @(
-    "Configure PSM to use the domain accounts"
-    "Modify group policies to allow PSM users to use Remote Desktop"
+    "Configure PSM to use the domain PSM accounts"
+    "Modify local/group policies to allow PSM users to use Remote Desktop"
 )
-
 
 if (IsUserDomainJoined) {
     # Get-Variables
@@ -896,11 +886,11 @@ if (IsUserDomainJoined) {
         Write-Host "NETBIOS name: $NETBIOS"
         $DomainConfirmPrompt = Read-Host "Please type 'y' for yes or 'n' for no."
         if ($DomainConfirmPrompt -ne 'y') {
-            Write-Host "Please rerun the script and provide the correct domain and netbios names on the command line."
+            Write-Host "Please rerun the script and provide the correct domain DNS and NETBIOS names on the command line."
             exit 1
         }
     }
-    Write-Host "Logging in to CyberArk Privilege Cloud"
+    Write-Host "Logging in to CyberArk"
     $pvwaToken = New-ConnectionToRestAPI -pvwaAddress $pvwaAddress -tinaCreds $tinaCreds
     if (Test-PvwaToken -Token $pvwaToken -pvwaAddress $pvwaAddress) {
         # Get platform info
@@ -917,18 +907,17 @@ if (IsUserDomainJoined) {
         else {
             Write-Warning ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
             $Tasks += ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
-
         }
         if ($platformStatus.Active -eq $false) {
             Write-Host "Platform is deactivated. Activating."
             Activate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -Platform $platformStatus.Id
         }
-        #Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
+        # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
         If ($UM) {
             Write-Host "Granting administrators access to PSM safe"
             Set-SafePermissionsFull -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe
         }
-        #Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
+        # Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
         Write-Host "Onboarding PSMConnect Account"
         $OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $domain -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
         If ($OnboardResult.name) {
@@ -942,7 +931,7 @@ if (IsUserDomainJoined) {
             Write-Error "Error onboarding account: {0}" -f $OnboardResult
             exit 1
         }
-        #Creating PSMAdminConnect
+        # Creating PSMAdminConnect
         Write-Host "Onboarding PSMAdminConnect Account"
         $OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $domain -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
         If ($OnboardResult.name) {
@@ -976,7 +965,7 @@ if (IsUserDomainJoined) {
             }
             else {
                 # Failed to grant permission (2nd command)
-                write-host $AddAdminUserTSShadowPermissionResult.Error
+                Write-Host $AddAdminUserTSShadowPermissionResult.Error
                 Write-Warning "Failed to grant PSMAdminConnect permission to shadow sessions."
                 if ($IgnoreShadowPermissionErrors) {
                     Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"  
