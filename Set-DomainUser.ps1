@@ -872,6 +872,7 @@ if ($null -eq $psmConnectCredentials -or $null -eq $psmAdminCredentials) {
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $BackupSuffix = (Get-Date).ToString('yyyMMdd-HHmmss')
+$DomainNameAutodetected = $false
 
 if (IsUserDomainJoined) {
     # Get-Variables
