@@ -679,6 +679,47 @@ Function Get-PlatformStatus {
     }
 }
 
+Function Get-SafeStatus {
+    <#
+    .SYNOPSIS
+    Get the platform status to check whether it exists and is active
+    .DESCRIPTION
+    Get the platform status to check whether it exists and is active
+    .PARAMETER pvwaAddress
+    PVWA address to run API commands on
+    .PARAMETER pvwaToken
+    Token to authenticate into the PVWA
+    .PARAMETER SafeName
+    Name of safe to retrieve
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$pvwaAddress,
+        [Parameter(Mandatory = $true)]
+        [string]$pvwaToken,
+        [Parameter(Mandatory = $true)]
+        [string]$SafeName
+    
+    )
+    try {
+        $url = $pvwaAddress + "/PasswordVault/api/safes?search=$SafeName"
+        $SafeRequest = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue
+        # This query returns a list of safes where the name contains the search string. Find and return just the one with an exactly matching name.
+        $Safe = $SafeRequest.Value | Where-Object safeName -eq $SafeName
+        if ($Safe) {
+            return $Safe
+        }
+        else {
+            return $false 
+        }
+    }
+    catch {
+        Write-Host "Error getting safe status."
+        Write-Host $_.ErrorDetails.Message
+        exit 1
+    }
+}
+
 Function Activate-Platform {
     <#
     .SYNOPSIS
@@ -913,6 +954,18 @@ if (IsUserDomainJoined) {
         if ($platformStatus.Active -eq $false) {
             Write-Host "Platform is deactivated. Activating."
             Activate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -Platform $platformStatus.Id
+        }
+        Write-Host "Checking current safe status"
+        $safeStatus = Get-SafeStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -SafeName $Safe
+        if ($safeStatus -eq $false) {
+            # function returns false if safe does not exist
+            Write-Host "Safe $Safe does not exist. Please create it or provide a different safe name with the -Safe option"
+            exit 1
+        }
+        If (!($safeStatus.managingCpm)) {
+            # Safe exists but no CPM assigned
+            Write-Warning ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
+            $Tasks += ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
         }
         # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
         If ($UM) {
