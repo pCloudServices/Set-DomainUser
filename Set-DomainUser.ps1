@@ -263,7 +263,7 @@ Function New-ConnectionToRestAPI {
     }
     Catch {
         Write-Host "Failed to retrieve token. Response received:"
-        Write-Host "$_.Exception.Message"
+        Write-Host $_.Exception.Message
         exit 1
     }
     if ($pvwaToken -match "[0-9a-zA-Z]{200,256}") {
@@ -271,7 +271,7 @@ Function New-ConnectionToRestAPI {
     }
     else {
         Write-Host "Failed to retrieve token. Response received:"
-        Write-Host "$_.Exception.Message"
+        Write-Host $_.Exception.Message
         exit 1
     }
 }
@@ -633,7 +633,7 @@ Function Duplicate-Platform {
     }
     catch {
         Write-Host "Error duplicating platform"
-        Write-Host $_.ErrorDetails.Message
+        Write-Host $_.Exception.Message
         exit 1
     }
 }
