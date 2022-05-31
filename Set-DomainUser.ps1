@@ -890,8 +890,10 @@ $Tasks = @(
 
 if (IsUserDomainJoined) {
     # Get-Variables
+    if (!($pvwaAddress)) {
     Write-Host "Getting PVWA address"
     $pvwaAddress = Get-PvwaAddress -psmRootInstallLocation $psmRootInstallLocation
+    }
     Write-Host "Getting domain details"
     if (!($domain)) {
         $DomainNameAutodetected = $true
