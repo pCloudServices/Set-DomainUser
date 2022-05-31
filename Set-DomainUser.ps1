@@ -805,30 +805,10 @@ if ($null -eq $psmConnectCredentials) {
     }
 }
 
-if ($TestPsmConnectCredentials) {
-    if (ValidateCredentials -domain $domain -Credential $psmConnectCredentials) {
-        Write-Host "PSMConnect user credentials validated"
-    }
-    else {
-        Write-Error "PSMConnect user validation failed. Please validate PSMConnect user name and password or remove -TestPsmConnectCredentials to skip this test"
-        exit 1
-    }
-}
-
 if ($null -eq $psmAdminCredentials) {
     $psmAdminCredentials = Get-Credential -Message "Please enter PSMAdminConnect domain user credentials"
     if (!($psmAdminCredentials)) {
         Write-Error "No credentials provided. Exiting."
-        exit 1
-    }
-}
-
-if ($TestPsmAdminCredentials) {
-    if (ValidateCredentials -domain $domain -Credential $psmAdminCredentials) {
-        Write-Host "PSMAdminConnect user credentials validated"
-    }
-    else {
-        Write-Error "PSMAdminConnect user validation failed. Please validate PSMConnect user name and password or remove -TestPsmAdminCredentials to skip this test."
         exit 1
     }
 }
@@ -890,6 +870,27 @@ if (IsUserDomainJoined) {
             exit 1
         }
     }
+    # Test PSM credentials
+    if ($TestPsmConnectCredentials) {
+        if (ValidateCredentials -domain $domain -Credential $psmConnectCredentials) {
+            Write-Host "PSMConnect user credentials validated"
+        }
+        else {
+            Write-Error "PSMConnect user validation failed. Please validate PSMConnect user name and password or remove -TestPsmConnectCredentials to skip this test"
+            exit 1
+        }
+    }
+    
+    if ($TestPsmAdminCredentials) {
+        if (ValidateCredentials -domain $domain -Credential $psmAdminCredentials) {
+            Write-Host "PSMAdminConnect user credentials validated"
+        }
+        else {
+            Write-Error "PSMAdminConnect user validation failed. Please validate PSMConnect user name and password or remove -TestPsmAdminCredentials to skip this test."
+            exit 1
+        }
+    }
+    
     Write-Host "Logging in to CyberArk"
     $pvwaToken = New-ConnectionToRestAPI -pvwaAddress $pvwaAddress -tinaCreds $tinaCreds
     if (Test-PvwaToken -Token $pvwaToken -pvwaAddress $pvwaAddress) {
