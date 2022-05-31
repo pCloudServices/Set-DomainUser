@@ -129,7 +129,7 @@ Function Get-PvwaAddress {
     try {
         $VaultIni = Get-Content "$psmRootInstallLocation\vault\vault.ini"
         $VaultIniAddressesLine = $VaultIni | Select-String "^Addresses"
-        $null = $VaultIniAddressesLine -match "(https://[\.0-9a-zA-Z]*)"
+        $null = $VaultIniAddressesLine -match "(https://[\.0-9a-zA-Z][\.-0-9a-zA-Z]*)"
         $Address = $Matches[0]
         If (!($Address)) {
             Throw
