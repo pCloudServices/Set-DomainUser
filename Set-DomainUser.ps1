@@ -297,7 +297,7 @@ Function Test-PvwaToken {
     )
     $url = $pvwaAddress + "/PasswordVault/API/Accounts?limit=1"
     $Headers = @{
-        Authorization = $pvwaToken
+        Authorization = $Token
     }
     $testToken = Invoke-RestMethod -Method 'Get' -Uri $url -Headers $Headers -ContentType 'application/json'
     if ($testToken) {
