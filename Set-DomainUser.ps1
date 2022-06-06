@@ -1119,6 +1119,3 @@ else {
         exit 1
     }
 }
-else {
-    Write-Host "Stopping. Please run this script as a domain user"
-}
