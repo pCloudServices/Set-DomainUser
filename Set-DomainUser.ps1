@@ -1085,33 +1085,28 @@ If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
             exit 1
         }
     }
-    If ($DoHardening) {
-        Write-Host "Running PSM Hardening script"
-        Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation
-    }
-    else {
-        Write-Host "Skipping Hardening due to -DoNotHarden parameter"
-        $Tasks += "Run script for perform server hardening (PSMHardening.ps1)"
-    }
-    If ($DoConfigureAppLocker) {
-        Write-Host "Running PSM Configure AppLocker script"
-        Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation
-    }  
-    else {
-        Write-Host "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
-        $Tasks += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
-    }  
-    Write-Host "Restarting CyberArk Privileged Session Manager Service"
-    Restart-Service $REGKEY_PSMSERVICE
-    Write-Host ""
-    Write-Host "All tasks completed. The following additional steps may be required:"
-    $Tasks += "Restart Server"
-    foreach ($Task in $Tasks) {
-        Write-Host " - $Task"
-    }
+}
+If ($DoHardening) {
+    Write-Host "Running PSM Hardening script"
+    Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation
 }
 else {
-    Write-Host "PVWA Token validation failed."
-    exit 1
+    Write-Host "Skipping Hardening due to -DoNotHarden parameter"
+    $Tasks += "Run script for perform server hardening (PSMHardening.ps1)"
 }
+If ($DoConfigureAppLocker) {
+    Write-Host "Running PSM Configure AppLocker script"
+    Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation
+}  
+else {
+    Write-Host "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
+    $Tasks += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
+}  
+Write-Host "Restarting CyberArk Privileged Session Manager Service"
+Restart-Service $REGKEY_PSMSERVICE
+Write-Host ""
+Write-Host "All tasks completed. The following additional steps may be required:"
+$Tasks += "Restart Server"
+foreach ($Task in $Tasks) {
+    Write-Host " - $Task"
 }
