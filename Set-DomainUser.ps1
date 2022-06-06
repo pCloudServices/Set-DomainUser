@@ -1050,7 +1050,7 @@ If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
     else {
         # Failed to add user (1st command)
         Write-Host $AddAdminUserToTSResult.Error
-        Write-Host "Failed to add PSMAdminConnect user to Terminal Services."
+        Write-Host "Failed to add PSMAdminConnect user to Terminal Services configuration."
         if ($IgnoreShadowPermissionErrors) {
             Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"  
             $Tasks += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
@@ -1062,55 +1062,56 @@ If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
             exit 1
         }
     }
-    If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
-        # Grant shadow permission only if first command was succesful
-        Write-Host "Granting PSMAdminConnect user permission to shadow sessions"
-        $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $NETBIOS -Credentials $psmAdminCredentials -IgnoreShadowPermissionErrors:$IgnoreShadowPermissionErrors
-        If ($AddAdminUserTSShadowPermissionResult.ReturnValue -eq 0) {
-            Write-Host "Successfully granted PSMAdminConnect permission to shadow sessions"
-        }
-        else {
-            # Failed to grant permission (2nd command)
-            Write-Host $AddAdminUserTSShadowPermissionResult.Error
-            Write-Warning "Failed to grant PSMAdminConnect permission to shadow sessions."
-            if ($IgnoreShadowPermissionErrors) {
-                Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
-                $Tasks += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
-
-            }
-            else {
-                Write-Host "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
-                Write-Host "Exiting."
-                exit 1
-            }
-        }
-        If ($DoHardening) {
-            Write-Host "Running PSM Hardening script"
-            Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation
-        }
-        else {
-            Write-Host "Skipping Hardening due to -DoNotHarden parameter"
-            $Tasks += "Run script for perform server hardening (PSMHardening.ps1)"
-        }
-        If ($DoConfigureAppLocker) {
-            Write-Host "Running PSM Configure AppLocker script"
-            Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation
-        }  
-        else {
-            Write-Host "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
-            $Tasks += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
-        }  
-        Write-Host "Restarting CyberArk Privileged Session Manager Service"
-        Restart-Service $REGKEY_PSMSERVICE
-        Write-Host ""
-        Write-Host "All tasks completed. The following additional steps may be required:"
-        $Tasks += "Restart Server"
-        foreach ($Task in $Tasks) {
-            Write-Host " - $Task"
-        }
+}
+If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
+    # Grant shadow permission only if first command was succesful
+    Write-Host "Granting PSMAdminConnect user permission to shadow sessions"
+    $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $NETBIOS -Credentials $psmAdminCredentials -IgnoreShadowPermissionErrors:$IgnoreShadowPermissionErrors
+    If ($AddAdminUserTSShadowPermissionResult.ReturnValue -eq 0) {
+        Write-Host "Successfully granted PSMAdminConnect permission to shadow sessions"
     }
     else {
-        Write-Host "PVWA Token validation failed."
-        exit 1
+        # Failed to grant permission (2nd command)
+        Write-Host $AddAdminUserTSShadowPermissionResult.Error
+        Write-Warning "Failed to grant PSMAdminConnect permission to shadow sessions."
+        if ($IgnoreShadowPermissionErrors) {
+            Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
+            $Tasks += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
+
+        }
+        else {
+            Write-Host "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
+            Write-Host "Exiting."
+            exit 1
+        }
     }
+    If ($DoHardening) {
+        Write-Host "Running PSM Hardening script"
+        Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation
+    }
+    else {
+        Write-Host "Skipping Hardening due to -DoNotHarden parameter"
+        $Tasks += "Run script for perform server hardening (PSMHardening.ps1)"
+    }
+    If ($DoConfigureAppLocker) {
+        Write-Host "Running PSM Configure AppLocker script"
+        Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation
+    }  
+    else {
+        Write-Host "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
+        $Tasks += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
+    }  
+    Write-Host "Restarting CyberArk Privileged Session Manager Service"
+    Restart-Service $REGKEY_PSMSERVICE
+    Write-Host ""
+    Write-Host "All tasks completed. The following additional steps may be required:"
+    $Tasks += "Restart Server"
+    foreach ($Task in $Tasks) {
+        Write-Host " - $Task"
+    }
+}
+else {
+    Write-Host "PVWA Token validation failed."
+    exit 1
+}
 }
