@@ -1084,20 +1084,9 @@ If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
                 exit 1
             }
         }
-        If ($DoNotHarden) {
-            Write-Host "Skipping Hardening due to -DoNotHarden parameter"
-            $Tasks += "Run script for perform server hardening (PSMHardening.ps1)"
-        }
-        else {
-            Write-Host "Not attempting to grant PSMAdminConnect user permission to shadow sessions as user could not be added to Terminal Services configuration"
-        }
         If ($DoHardening) {
             Write-Host "Running PSM Hardening script"
             Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation
-        }
-        If ($DoNotConfigureAppLocker) {
-            Write-Host "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
-            $Tasks += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
         }
         else {
             Write-Host "Skipping Hardening due to -DoNotHarden parameter"
