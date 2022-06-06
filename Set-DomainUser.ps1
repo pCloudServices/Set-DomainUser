@@ -1088,7 +1088,10 @@ If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
 }
 If ($DoHardening) {
     Write-Host "Running PSM Hardening script"
+    Write-Host "---"
     Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation
+    Write-Host "---"
+    Write-Host "End of PSM Hardening script output"
 }
 else {
     Write-Host "Skipping Hardening due to -DoNotHarden parameter"
@@ -1096,7 +1099,10 @@ else {
 }
 If ($DoConfigureAppLocker) {
     Write-Host "Running PSM Configure AppLocker script"
+    Write-Host "---"
     Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation
+    Write-Host "---"
+    Write-Host "End of PSM Configure AppLocker script output"
 }  
 else {
     Write-Host "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
