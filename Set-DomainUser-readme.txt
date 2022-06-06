@@ -33,3 +33,6 @@ Optional parameters:
 	IgnoreShadowPermissionErrors - Continue running if the script is unable to grant the PSMAdminConnect user permission to shadow sessions
 	PSMConnectAccountName - The Account Name of the object in the vault which will contain the PSMConnect user details. Default "PSMConnect"
 	PSMAdminConnectAccountName - The Account Name of the object in the vault which will contain the PSMConnect user details. Default "PSMAdminConnect"
+	DoNotHarden - Skip running the PSMHardening.ps1 script to speed up execution if step has already been completed.
+	DoNotConfigureAppLocker - Skip running the PSMConfigureAppLocker.ps1 script to speed up execution if step has already been completed.
+

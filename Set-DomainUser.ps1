@@ -31,6 +31,10 @@ The name of the platform to be created for the PSM accounts
 The Account Name for the object in the vault which will contain the PSMConnect account. Defaults to "PSMConnect".
 .PARAMETER PSMAdminConnectAccountName
 The Account Name for the object in the vault which will contain the PSMAdminConnect account. Defaults to "PSMAdminConnect".
+.PARAMETER DoNotHarden
+Skip running the PSMHardening.ps1 script to speed up execution if step has already been completed.
+.PARAMETER DoNotConfigureAppLocker
+Skip running the PSMConfigureAppLocker.ps1 script to speed up execution if step has already been completed.
 #>
 
 
@@ -88,7 +92,13 @@ param(
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Name of Platform to be used for PSM accounts")]
-    [String]$PSMAdminConnectAccountName = "PSMAdminConnect"
+    [String]$PSMAdminConnectAccountName = "PSMAdminConnect",
+    [Parameter(
+        Mandatory = $false)]
+    [switch]$DoNotHarden,
+    [Parameter(
+        Mandatory = $false)]
+    [switch]$DoNotConfigureAppLocker
 )
 
 #Functions
@@ -1051,10 +1061,22 @@ if (IsUserDomainJoined) {
                 exit 1
             }
         }
+        If ($DoNotHarden) {
+            Write-Host "Skipping Hardening due to -DoNotHarden parameter"
+            $Tasks += "Run script for perform server hardening (PSMHardening.ps1)"
+        }
+        else {
         Write-Host "Running PSM Hardening script"
         Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation
+        }
+        If ($DoNotConfigureAppLocker) {
+            Write-Host "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
+            $Tasks += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
+        }
+        else {
         Write-Host "Running PSM Configure AppLocker script"
         Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation
+        }  
         Write-Host "Restarting CyberArk Privileged Session Manager Service"
         Restart-Service $REGKEY_PSMSERVICE
         Write-Host ""
