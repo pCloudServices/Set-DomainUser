@@ -898,7 +898,14 @@ $Tasks = @(
     "Modify local/group policies to allow PSM users to use Remote Desktop"
 )
 
+Write-Host "Checking if user is a domain user"
 if (IsUserDomainJoined) {
+    Write-Host "User is a domain user"
+}
+else {
+    Write-Host "Stopping. Please run this script as a domain user"
+    exit 1
+}
     # Get-Variables
     if (!($pvwaAddress)) {
     Write-Host "Getting PVWA address"
@@ -943,6 +950,10 @@ if (IsUserDomainJoined) {
             exit 1
         }
     }
+    
+# Reverse logic on script invocation setting because double negatives suck
+$DoHardening = !$DoNotHarden
+$DoConfigureAppLocker = !$DoNotConfigureAppLocker
     
     Write-Host "Logging in to CyberArk"
     $pvwaToken = New-ConnectionToRestAPI -pvwaAddress $pvwaAddress -tinaCreds $tinaCreds
@@ -1031,12 +1042,12 @@ if (IsUserDomainJoined) {
                 Write-Host "Successfully granted PSMAdminConnect permission to shadow sessions"
             }
             else {
-                # Failed to grant permission (2nd command)
-                Write-Host $AddAdminUserTSShadowPermissionResult.Error
-                Write-Warning "Failed to grant PSMAdminConnect permission to shadow sessions."
+    # Failed to add user (1st command)
+    Write-Host $AddAdminUserToTSResult.Error
+    Write-Host "Failed to add PSMAdminConnect user to Terminal Services."
                 if ($IgnoreShadowPermissionErrors) {
                     Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"  
-                    $Tasks += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
+        $Tasks += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
 
                 }
                 else {
@@ -1045,14 +1056,20 @@ if (IsUserDomainJoined) {
                     exit 1
                 }
             }
+If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
+    # Grant shadow permission only if first command was succesful
+    Write-Host "Granting PSMAdminConnect user permission to shadow sessions"
+    $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $NETBIOS -Credentials $psmAdminCredentials -IgnoreShadowPermissionErrors:$IgnoreShadowPermissionErrors
+    If ($AddAdminUserTSShadowPermissionResult.ReturnValue -eq 0) {
+        Write-Host "Successfully granted PSMAdminConnect permission to shadow sessions"
         }
         else {
-            # Failed to add user (1st command)
-            write-host $AddAdminUserToTSResult.Error
-            Write-Host "Failed to add PSMAdminConnect user to Terminal Services."
+        # Failed to grant permission (2nd command)
+        Write-Host $AddAdminUserTSShadowPermissionResult.Error
+        Write-Warning "Failed to grant PSMAdminConnect permission to shadow sessions."
             if ($IgnoreShadowPermissionErrors) {
                 Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
-                $Tasks += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
+            $Tasks += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
 
             }
             else {
@@ -1066,6 +1083,9 @@ if (IsUserDomainJoined) {
             $Tasks += "Run script for perform server hardening (PSMHardening.ps1)"
         }
         else {
+    Write-Host "Not attempting to grant PSMAdminConnect user permission to shadow sessions as user could not be added to Terminal Services configuration"
+}
+If ($DoHardening) {
         Write-Host "Running PSM Hardening script"
         Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation
         }
@@ -1074,9 +1094,17 @@ if (IsUserDomainJoined) {
             $Tasks += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
         }
         else {
+    Write-Host "Skipping Hardening due to -DoNotHarden parameter"
+    $Tasks += "Run script for perform server hardening (PSMHardening.ps1)"
+}
+If ($DoConfigureAppLocker) {
         Write-Host "Running PSM Configure AppLocker script"
         Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation
         }  
+else {
+    Write-Host "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
+    $Tasks += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
+}  
         Write-Host "Restarting CyberArk Privileged Session Manager Service"
         Restart-Service $REGKEY_PSMSERVICE
         Write-Host ""
