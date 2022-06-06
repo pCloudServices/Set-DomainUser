@@ -906,170 +906,176 @@ else {
     Write-Host "Stopping. Please run this script as a domain user"
     exit 1
 }
-    # Get-Variables
-    if (!($pvwaAddress)) {
+# Get-Variables
+if (!($pvwaAddress)) {
     Write-Host "Getting PVWA address"
     $pvwaAddress = Get-PvwaAddress -psmRootInstallLocation $psmRootInstallLocation
+}
+Write-Host "Getting domain details"
+if (!($domain)) {
+    $DomainNameAutodetected = $true
+    $domain = Get-DomainDnsName
+}
+if (!($NETBIOS)) {
+    $DomainNameAutodetected = $true
+    $NETBIOS = Get-DomainNetbiosName
+}
+If ($DomainNameAutodetected) {
+    Write-Host "Detected the following domain names. Is this correct?"
+    Write-Host "DNS name:     $domain"
+    Write-Host "NETBIOS name: $NETBIOS"
+    $DomainConfirmPrompt = Read-Host "Please type 'y' for yes or 'n' for no."
+    if ($DomainConfirmPrompt -ne 'y') {
+        Write-Host "Please rerun the script and provide the correct domain DNS and NETBIOS names on the command line."
+        exit 1
     }
-    Write-Host "Getting domain details"
-    if (!($domain)) {
-        $DomainNameAutodetected = $true
-        $domain = Get-DomainDnsName
+}
+# Test PSM credentials
+if ($TestPsmConnectCredentials) {
+    if (ValidateCredentials -domain $domain -Credential $psmConnectCredentials) {
+        Write-Host "PSMConnect user credentials validated"
     }
-    if (!($NETBIOS)) {
-        $DomainNameAutodetected = $true
-        $NETBIOS = Get-DomainNetbiosName
+    else {
+        Write-Error "PSMConnect user validation failed. Please validate PSMConnect user name and password or remove -TestPsmConnectCredentials to skip this test"
+        exit 1
     }
-    If ($DomainNameAutodetected) {
-        Write-Host "Detected the following domain names. Is this correct?"
-        Write-Host "DNS name:     $domain"
-        Write-Host "NETBIOS name: $NETBIOS"
-        $DomainConfirmPrompt = Read-Host "Please type 'y' for yes or 'n' for no."
-        if ($DomainConfirmPrompt -ne 'y') {
-            Write-Host "Please rerun the script and provide the correct domain DNS and NETBIOS names on the command line."
-            exit 1
-        }
-    }
-    # Test PSM credentials
-    if ($TestPsmConnectCredentials) {
-        if (ValidateCredentials -domain $domain -Credential $psmConnectCredentials) {
-            Write-Host "PSMConnect user credentials validated"
-        }
-        else {
-            Write-Error "PSMConnect user validation failed. Please validate PSMConnect user name and password or remove -TestPsmConnectCredentials to skip this test"
-            exit 1
-        }
-    }
+}
     
-    if ($TestPsmAdminCredentials) {
-        if (ValidateCredentials -domain $domain -Credential $psmAdminCredentials) {
-            Write-Host "PSMAdminConnect user credentials validated"
-        }
-        else {
-            Write-Error "PSMAdminConnect user validation failed. Please validate PSMConnect user name and password or remove -TestPsmAdminCredentials to skip this test."
-            exit 1
-        }
+if ($TestPsmAdminCredentials) {
+    if (ValidateCredentials -domain $domain -Credential $psmAdminCredentials) {
+        Write-Host "PSMAdminConnect user credentials validated"
     }
+    else {
+        Write-Error "PSMAdminConnect user validation failed. Please validate PSMConnect user name and password or remove -TestPsmAdminCredentials to skip this test."
+        exit 1
+    }
+}
     
 # Reverse logic on script invocation setting because double negatives suck
 $DoHardening = !$DoNotHarden
 $DoConfigureAppLocker = !$DoNotConfigureAppLocker
     
-    Write-Host "Logging in to CyberArk"
-    $pvwaToken = New-ConnectionToRestAPI -pvwaAddress $pvwaAddress -tinaCreds $tinaCreds
-    if (Test-PvwaToken -Token $pvwaToken -pvwaAddress $pvwaAddress) {
-        # Get platform info
-        Write-Host "Checking current platform status"
-        $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
-        if ($platformStatus -eq $false) {
-            # function returns false if platform does not exist
-            # Creating Platform
-            Write-Host "Creating new platform"
-            Duplicate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -CurrentPlatformId "7" -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
-            $Tasks += ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
-            # Get platform info again so we can ensure it's activated
-            $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
-        }
-        else {
-            Write-Warning ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
-            $Tasks += ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
-        }
-        if ($platformStatus.Active -eq $false) {
-            Write-Host "Platform is deactivated. Activating."
-            Activate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -Platform $platformStatus.Id
-        }
-        Write-Host "Checking current safe status"
-        $safeStatus = Get-SafeStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -SafeName $Safe
-        if ($safeStatus -eq $false) {
-            # function returns false if safe does not exist
-            Write-Host "Safe $Safe does not exist. Please create it or provide a different safe name with the -Safe option"
-            exit 1
-        }
-        If (!($safeStatus.managingCpm)) {
-            # Safe exists but no CPM assigned
-            Write-Warning ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
-            $Tasks += ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
-        }
-        # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
-        If ($UM) {
-            Write-Host "Granting administrators access to PSM safe"
-            Set-SafePermissionsFull -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe
-        }
-        # Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
-        Write-Host "Onboarding PSMConnect Account"
-        $OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $domain -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
-        If ($OnboardResult.name) {
-            Write-Host "User successfully onboarded"
-        }
-        ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
-            Write-Warning "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
-            $Tasks += "Verify that the $PSMConnectAccountName object in $safe safe contains correct PSMConnect user details"
-        } 
-        Else {
-            Write-Error "Error onboarding account: {0}" -f $OnboardResult
-            exit 1
-        }
-        # Creating PSMAdminConnect
-        Write-Host "Onboarding PSMAdminConnect Account"
-        $OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $domain -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
-        If ($OnboardResult.name) {
-            Write-Host "User successfully onboarded"
-        }
-        ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
-            Write-Warning "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
-            $Tasks += "Verify that the $PSMAdminConnectAccountName object in $safe safe contains correct PSMAdminConnect user details"
-        } 
-        Else {
-            Write-Error "Error onboarding account: {0}" -f $OnboardResult
-            exit 1
-        }
-        Write-Host "Stopping CyberArk Privileged Session Manager Service"
-        Stop-Service $REGKEY_PSMSERVICE
-        Write-Host "Backing up PSM configuration files and scripts"
-        Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupSuffix $BackupSuffix
-        Write-Host "Updating PSM configuration files and scripts"
-        Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $domain -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
-        #TODO: Update Basic_ini
-        Write-Host "Adding PSMAdminConnect user to Terminal Services configuration"
-        # Adding PSMAdminConnect user to Terminal Services configuration
-        $AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $NETBIOS -Credentials $psmAdminCredentials -IgnoreShadowPermissionErrors:$IgnoreShadowPermissionErrors
-        If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
-            Write-Host "Successfully added PSMAdminConnect user to Terminal Services configuration"
-            # Grant shadow permission only if first command was succesful
-            Write-Host "Granting PSMAdminConnect user permission to shadow sessions"
-            $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $NETBIOS -Credentials $psmAdminCredentials -IgnoreShadowPermissionErrors:$IgnoreShadowPermissionErrors
-            If ($AddAdminUserTSShadowPermissionResult.ReturnValue -eq 0) {
-                Write-Host "Successfully granted PSMAdminConnect permission to shadow sessions"
-            }
-            else {
-    # Failed to add user (1st command)
-    Write-Host $AddAdminUserToTSResult.Error
-    Write-Host "Failed to add PSMAdminConnect user to Terminal Services."
-                if ($IgnoreShadowPermissionErrors) {
-                    Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"  
-        $Tasks += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
-
-                }
-                else {
-                    Write-Host "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
-                    Write-Host "Exiting."
-                    exit 1
-                }
-            }
+Write-Host "Logging in to CyberArk"
+$pvwaToken = New-ConnectionToRestAPI -pvwaAddress $pvwaAddress -tinaCreds $tinaCreds
+if (Test-PvwaToken -Token $pvwaToken -pvwaAddress $pvwaAddress) {
+    Write-Host "Successfully logged in"
+}
+else {
+    Write-Host "Error logging in to CyberArk"
+    exit 1
+}
+# Get platform info
+Write-Host "Checking current platform status"
+$platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
+if ($platformStatus -eq $false) {
+    # function returns false if platform does not exist
+    # Creating Platform
+    Write-Host "Creating new platform"
+    Duplicate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -CurrentPlatformId "7" -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
+    $Tasks += ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
+    # Get platform info again so we can ensure it's activated
+    $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
+}
+else {
+    Write-Warning ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
+    $Tasks += ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
+}
+if ($platformStatus.Active -eq $false) {
+    Write-Host "Platform is deactivated. Activating."
+    Activate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -Platform $platformStatus.Id
+}
+Write-Host "Checking current safe status"
+$safeStatus = Get-SafeStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -SafeName $Safe
+if ($safeStatus -eq $false) {
+    # function returns false if safe does not exist
+    Write-Host "Safe $Safe does not exist. Please create it or provide a different safe name with the -Safe option"
+    exit 1
+}
+If (!($safeStatus.managingCpm)) {
+    # Safe exists but no CPM assigned
+    Write-Warning ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
+    $Tasks += ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
+}
+# Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
+If ($UM) {
+    Write-Host "Granting administrators access to PSM safe"
+    Set-SafePermissionsFull -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe
+}
+# Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
+Write-Host "Onboarding PSMConnect Account"
+$OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $domain -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
+If ($OnboardResult.name) {
+    Write-Host "User successfully onboarded"
+}
+ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
+    Write-Warning "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
+    $Tasks += "Verify that the $PSMConnectAccountName object in $safe safe contains correct PSMConnect user details"
+} 
+Else {
+    Write-Error "Error onboarding account: {0}" -f $OnboardResult
+    exit 1
+}
+# Creating PSMAdminConnect
+Write-Host "Onboarding PSMAdminConnect Account"
+$OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $domain -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
+If ($OnboardResult.name) {
+    Write-Host "User successfully onboarded"
+}
+ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
+    Write-Warning "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
+    $Tasks += "Verify that the $PSMAdminConnectAccountName object in $safe safe contains correct PSMAdminConnect user details"
+} 
+Else {
+    Write-Error "Error onboarding account: {0}" -f $OnboardResult
+    exit 1
+}
+Write-Host "Stopping CyberArk Privileged Session Manager Service"
+Stop-Service $REGKEY_PSMSERVICE
+Write-Host "Backing up PSM configuration files and scripts"
+Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupSuffix $BackupSuffix
+Write-Host "Updating PSM configuration files and scripts"
+Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $domain -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
+#TODO: Update Basic_ini
+Write-Host "Adding PSMAdminConnect user to Terminal Services configuration"
+# Adding PSMAdminConnect user to Terminal Services configuration
+$AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $NETBIOS -Credentials $psmAdminCredentials -IgnoreShadowPermissionErrors:$IgnoreShadowPermissionErrors
 If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
+    Write-Host "Successfully added PSMAdminConnect user to Terminal Services configuration"
     # Grant shadow permission only if first command was succesful
     Write-Host "Granting PSMAdminConnect user permission to shadow sessions"
     $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $NETBIOS -Credentials $psmAdminCredentials -IgnoreShadowPermissionErrors:$IgnoreShadowPermissionErrors
     If ($AddAdminUserTSShadowPermissionResult.ReturnValue -eq 0) {
         Write-Host "Successfully granted PSMAdminConnect permission to shadow sessions"
+    }
+    else {
+        # Failed to add user (1st command)
+        Write-Host $AddAdminUserToTSResult.Error
+        Write-Host "Failed to add PSMAdminConnect user to Terminal Services."
+        if ($IgnoreShadowPermissionErrors) {
+            Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"  
+            $Tasks += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
+
         }
         else {
-        # Failed to grant permission (2nd command)
-        Write-Host $AddAdminUserTSShadowPermissionResult.Error
-        Write-Warning "Failed to grant PSMAdminConnect permission to shadow sessions."
+            Write-Host "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
+            Write-Host "Exiting."
+            exit 1
+        }
+    }
+    If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
+        # Grant shadow permission only if first command was succesful
+        Write-Host "Granting PSMAdminConnect user permission to shadow sessions"
+        $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $NETBIOS -Credentials $psmAdminCredentials -IgnoreShadowPermissionErrors:$IgnoreShadowPermissionErrors
+        If ($AddAdminUserTSShadowPermissionResult.ReturnValue -eq 0) {
+            Write-Host "Successfully granted PSMAdminConnect permission to shadow sessions"
+        }
+        else {
+            # Failed to grant permission (2nd command)
+            Write-Host $AddAdminUserTSShadowPermissionResult.Error
+            Write-Warning "Failed to grant PSMAdminConnect permission to shadow sessions."
             if ($IgnoreShadowPermissionErrors) {
                 Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
-            $Tasks += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
+                $Tasks += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
 
             }
             else {
@@ -1083,28 +1089,28 @@ If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
             $Tasks += "Run script for perform server hardening (PSMHardening.ps1)"
         }
         else {
-    Write-Host "Not attempting to grant PSMAdminConnect user permission to shadow sessions as user could not be added to Terminal Services configuration"
-}
-If ($DoHardening) {
-        Write-Host "Running PSM Hardening script"
-        Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation
+            Write-Host "Not attempting to grant PSMAdminConnect user permission to shadow sessions as user could not be added to Terminal Services configuration"
+        }
+        If ($DoHardening) {
+            Write-Host "Running PSM Hardening script"
+            Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation
         }
         If ($DoNotConfigureAppLocker) {
             Write-Host "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
             $Tasks += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
         }
         else {
-    Write-Host "Skipping Hardening due to -DoNotHarden parameter"
-    $Tasks += "Run script for perform server hardening (PSMHardening.ps1)"
-}
-If ($DoConfigureAppLocker) {
-        Write-Host "Running PSM Configure AppLocker script"
-        Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation
+            Write-Host "Skipping Hardening due to -DoNotHarden parameter"
+            $Tasks += "Run script for perform server hardening (PSMHardening.ps1)"
+        }
+        If ($DoConfigureAppLocker) {
+            Write-Host "Running PSM Configure AppLocker script"
+            Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation
         }  
-else {
-    Write-Host "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
-    $Tasks += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
-}  
+        else {
+            Write-Host "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
+            $Tasks += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
+        }  
         Write-Host "Restarting CyberArk Privileged Session Manager Service"
         Restart-Service $REGKEY_PSMSERVICE
         Write-Host ""
