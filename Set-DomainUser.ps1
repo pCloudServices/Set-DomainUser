@@ -555,9 +555,7 @@ Function Add-AdminUserToTS {
         [Parameter(Mandatory = $true)]
         [String]$NETBIOS,
         [Parameter(Mandatory = $true)]
-        [PSCredential]$Credentials,
-        [Parameter(Mandatory = $true)]
-        [switch]$IgnoreShadowPermissionErrors
+        [PSCredential]$Credentials
     )
     $username = "{0}\{1}" -f $NETBIOS, $Credentials.username
     #    $cmd1 = "wmic.exe /namespace:\\root\CIMV2\TerminalServices PATH Win32_TSPermissionsSetting WHERE (TerminalName=""RDP-Tcp"") CALL AddAccount ""$NETBIOS\$username"",0"
@@ -590,9 +588,7 @@ Function Add-AdminUserTSShadowPermission {
         [Parameter(Mandatory = $true)]
         [String]$NETBIOS,
         [Parameter(Mandatory = $true)]
-        [PSCredential]$Credentials,
-        [Parameter(Mandatory = $true)]
-        [switch]$IgnoreShadowPermissionErrors
+        [PSCredential]$Credentials
     )
     $username = "{0}\{1}" -f $NETBIOS, $Credentials.username
     #    $cmd1 = "wmic.exe /namespace:\\root\CIMV2\TerminalServices PATH Win32_TSPermissionsSetting WHERE (TerminalName=""RDP-Tcp"") CALL AddAccount ""$NETBIOS\$username"",0"
@@ -1038,35 +1034,28 @@ Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $domain
 #TODO: Update Basic_ini
 Write-Host "Adding PSMAdminConnect user to Terminal Services configuration"
 # Adding PSMAdminConnect user to Terminal Services configuration
-$AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $NETBIOS -Credentials $psmAdminCredentials -IgnoreShadowPermissionErrors:$IgnoreShadowPermissionErrors
+$AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $NETBIOS -Credentials $psmAdminCredentials
 If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
     Write-Host "Successfully added PSMAdminConnect user to Terminal Services configuration"
-    # Grant shadow permission only if first command was succesful
-    Write-Host "Granting PSMAdminConnect user permission to shadow sessions"
-    $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $NETBIOS -Credentials $psmAdminCredentials -IgnoreShadowPermissionErrors:$IgnoreShadowPermissionErrors
-    If ($AddAdminUserTSShadowPermissionResult.ReturnValue -eq 0) {
-        Write-Host "Successfully granted PSMAdminConnect permission to shadow sessions"
+}
+else {
+    # Failed to add user (1st command)
+    Write-Host $AddAdminUserToTSResult.Error
+    Write-Host "Failed to add PSMAdminConnect user to Terminal Services configuration."
+    if ($IgnoreShadowPermissionErrors) {
+        Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"  
+        $Tasks += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
     }
     else {
-        # Failed to add user (1st command)
-        Write-Host $AddAdminUserToTSResult.Error
-        Write-Host "Failed to add PSMAdminConnect user to Terminal Services configuration."
-        if ($IgnoreShadowPermissionErrors) {
-            Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"  
-            $Tasks += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
-
-        }
-        else {
-            Write-Host "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
-            Write-Host "Exiting."
-            exit 1
-        }
+        Write-Host "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
+        Write-Host "Exiting."
+        exit 1
     }
 }
 If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
     # Grant shadow permission only if first command was succesful
     Write-Host "Granting PSMAdminConnect user permission to shadow sessions"
-    $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $NETBIOS -Credentials $psmAdminCredentials -IgnoreShadowPermissionErrors:$IgnoreShadowPermissionErrors
+    $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $NETBIOS -Credentials $psmAdminCredentials
     If ($AddAdminUserTSShadowPermissionResult.ReturnValue -eq 0) {
         Write-Host "Successfully granted PSMAdminConnect permission to shadow sessions"
     }
