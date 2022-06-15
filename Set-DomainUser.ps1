@@ -841,6 +841,23 @@ Function Check-UM {
     $validation = $psmBasicPSMContent -match "IdentityUM.*=.*Yes"
     return ("" -ne $validation) 
 }
+Function Get-PSMServerId {
+    <#
+    .SYNOPSIS
+    Checks to see if tenant is UM or not (from the connector server)
+    .DESCRIPTION
+    Checks to see if tenant is UM or not (from the connector server)
+    .PARAMETER psmRootInstallLocation
+    PSM Folder
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $psmRootInstallLocation
+    )
+    $PsmServerIdLine = Get-Content -Path $psmRootInstallLocation\basic_psm.ini | Where-Object { $_ -like 'PSMServerId="*"' }
+    $null = $PsmServerIdLine -match 'PSMServerId="(.*)"$'
+    return $Matches[1]
+}
 
 #Running Set-DomainUser script
 
@@ -1025,6 +1042,7 @@ Else {
     Write-Error "Error onboarding account: {0}" -f $OnboardResult
     exit 1
 }
+$PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
 Write-Host "Stopping CyberArk Privileged Session Manager Service"
 Stop-Service $REGKEY_PSMSERVICE
 Write-Host "Backing up PSM configuration files and scripts"
@@ -1102,6 +1120,14 @@ Restart-Service $REGKEY_PSMSERVICE
 Write-Host ""
 Write-Host "All tasks completed. The following additional steps may be required:"
 $Tasks += "Restart Server"
+$Tasks += 
+("Provide CyberArk support with the following required details for updating the backend:
+     Portal address: {0}
+     PSM Server ID: {1}
+     PSM Safe: {2}
+     PSMConnect Account Name: {3}
+     PSMAdminConnect Account Name: {4}" `
+    -f $pvwaAddress, $PSMServerId, $Safe, $PSMConnectAccountName, $PSMAdminConnectAccountName)
 foreach ($Task in $Tasks) {
     Write-Host " - $Task"
 }
