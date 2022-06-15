@@ -907,7 +907,6 @@ $BackupSuffix = (Get-Date).ToString('yyyMMdd-HHmmss')
 $DomainNameAutodetected = $false
 
 $Tasks = @(
-    "Configure PSM to use the domain PSM accounts"
     "Modify local/group policies to allow PSM users to use Remote Desktop"
 )
 
