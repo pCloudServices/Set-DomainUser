@@ -859,6 +859,16 @@ Function Get-PSMServerId {
     return $Matches[1]
 }
 
+function Test-CredentialFormat {
+    param (
+        [Parameter(Mandatory = $true)][PSCredential]$Credential
+    )
+        if ($Credential.username -match '[/\\\[\]:;|=,+*?<>@"]') {
+            return $false
+        }
+    return $true
+}
+
 #Running Set-DomainUser script
 
 if ($null -eq $psmConnectCredentials) {
@@ -918,6 +928,34 @@ else {
     Write-Host "Stopping. Please run this script as a domain user"
     exit 1
 }
+
+# Test if PSM credentials were entered in the right format
+$PSMUsers = @(
+    @{
+        UserType = "PSMConnect"
+        CredentialObject = $psmConnectCredentials
+    },
+    @{
+        UserType = "PSMAdminConnect"
+        CredentialObject = $psmAdminCredentials
+    }
+)
+
+Write-Host "Verifying PSM credentials were provided in expected format"
+If (!(Test-CredentialFormat -Credential $psmConnectCredentials)) {
+    Write-Host "Username provided for PSMConnect user contained invalid characters."
+    Write-Host "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain."
+    exit 1
+
+}
+
+If (!(Test-CredentialFormat -Credential $psmAdminCredentials)) {
+    Write-Host "Username provided for PSMAdminConnect user contained invalid characters."
+    Write-Host "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain."
+    exit 1
+
+}
+
 # Get-Variables
 if (!($pvwaAddress)) {
     Write-Host "Getting PVWA address"
