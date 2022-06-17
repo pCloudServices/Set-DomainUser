@@ -28,8 +28,8 @@ Optional parameters:
 	NETBIOS - Please enter the NETBIOS name of the domain of the created accounts e.g.: "LAB". Set-DomainUser will attempt to detect this automatically.
 	safe - Please enter the safe to save the domain accounts in, By default it is PSM
 	PlatformName - The name of the platform which will be used by the PSM accounts. Default is "WIN-DOM-PSMADMIN-ACCOUNT"
-	TestPsmConnectCredentials - Test whether the PSMConnect user details provided are correct
-	TestPsmAdminCredentials - Test whether the PSMAdminConnect user details provided are correct
+	TestPsmConnectCredentials - Test whether the PSMConnect user details provided are correct before onboarding. The script will exit if this test fails.
+	TestPsmAdminCredentials - Test whether the PSMAdminConnect user details provided are correct before onboarding. The script will exit if this test fails.
 	IgnoreShadowPermissionErrors - Continue running if the script is unable to grant the PSMAdminConnect user permission to shadow sessions
 	PSMConnectAccountName - The Account Name of the object in the vault which will contain the PSMConnect user details. Default "PSMConnect"
 	PSMAdminConnectAccountName - The Account Name of the object in the vault which will contain the PSMConnect user details. Default "PSMAdminConnect"
