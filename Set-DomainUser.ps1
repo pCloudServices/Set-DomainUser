@@ -973,17 +973,6 @@ else {
 }
 
 # Test if PSM credentials were entered in the right format
-$PSMUsers = @(
-    @{
-        UserType = "PSMConnect"
-        CredentialObject = $psmConnectCredentials
-    },
-    @{
-        UserType = "PSMAdminConnect"
-        CredentialObject = $psmAdminCredentials
-    }
-)
-
 Write-Host "Verifying PSM credentials were provided in expected format"
 If (!(Test-CredentialFormat -Credential $psmConnectCredentials)) {
     Write-Host "Username provided for PSMConnect user contained invalid characters."
