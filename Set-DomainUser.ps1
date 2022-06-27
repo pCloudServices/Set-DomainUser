@@ -1200,6 +1200,8 @@ Else {
     Write-LogMessage -Type Error -MSG "Error onboarding account: {0}" -f $OnboardResult
     exit 1
 }
+Write-LogMessage -Type Info -MSG "Performing local configuration and restarting service"
+
 $PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
 Write-LogMessage -Type Verbose -MSG "Stopping CyberArk Privileged Session Manager Service"
 Stop-Service $REGKEY_PSMSERVICE
@@ -1208,7 +1210,6 @@ Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupSuffix $
 Write-LogMessage -Type Verbose -MSG "Updating PSM configuration files and scripts"
 Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $domain -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
 #TODO: Update Basic_ini
-Write-LogMessage -Type Info -MSG "Performing local configuration"
 Write-LogMessage -Type Verbose -MSG "Adding PSMAdminConnect user to Terminal Services configuration"
 # Adding PSMAdminConnect user to Terminal Services configuration
 $AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $NETBIOS -Credentials $psmAdminCredentials
