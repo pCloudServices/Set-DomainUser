@@ -103,12 +103,125 @@ param(
 
 #Functions
 
+Function Write-LogMessage
+{
+<# 
+.SYNOPSIS 
+	Method to log a message on screen and in a log file
+
+.DESCRIPTION
+	Logging The input Message to the Screen and the Log File. 
+	The Message Type is presented in colours on the screen based on the type
+
+.PARAMETER LogFile
+	The Log File to write to. By default using the LOG_FILE_PATH
+.PARAMETER MSG
+	The message to log
+.PARAMETER Header
+	Adding a header line before the message
+.PARAMETER SubHeader
+	Adding a Sub header line before the message
+.PARAMETER Footer
+	Adding a footer line after the message
+.PARAMETER Type
+	The type of the message to log (Info, Warning, Error, Debug)
+#>
+	param(
+		[Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+		[AllowEmptyString()]
+		[String]$MSG,
+		[Parameter(Mandatory=$false)]
+		[Switch]$Header,
+		[Parameter(Mandatory=$false)]
+		[Switch]$Early,
+		[Parameter(Mandatory=$false)]
+		[Switch]$SubHeader,
+		[Parameter(Mandatory=$false)]
+		[Switch]$Footer,
+		[Parameter(Mandatory=$false)]
+		[ValidateSet("Info","Warning","Error","Debug","Verbose", "Success", "LogOnly")]
+		[String]$type = "Info",
+		[Parameter(Mandatory=$false)]
+		[String]$LogFile = $LOG_FILE_PATH
+	)
+	Try{
+		If ($Header) {
+			"=======================================" | Out-File -Append -FilePath $LogFile 
+			Write-Host "=======================================" -ForegroundColor Magenta
+		}
+		ElseIf($SubHeader) { 
+			"------------------------------------" | Out-File -Append -FilePath $LogFile 
+			Write-Host "------------------------------------" -ForegroundColor Magenta
+		}
+		
+		$msgToWrite = "[$(Get-Date -Format "yyyy-MM-dd hh:mm:ss")]`t"
+		$writeToFile = $true
+		# Replace empty message with 'N/A'
+		if([string]::IsNullOrEmpty($Msg)) { $Msg = "N/A" }
+		
+		# Mask Passwords
+		if($Msg -match '((?:password|credentials|secret)\s{0,}["\:=]{1,}\s{0,}["]{0,})(?=([\w`~!@#$%^&*()-_\=\+\\\/|;:\.,\[\]{}]+))')
+		{
+			$Msg = $Msg.Replace($Matches[2],"****")
+		}
+		# Check the message type
+		switch ($type)
+		{
+			{($_ -eq "Info") -or ($_ -eq "LogOnly")} 
+			{ 
+				If($_ -eq "Info")
+				{
+					Write-Host $MSG.ToString() -ForegroundColor $(If($Header -or $SubHeader) { "magenta" } Elseif($Early){"DarkGray"} Else { "White" })
+				}
+				$msgToWrite += "[INFO]`t$Msg"
+			}
+			"Success" { 
+				Write-Host $MSG.ToString() -ForegroundColor Green
+				$msgToWrite += "[SUCCESS]`t$Msg"
+            }
+			"Warning" {
+				Write-Host $MSG.ToString() -ForegroundColor Yellow
+				$msgToWrite += "[WARNING]`t$Msg"
+			}
+			"Error" {
+				Write-Host $MSG.ToString() -ForegroundColor Red
+				$msgToWrite += "[ERROR]`t$Msg"
+			}
+			"Debug" { 
+				if($InDebug -or $InVerbose)
+				{
+					Write-Debug $MSG
+					$msgToWrite += "[DEBUG]`t$Msg"
+				}
+				else { $writeToFile = $False }
+			}
+			"Verbose" { 
+				if($InVerbose)
+				{
+					Write-Verbose -Msg $MSG
+					$msgToWrite += "[VERBOSE]`t$Msg"
+				}
+				else { $writeToFile = $False }
+			}
+		}
+
+		If($writeToFile) { $msgToWrite | Out-File -Append -FilePath $LogFile }
+		If ($Footer) { 
+			"=======================================" | Out-File -Append -FilePath $LogFile 
+			Write-Host "=======================================" -ForegroundColor Magenta
+		}
+	}
+	catch{
+		Throw $(New-Object System.Exception ("Cannot write message"),$_.Exception)
+	}
+}
+
 Function Get-DomainDnsName {
     if ($env:USERDNSDOMAIN) {
         return $env:USERDNSDOMAIN
     }
     else {
-        Write-Host "Unable to determine domain DNS name. Please provide it on the command line."
+        Write-LogMessage -Type Error -MSG "Unable to determine domain DNS name. Please provide it on the command line."
         exit 1
     }
 }
@@ -118,7 +231,7 @@ Function Get-DomainNetbiosName {
         return $env:USERDOMAIN
     }
     else {
-        Write-Host "Unable to determine domain NETBIOS name. Please provide it on the command line."
+        Write-LogMessage -Type Error -MSG "Unable to determine domain NETBIOS name. Please provide it on the command line."
         exit 1
     }
 }
@@ -147,7 +260,7 @@ Function Get-PvwaAddress {
         return $Address
     }
     catch {
-        Write-Host "Unable to detect PVWA address automatically. Please rerun script and provide it using the -PvwaAddress parameter."
+        Write-LogMessage -Type Error -MSG "Unable to detect PVWA address automatically. Please rerun script and provide it using the -PvwaAddress parameter."
         exit 1
     }
 }
@@ -272,16 +385,16 @@ Function New-ConnectionToRestAPI {
         $pvwaToken = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -ContentType 'application/json'
     }
     Catch {
-        Write-Host "Failed to retrieve token. Response received:"
-        Write-Host $_.Exception.Message
+        Write-LogMessage -Type Error -MSG "Failed to retrieve token. Response received:"
+        Write-LogMessage -Type Error -MSG $_.Exception.Message
         exit 1
     }
     if ($pvwaToken -match "[0-9a-zA-Z]{200,256}") {
         return $pvwaToken
     }
     else {
-        Write-Host "Failed to retrieve token. Response received:"
-        Write-Host $_.Exception.Message
+        Write-LogMessage -Type Error -MSG "Failed to retrieve token. Response received:"
+        Write-LogMessage -Type Error -MSG $_.Exception.Message
         exit 1
     }
 }
@@ -345,13 +458,13 @@ Function Backup-PSMConfig {
         Copy-Item -Path "$psmRootInstallLocation\basic_psm.ini" -Destination $BasicPSMBackupFileName
         
         If (!(Test-Path $PSMHardeningBackupFileName)) {
-            Write-Error "Failed to backup PSMHardening.ps1" -ErrorAction Stop
+            Write-LogMessage -Type Error -MSG "Failed to backup PSMHardening.ps1" -ErrorAction Stop
         }
         ElseIf (!(Test-Path $PSMConfigureAppLockerBackupFileName)) {
-            Write-Error "Failed to backup PSMConfigureAppLocker.ps1" -ErrorAction Stop
+            Write-LogMessage -Type Error -MSG "Failed to backup PSMConfigureAppLocker.ps1" -ErrorAction Stop
         }
         ElseIf (!(Test-Path $BasicPSMBackupFileName )) {
-            Write-Error "Failed to backup basic_psm.ini" -ErrorAction Stop
+            Write-LogMessage -Type Error -MSG "Failed to backup basic_psm.ini" -ErrorAction Stop
         }
     }
     catch {
@@ -426,8 +539,8 @@ Function Update-PSMConfig {
         Copy-Item -Path "$psmRootInstallLocation\test_basic_psm.ini" -Destination "$psmRootInstallLocation\basic_psm.ini" -Force
     }
     catch {
-        Write-host "Failed to update PSM Config, please verify the files manually."
-        Write-host $_
+        Write-LogMessage -Type Error -MSG "Failed to update PSM Config, please verify the files manually."
+        Write-LogMessage -Type Error -MSG $_
         Exit
     }
 }
@@ -534,7 +647,7 @@ Function New-VaultAdminObject {
             return $ErrorMessage
         }
         catch {
-            Write-Error ("Error creating user: {0}" -f $ResultError.Message)
+            Write-LogMessage -Type Error -MSG ("Error creating user: {0}" -f $ResultError.Message)
             exit 1
         }
     }
@@ -638,8 +751,8 @@ Function Duplicate-Platform {
         $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
     }
     catch {
-        Write-Host "Error duplicating platform"
-        Write-Host $_.Exception.Message
+        Write-LogMessage -Type Error -MSG "Error duplicating platform"
+        Write-LogMessage -Type Error -MSG $_.Exception.Message
         exit 1
     }
 }
@@ -679,8 +792,8 @@ Function Get-PlatformStatus {
         }
     }
     catch {
-        Write-Host "Error getting platform status."
-        Write-Host $_.ErrorDetails.Message
+        Write-LogMessage -Type Error -MSG "Error getting platform status."
+        Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
         exit 1
     }
 }
@@ -720,8 +833,8 @@ Function Get-SafeStatus {
         }
     }
     catch {
-        Write-Host "Error getting safe status."
-        Write-Host $_.ErrorDetails.Message
+        Write-LogMessage -Type Error -MSG "Error getting safe status."
+        Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
         exit 1
     }
 }
@@ -752,8 +865,8 @@ Function Activate-Platform {
         $null = Invoke-RestMethod -Method 'Post' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
     }
     catch {
-        Write-Host "Error activating platform"
-        Write-Host $_.ErrorDetails.Message
+        Write-LogMessage -Type Error -MSG "Error activating platform"
+        Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
         exit 1
     }
 }
@@ -820,7 +933,7 @@ Function Set-SafePermissionsFull {
         $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
     }
     catch {
-        Write-Host $_.ErrorDetails.Message 
+        Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message 
     }
 }
 
@@ -871,10 +984,12 @@ function Test-CredentialFormat {
 
 #Running Set-DomainUser script
 
+$global:LOG_FILE_PATH = "$ScriptLocation\_Set-DomainUser.log"
+
 if ($null -eq $psmConnectCredentials) {
     $psmConnectCredentials = Get-Credential -Message "Please enter PSMConnect domain user credentials"
     if (!($psmConnectCredentials)) {
-        Write-Error "No credentials provided. Exiting."
+        Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
         exit 1
     }
 }
@@ -882,7 +997,7 @@ if ($null -eq $psmConnectCredentials) {
 if ($null -eq $psmAdminCredentials) {
     $psmAdminCredentials = Get-Credential -Message "Please enter PSMAdminConnect domain user credentials"
     if (!($psmAdminCredentials)) {
-        Write-Error "No credentials provided. Exiting."
+        Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
         exit 1
     }
 }
@@ -906,7 +1021,7 @@ if ($null -eq $tinaCreds) {
     }
     $tinaCreds = Get-Credential -Message ("Please enter {0} credentials" -f $TinaUserType)
     if (!($tinaCreds)) {
-        Write-Error "No credentials provided. Exiting."
+        Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
         exit 1
     }
 }
@@ -920,12 +1035,12 @@ $Tasks = @(
     "Modify local/group policies to allow PSM users to use Remote Desktop"
 )
 
-Write-Host "Checking if user is a domain user"
+Write-LogMessage -MSG "Checking if user is a domain user"
 if (IsUserDomainJoined) {
-    Write-Host "User is a domain user"
+    Write-LogMessage -MSG "User is a domain user"
 }
 else {
-    Write-Host "Stopping. Please run this script as a domain user"
+    Write-LogMessage -Type Error -MSG "Stopping. Please run this script as a domain user"
     exit 1
 }
 
@@ -941,27 +1056,27 @@ $PSMUsers = @(
     }
 )
 
-Write-Host "Verifying PSM credentials were provided in expected format"
+Write-LogMessage -MSG "Verifying PSM credentials were provided in expected format"
 If (!(Test-CredentialFormat -Credential $psmConnectCredentials)) {
-    Write-Host "Username provided for PSMConnect user contained invalid characters."
-    Write-Host "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain."
+    Write-LogMessage -Type Error -MSG "Username provided for PSMConnect user contained invalid characters."
+    Write-LogMessage -Type Error -MSG "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain."
     exit 1
 
 }
 
 If (!(Test-CredentialFormat -Credential $psmAdminCredentials)) {
-    Write-Host "Username provided for PSMAdminConnect user contained invalid characters."
-    Write-Host "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain."
+    Write-LogMessage -Type Error -MSG "Username provided for PSMAdminConnect user contained invalid characters."
+    Write-LogMessage -Type Error -MSG "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain."
     exit 1
 
 }
 
 # Get-Variables
 if (!($pvwaAddress)) {
-    Write-Host "Getting PVWA address"
+    Write-LogMessage -MSG "Getting PVWA address"
     $pvwaAddress = Get-PvwaAddress -psmRootInstallLocation $psmRootInstallLocation
 }
-Write-Host "Getting domain details"
+Write-LogMessage -MSG "Getting domain details"
 if (!($domain)) {
     $DomainNameAutodetected = $true
     $domain = Get-DomainDnsName
@@ -971,32 +1086,32 @@ if (!($NETBIOS)) {
     $NETBIOS = Get-DomainNetbiosName
 }
 If ($DomainNameAutodetected) {
-    Write-Host "Detected the following domain names. Is this correct?"
-    Write-Host "DNS name:     $domain"
-    Write-Host "NETBIOS name: $NETBIOS"
+    Write-LogMessage -MSG "Detected the following domain names. Is this correct?"
+    Write-LogMessage -MSG "DNS name:     $domain"
+    Write-LogMessage -MSG "NETBIOS name: $NETBIOS"
     $DomainConfirmPrompt = Read-Host "Please type 'y' for yes or 'n' for no."
     if ($DomainConfirmPrompt -ne 'y') {
-        Write-Host "Please rerun the script and provide the correct domain DNS and NETBIOS names on the command line."
+        Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct domain DNS and NETBIOS names on the command line."
         exit 1
     }
 }
 # Test PSM credentials
 if ($TestPsmConnectCredentials) {
     if (ValidateCredentials -domain $domain -Credential $psmConnectCredentials) {
-        Write-Host "PSMConnect user credentials validated"
+        Write-LogMessage -Type Success -MSG "PSMConnect user credentials validated"
     }
     else {
-        Write-Error "PSMConnect user validation failed. Please validate PSMConnect user name and password or remove -TestPsmConnectCredentials to skip this test"
+        Write-LogMessage -Type Error -MSG "PSMConnect user validation failed. Please validate PSMConnect user name and password or remove -TestPsmConnectCredentials to skip this test"
         exit 1
     }
 }
     
 if ($TestPsmAdminCredentials) {
     if (ValidateCredentials -domain $domain -Credential $psmAdminCredentials) {
-        Write-Host "PSMAdminConnect user credentials validated"
+        Write-LogMessage -Type Success -MSG "PSMAdminConnect user credentials validated"
     }
     else {
-        Write-Error "PSMAdminConnect user validation failed. Please validate PSMConnect user name and password or remove -TestPsmAdminCredentials to skip this test."
+        Write-LogMessage -Type Error -MSG "PSMAdminConnect user validation failed. Please validate PSMConnect user name and password or remove -TestPsmAdminCredentials to skip this test."
         exit 1
     }
 }
@@ -1005,157 +1120,160 @@ if ($TestPsmAdminCredentials) {
 $DoHardening = !$DoNotHarden
 $DoConfigureAppLocker = !$DoNotConfigureAppLocker
     
-Write-Host "Logging in to CyberArk"
+Write-LogMessage -MSG "Logging in to CyberArk"
 $pvwaToken = New-ConnectionToRestAPI -pvwaAddress $pvwaAddress -tinaCreds $tinaCreds
 if (Test-PvwaToken -Token $pvwaToken -pvwaAddress $pvwaAddress) {
-    Write-Host "Successfully logged in"
+    Write-LogMessage -Type Success -MSG "Successfully logged in"
 }
 else {
-    Write-Host "Error logging in to CyberArk"
+    Write-LogMessage -Type Error -MSG "Error logging in to CyberArk"
     exit 1
 }
 # Get platform info
-Write-Host "Checking current platform status"
+Write-LogMessage -MSG "Checking current platform status"
 $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
 if ($platformStatus -eq $false) {
     # function returns false if platform does not exist
     # Creating Platform
-    Write-Host "Creating new platform"
+    Write-LogMessage -MSG "Creating new platform"
     Duplicate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -CurrentPlatformId "7" -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
     $Tasks += ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
     # Get platform info again so we can ensure it's activated
     $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
 }
 else {
-    Write-Warning ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
+    Write-LogMessage -Type Warning -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
     $Tasks += ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
 }
 if ($platformStatus.Active -eq $false) {
-    Write-Host "Platform is deactivated. Activating."
+    Write-LogMessage -MSG "Platform is deactivated. Activating."
     Activate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -Platform $platformStatus.Id
 }
-Write-Host "Checking current safe status"
+Write-LogMessage -MSG "Checking current safe status"
 $safeStatus = Get-SafeStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -SafeName $Safe
 if ($safeStatus -eq $false) {
     # function returns false if safe does not exist
-    Write-Host "Safe $Safe does not exist. Please create it or provide a different safe name with the -Safe option"
+    Write-LogMessage -Type Error -MSG "Safe $Safe does not exist. Please create it or provide a different safe name with the -Safe option"
     exit 1
 }
 If (!($safeStatus.managingCpm)) {
     # Safe exists but no CPM assigned
-    Write-Warning ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
+    Write-LogMessage -Type Warning -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
     $Tasks += ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
 }
 # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
 If ($UM) {
-    Write-Host "Granting administrators access to PSM safe"
+    Write-LogMessage -MSG "Granting administrators access to PSM safe"
     Set-SafePermissionsFull -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe
 }
 # Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
-Write-Host "Onboarding PSMConnect Account"
+Write-LogMessage -MSG "Onboarding PSMConnect Account"
 $OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $domain -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
 If ($OnboardResult.name) {
-    Write-Host "User successfully onboarded"
+    Write-LogMessage -Type Success -MSG "User successfully onboarded"
 }
 ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
-    Write-Warning "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
+    Write-LogMessage -Type Warning -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
     $Tasks += "Verify that the $PSMConnectAccountName object in $safe safe contains correct PSMConnect user details"
 } 
 Else {
-    Write-Error "Error onboarding account: {0}" -f $OnboardResult
+    Write-LogMessage -Type Error -MSG "Error onboarding account: {0}" -f $OnboardResult
     exit 1
 }
 # Creating PSMAdminConnect
-Write-Host "Onboarding PSMAdminConnect Account"
+Write-LogMessage -MSG "Onboarding PSMAdminConnect Account"
 $OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $domain -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
 If ($OnboardResult.name) {
-    Write-Host "User successfully onboarded"
+    Write-LogMessage -Type Success -MSG "User successfully onboarded"
 }
 ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
-    Write-Warning "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
+    Write-LogMessage -Type Warning -MSG "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
     $Tasks += "Verify that the $PSMAdminConnectAccountName object in $safe safe contains correct PSMAdminConnect user details"
 } 
 Else {
-    Write-Error "Error onboarding account: {0}" -f $OnboardResult
+    Write-LogMessage -Type Error -MSG "Error onboarding account: {0}" -f $OnboardResult
     exit 1
 }
 $PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
-Write-Host "Stopping CyberArk Privileged Session Manager Service"
+Write-LogMessage -MSG "Stopping CyberArk Privileged Session Manager Service"
 Stop-Service $REGKEY_PSMSERVICE
-Write-Host "Backing up PSM configuration files and scripts"
+Write-LogMessage -MSG "Backing up PSM configuration files and scripts"
 Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupSuffix $BackupSuffix
-Write-Host "Updating PSM configuration files and scripts"
+Write-LogMessage -MSG "Updating PSM configuration files and scripts"
 Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $domain -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
 #TODO: Update Basic_ini
-Write-Host "Adding PSMAdminConnect user to Terminal Services configuration"
+Write-LogMessage -MSG "Adding PSMAdminConnect user to Terminal Services configuration"
 # Adding PSMAdminConnect user to Terminal Services configuration
 $AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $NETBIOS -Credentials $psmAdminCredentials
 If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
-    Write-Host "Successfully added PSMAdminConnect user to Terminal Services configuration"
+    Write-LogMessage -Type Success -MSG "Successfully added PSMAdminConnect user to Terminal Services configuration"
 }
 else {
     # Failed to add user (1st command)
-    Write-Host $AddAdminUserToTSResult.Error
-    Write-Host "Failed to add PSMAdminConnect user to Terminal Services configuration."
     if ($IgnoreShadowPermissionErrors) {
-        Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"  
+        Write-LogMessage -Type Warning -MSG $AddAdminUserToTSResult.Error
+        Write-LogMessage -Type Warning -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration."
+        Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"  
         $Tasks += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
     }
     else {
-        Write-Host "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
-        Write-Host "Exiting."
+        Write-LogMessage -Type Error -MSG $AddAdminUserToTSResult.Error
+        Write-LogMessage -Type Error -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration."
+        Write-LogMessage -Type Error -MSG "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
+        Write-LogMessage -Type Error -MSG "Exiting."
         exit 1
     }
 }
 If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
     # Grant shadow permission only if first command was succesful
-    Write-Host "Granting PSMAdminConnect user permission to shadow sessions"
+    Write-LogMessage -MSG "Granting PSMAdminConnect user permission to shadow sessions"
     $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $NETBIOS -Credentials $psmAdminCredentials
     If ($AddAdminUserTSShadowPermissionResult.ReturnValue -eq 0) {
-        Write-Host "Successfully granted PSMAdminConnect permission to shadow sessions"
+        Write-LogMessage -Type Success -MSG "Successfully granted PSMAdminConnect permission to shadow sessions"
     }
     else {
         # Failed to grant permission (2nd command)
-        Write-Host $AddAdminUserTSShadowPermissionResult.Error
-        Write-Warning "Failed to grant PSMAdminConnect permission to shadow sessions."
         if ($IgnoreShadowPermissionErrors) {
-            Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
+            Write-LogMessage -Type Warning -MSG $AddAdminUserTSShadowPermissionResult.Error
+            Write-LogMessage -Type Warning -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
+            Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
             $Tasks += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
-
+            
         }
         else {
-            Write-Host "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
-            Write-Host "Exiting."
+            Write-LogMessage -Type Error -MSG $AddAdminUserTSShadowPermissionResult.Error
+            Write-LogMessage -Type Error -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
+            Write-LogMessage -Type Error -MSG "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
             exit 1
         }
     }
 }
 If ($DoHardening) {
-    Write-Host "Running PSM Hardening script"
-    Write-Host "---"
+    Write-LogMessage -MSG "Running PSM Hardening script"
+    Write-LogMessage -MSG "---"
     Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation
-    Write-Host "---"
-    Write-Host "End of PSM Hardening script output"
+    Write-LogMessage -MSG "---"
+    Write-LogMessage -MSG "End of PSM Hardening script output"
 }
 else {
-    Write-Host "Skipping Hardening due to -DoNotHarden parameter"
+    Write-LogMessage -MSG "Skipping Hardening due to -DoNotHarden parameter"
     $Tasks += "Run script for perform server hardening (PSMHardening.ps1)"
 }
 If ($DoConfigureAppLocker) {
-    Write-Host "Running PSM Configure AppLocker script"
-    Write-Host "---"
+    Write-LogMessage -MSG "Running PSM Configure AppLocker script"
+    Write-LogMessage -MSG "---"
     Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation
-    Write-Host "---"
-    Write-Host "End of PSM Configure AppLocker script output"
+    Write-LogMessage -MSG "---"
+    Write-LogMessage -MSG "End of PSM Configure AppLocker script output"
 }  
 else {
-    Write-Host "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
+    Write-LogMessage -MSG "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
     $Tasks += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
 }  
-Write-Host "Restarting CyberArk Privileged Session Manager Service"
+Write-LogMessage -MSG "Restarting CyberArk Privileged Session Manager Service"
 Restart-Service $REGKEY_PSMSERVICE
-Write-Host ""
-Write-Host "All tasks completed. The following additional steps may be required:"
+Write-LogMessage -MSG ""
+Write-LogMessage -Type Success -MSG "All tasks completed. The following additional steps may be required:"
 $Tasks += "Restart Server"
 $Tasks += 
 ("Provide CyberArk support with the following required details for updating the backend:
@@ -1166,5 +1284,5 @@ $Tasks +=
      PSMAdminConnect Account Name: {4}" `
     -f $pvwaAddress, $PSMServerId, $Safe, $PSMConnectAccountName, $PSMAdminConnectAccountName)
 foreach ($Task in $Tasks) {
-    Write-Host " - $Task"
+    Write-LogMessage -Type Success  " - $Task"
 }
