@@ -68,7 +68,7 @@ param(
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Please enter the Safe to save the domain accounts in, By default it is PSM")]
-    [String]$safe = "PSM",     
+    [String]$safe = "PSM",
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Verify the provided PSMConnect credentials")]
@@ -102,7 +102,6 @@ param(
 )
 
 #Functions
-
 Function Get-RestMethodError {
     <# Invoke-RestMethod can have several different possible results
     Connection failure: The connection error will be contained in $_.Exception.Message
@@ -239,7 +238,7 @@ Function IsUserDomainJoined {
             }
             else {
                 return $false
-            }   
+            }
         }
         catch {
             return $false
@@ -260,7 +259,7 @@ Function Get-ServiceInstallPath {
     #>
     param ($ServiceName)
     Begin {
-        
+
     }
     Process {
         $retInstallPath = $null
@@ -274,11 +273,11 @@ Function Get-ServiceInstallPath {
         catch {
             Throw $(New-Object System.Exception ("Cannot get Service Install path for $ServiceName", $_.Exception))
         }
-        
+
         return $retInstallPath
     }
     End {
-        
+
     }
 }
 
@@ -300,11 +299,11 @@ Function New-ConnectionToRestAPI {
         [Parameter(Mandatory = $true)]
         $pvwaAddress,
         [Parameter(Mandatory = $true)]
-        [PSCredential]$tinaCreds        
+        [PSCredential]$tinaCreds
     )
     $url = $pvwaAddress + "/PasswordVault/API/auth/Cyberark/Logon"
     $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($tinaCreds.Password)
-    
+
     $headerPass = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
     $body = @{
         username = $tinaCreds.UserName
@@ -312,20 +311,14 @@ Function New-ConnectionToRestAPI {
     }
     $json = $body | ConvertTo-Json
     Try {
-        $pvwaToken = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -ContentType 'application/json'
+        $Result = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -ContentType 'application/json'
+        return @{
+            ErrorCode = "Success"
+            Response  = $Result
+        }
     }
     Catch {
-        Write-Host "Failed to retrieve token. Response received:"
-        Write-Host $_.Exception.Message
-        exit 1
-    }
-    if ($pvwaToken -match "[0-9a-zA-Z]{200,256}") {
-        return $pvwaToken
-    }
-    else {
-        Write-Host "Failed to retrieve token. Response received:"
-        Write-Host $_.Exception.Message
-        exit 1
+        return Get-RestMethodError $_
     }
 }
 
@@ -346,7 +339,7 @@ Function Test-PvwaToken {
         [Parameter(Mandatory = $true)]
         [string]$pvwaAddress,
         [Parameter(Mandatory = $true)]
-        [string]$Token        
+        [string]$Token
     )
     $url = $pvwaAddress + "/PasswordVault/API/Accounts?limit=1"
     $Headers = @{
@@ -354,10 +347,12 @@ Function Test-PvwaToken {
     }
     $testToken = Invoke-RestMethod -Method 'Get' -Uri $url -Headers $Headers -ContentType 'application/json'
     if ($testToken) {
-        return $true
+        return @{
+            ErrorCode = "Success"
+        }
     }
-    else {
-        return $false
+    Catch {
+        return Get-RestMethodError $_
     }
 }
 
@@ -382,11 +377,11 @@ Function Backup-PSMConfig {
         $PSMHardeningBackupFileName = ("{0}\Hardening\PSMHardening.{1}.bkp" -f $psmRootInstallLocation, $BackupSuffix)
         $PSMConfigureAppLockerBackupFileName = ("{0}\Hardening\PSMConfigureAppLocker.{1}.bkp" -f $psmRootInstallLocation, $BackupSuffix)
         $BasicPSMBackupFileName = ("{0}\basic_psm.{1}.bkp" -f $psmRootInstallLocation, $BackupSuffix)
-        
+
         Copy-Item -path "$psmRootInstallLocation\Hardening\PSMHardening.ps1" -Destination $PSMHardeningBackupFileName
         Copy-Item -path "$psmRootInstallLocation\Hardening\PSMConfigureAppLocker.ps1" -Destination $PSMConfigureAppLockerBackupFileName
         Copy-Item -Path "$psmRootInstallLocation\basic_psm.ini" -Destination $BasicPSMBackupFileName
-        
+
         If (!(Test-Path $PSMHardeningBackupFileName)) {
             Write-Error "Failed to backup PSMHardening.ps1" -ErrorAction Stop
         }
@@ -431,37 +426,37 @@ Function Update-PSMConfig {
     )
     try {
         #PSMHardening
-        #-------------------------   
+        #-------------------------
         $psmHardeningContent = Get-Content -Path $psmRootInstallLocation\Hardening\PSMHardening.ps1
-        
+
         $newPsmHardeningContent = $psmHardeningContent -replace '^(\$PSM_CONNECT_USER\s*=) .*', ('$1 "{0}\{1}"' -f $domain, $PsmConnectUsername)
         $newPsmHardeningContent = $newPsmHardeningContent -replace '^(\$PSM_ADMIN_CONNECT_USER\s*=) .*$', ('$1 "{0}\{1}"' -f $domain, $PsmAdminUsername)
         $newPsmHardeningContent | Set-Content -Path "$psmRootInstallLocation\Hardening\test-psmhardening.ps1"
-        
-        #PSMApplocker    
-        #------------------------- 
-        
-        
+
+        #PSMApplocker
+        #-------------------------
+
+
         $psmApplockerContent = Get-Content -Path $psmRootInstallLocation\Hardening\PSMConfigureApplocker.ps1
-        
+
         $newPsmApplockerContent = $psmApplockerContent -replace '^(\$PSM_CONNECT\s*=) .*', ('$1 "{0}\{1}"' -f $domain, $PsmConnectUsername)
         $newPsmApplockerContent = $newPsmApplockerContent -replace '^(\$PSM_ADMIN_CONNECT\s*=) .*$', ('$1 "{0}\{1}"' -f $domain, $PsmAdminUsername)
-        
+
         $newPsmApplockerContent | Set-Content -Path "$psmRootInstallLocation\Hardening\test-psm-applocker.ps1"
-        
-        
+
+
         #basic_psm.ini
-        #-------------------------   
-        
-        
+        #-------------------------
+
+
         $psmBasicPSMContent = Get-Content -Path $psmRootInstallLocation\basic_psm.ini
-        
+
         $psmBasicPSMAdminLine = 'PSMServerAdminId="PSMAdminConnect"'
         $newBasicPSMContent = $psmBasicPSMContent -replace 'PSMServerAdminId=".+$', $psmBasicPSMAdminLine
-        
+
         $newBasicPSMContent | Set-Content -Path "$psmRootInstallLocation\test_basic_psm.ini"
-        
-        
+
+
         # Write corrected contents out to correct file(s)
         #-------------------------
         Copy-Item -Path "$psmRootInstallLocation\Hardening\test-psm-applocker.ps1" -Destination "$psmRootInstallLocation\Hardening\PSMConfigureApplocker.ps1" -Force
@@ -487,7 +482,7 @@ Function Invoke-PSMHardening {
     param (
         [Parameter(Mandatory = $true)]
         $psmRootInstallLocation
-    ) 
+    )
     Write-Verbose "Starting PSM Hardening"
     $hardeningScriptRoot = "$psmRootInstallLocation\Hardening"
     $CurrentLocation = Get-Location
@@ -508,13 +503,13 @@ Function Invoke-PSMConfigureAppLocker {
     param (
         [Parameter(Mandatory = $true)]
         $psmRootInstallLocation
-    ) 
+    )
     Write-Verbose "Starting PSMConfigureAppLocker"
     $hardeningScriptRoot = "$psmRootInstallLocation\Hardening"
     $CurrentLocation = Get-Location
     Set-Location $hardeningScriptRoot
     & "$hardeningScriptRoot\PSMConfigureAppLocker.ps1"
-    Set-Location $CurrentLocation 
+    Set-Location $CurrentLocation
 }
 
 Function New-VaultAdminObject {
@@ -532,7 +527,7 @@ Function New-VaultAdminObject {
     .PARAMETER domain
     Domain of the users needed to be onboarded
     .PARAMETER Credentials
-    Credentials to be onboarded (has both the username and password)     
+    Credentials to be onboarded (has both the username and password)
     .PARAMETER platformID
     The Platform to onboard the account to. We will use the PlatformID in this script from what we create.
     #>
@@ -551,8 +546,8 @@ Function New-VaultAdminObject {
         $platformID,
         [Parameter(Mandatory = $false)]
         $safe = "PSM"
-    ) 
-    
+    )
+
     $username = $Credentials.username.Replace('\', '')
     $password = $Credentials.GetNetworkCredential().password
     $body = @{
@@ -673,7 +668,7 @@ Function Duplicate-Platform {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Platforms/Targets/$CurrentPlatformId/Duplicate"
-        $body = @{ 
+        $body = @{
             Name        = $NewPlatformName
             Description = $NewPlatformDescription
         }
@@ -707,7 +702,7 @@ Function Get-PlatformStatus {
         [string]$pvwaToken,
         [Parameter(Mandatory = $true)]
         [string]$PlatformId
-    
+
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Platforms/targets?search=" + $PlatformId
@@ -718,7 +713,7 @@ Function Get-PlatformStatus {
             return $TargetPlatform
         }
         else {
-            return $false 
+            return $false
         }
     }
     catch {
@@ -748,7 +743,7 @@ Function Get-SafeStatus {
         [string]$pvwaToken,
         [Parameter(Mandatory = $true)]
         [string]$SafeName
-    
+
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/safes?search=$SafeName"
@@ -759,7 +754,7 @@ Function Get-SafeStatus {
             return $Safe
         }
         else {
-            return $false 
+            return $false
         }
     }
     catch {
@@ -815,7 +810,7 @@ Function Set-SafePermissionsFull {
     .PARAMETER SafeMember
     Which Member to give the safe permission
     .PARAMETER memberType
-    What type of member to give permission to (group,role,user)    
+    What type of member to give permission to (group,role,user)
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -827,18 +822,18 @@ Function Set-SafePermissionsFull {
         [Parameter(Mandatory = $false)]
         $SafeMember = "Vault Admins",
         [Parameter(Mandatory = $false)]
-        $memberType = "Group"   
+        $memberType = "Group"
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Safes/$safe/members"
-        $body = @{ 
+        $body = @{
             memberName  = $SafeMember
             memberType  = $memberType
             permissions = @{
-                useAccounts                            = $True 
+                useAccounts                            = $True
                 retrieveAccounts                       = $True
                 listAccounts                           = $True
-                addAccounts                            = $True 
+                addAccounts                            = $True
                 updateAccountContent                   = $True
                 updateAccountProperties                = $True
                 initiateCPMAccountManagementOperations = $True
@@ -855,7 +850,7 @@ Function Set-SafePermissionsFull {
                 createFolders                          = $True
                 deleteFolders                          = $True
                 moveAccountsAndFolders                 = $True
-                requestsAuthorizationLevel1            = $True 
+                requestsAuthorizationLevel1            = $True
                 requestsAuthorizationLevel2            = $False
             }
         }
@@ -863,7 +858,7 @@ Function Set-SafePermissionsFull {
         $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
     }
     catch {
-        Write-Host $_.ErrorDetails.Message 
+        Write-Host $_.ErrorDetails.Message
     }
 }
 
@@ -880,9 +875,9 @@ Function Check-UM {
         [Parameter(Mandatory = $true)]
         $psmRootInstallLocation
     )
-    $psmBasicPSMContent = Get-Content -Path $psmRootInstallLocation\basic_psm.ini 
+    $psmBasicPSMContent = Get-Content -Path $psmRootInstallLocation\basic_psm.ini
     $validation = $psmBasicPSMContent -match "IdentityUM.*=.*Yes"
-    return ("" -ne $validation) 
+    return ("" -ne $validation)
 }
 Function Get-PSMServerId {
     <#
@@ -936,7 +931,7 @@ $psmRootInstallLocation = ($(Get-ServiceInstallPath $REGKEY_PSMSERVICE)).Replace
 If (Check-UM -psmRootInstallLocation $psmRootInstallLocation) {
     $UM = $true
 }
-else { 
+else {
     $UM = $false
 }
 
@@ -1022,7 +1017,7 @@ if ($TestPsmConnectCredentials) {
         exit 1
     }
 }
-    
+
 if ($TestPsmAdminCredentials) {
     if (ValidateCredentials -domain $domain -Credential $psmAdminCredentials) {
         Write-Host "PSMAdminConnect user credentials validated"
@@ -1032,18 +1027,36 @@ if ($TestPsmAdminCredentials) {
         exit 1
     }
 }
-    
+
 # Reverse logic on script invocation setting because double negatives suck
 $DoHardening = !$DoNotHarden
 $DoConfigureAppLocker = !$DoNotConfigureAppLocker
-    
+
 Write-Host "Logging in to CyberArk"
-$pvwaToken = New-ConnectionToRestAPI -pvwaAddress $pvwaAddress -tinaCreds $tinaCreds
-if (Test-PvwaToken -Token $pvwaToken -pvwaAddress $pvwaAddress) {
-    Write-Host "Successfully logged in"
+$pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $pvwaAddress -tinaCreds $tinaCreds
+if ($pvwaTokenResponse.ErrorCode -ne "Success") {
+    # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
+    # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.
+    # The error message shown could be from a JSON response, e.g. wrong password, or a connection error.
+    Write-Host "Logon to PVWA failed. Result:"
+    Write-Host $pvwaTokenResponse.ErrorMessage
+    exit 1
+}
+if (!($pvwaTokenResponse.Response -match "[0-9a-zA-Z]{200,256}")) {
+    # If we get here, it means we got a 200 response from the server, but the data it returned was not a valid token.
+    # In this case, we display the response we got from the server to aid troubleshooting.
+    Write-Host "Response from server was not a valid token:"
+    Write-Host $pvwaTokenResponse.Response
+    exit 1
+}
+# If we get here, the token was retrieved successfully and looks valid. We'll still test it though.
+$PvwaTokenTestResponse = Test-PvwaToken -Token $pvwaTokenResponse.Response -pvwaAddress $pvwaAddress
+if ($PvwaTokenTestResponse.ErrorCode -eq "Success") {
+    $pvwaToken = $pvwaTokenResponse.Response
 }
 else {
-    Write-Host "Error logging in to CyberArk"
+    Write-Host "PVWA Token validation failed. Result:"
+    Write-Host $PvwaTokenTestResponse.Response
     exit 1
 }
 # Get platform info
@@ -1092,7 +1105,7 @@ If ($OnboardResult.name) {
 ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
     Write-Warning "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
     $Tasks += "Verify that the $PSMConnectAccountName object in $safe safe contains correct PSMConnect user details"
-} 
+}
 Else {
     Write-Error "Error onboarding account: {0}" -f $OnboardResult
     exit 1
@@ -1106,7 +1119,7 @@ If ($OnboardResult.name) {
 ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
     Write-Warning "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
     $Tasks += "Verify that the $PSMAdminConnectAccountName object in $safe safe contains correct PSMAdminConnect user details"
-} 
+}
 Else {
     Write-Error "Error onboarding account: {0}" -f $OnboardResult
     exit 1
@@ -1130,7 +1143,7 @@ else {
     Write-Host $AddAdminUserToTSResult.Error
     Write-Host "Failed to add PSMAdminConnect user to Terminal Services configuration."
     if ($IgnoreShadowPermissionErrors) {
-        Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"  
+        Write-Host "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
         $Tasks += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
     }
     else {
@@ -1179,17 +1192,17 @@ If ($DoConfigureAppLocker) {
     Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation
     Write-Host "---"
     Write-Host "End of PSM Configure AppLocker script output"
-}  
+}
 else {
     Write-Host "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
     $Tasks += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
-}  
+}
 Write-Host "Restarting CyberArk Privileged Session Manager Service"
 Restart-Service $REGKEY_PSMSERVICE
 Write-Host ""
 Write-Host "All tasks completed. The following additional steps may be required:"
 $Tasks += "Restart Server"
-$Tasks += 
+$Tasks +=
 ("Provide CyberArk support with the following required details for updating the backend:
      Portal address: {0}
      PSM Server ID: {1}
