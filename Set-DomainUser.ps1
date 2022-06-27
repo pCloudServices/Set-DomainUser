@@ -984,6 +984,8 @@ function Test-CredentialFormat {
 
 #Running Set-DomainUser script
 
+$global:InVerbose = $PSBoundParameters.Verbose.IsPresent
+$ScriptLocation = Split-Path -Parent $MyInvocation.MyCommand.Path
 $global:LOG_FILE_PATH = "$ScriptLocation\_Set-DomainUser.log"
 
 if ($null -eq $psmConnectCredentials) {
