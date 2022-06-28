@@ -1286,14 +1286,12 @@ Restart-Service $REGKEY_PSMSERVICE
 Write-LogMessage -Type Success -MSG "All tasks completed."
 Write-LogMessage -type Info -MSG "The following additional steps may be required:"
 $Tasks += "Restart Server"
-$Tasks += 
-("Provide CyberArk support with the following required details for updating the backend:
-     Portal address: {0}
-     PSM Server ID: {1}
-     PSM Safe: {2}
-     PSMConnect Account Name: {3}
-     PSMAdminConnect Account Name: {4}" `
-    -f $pvwaAddress, $PSMServerId, $Safe, $PSMConnectAccountName, $PSMAdminConnectAccountName)
 foreach ($Task in $Tasks) {
     Write-LogMessage -Type Info " - $Task"
 }
+Write-LogMessage -Type Info -MSG " - Provide CyberArk support with the following required details for updating the backend:"
+Write-LogMessage -Type Info -MSG ("     Portal address: {0}" -f $pvwaAddress)
+Write-LogMessage -Type Info -MSG ("     PSM Server ID: {0}" -f $PSMServerId)
+Write-LogMessage -Type Info -MSG ("     PSM Safe: {0}" -f $Safe)
+Write-LogMessage -Type Info -MSG ("     PSMConnect Account Name: {0}" -f $PSMConnectAccountName)
+Write-LogMessage -Type Info -MSG ("     PSMAdminConnect Account Name: {0}" -f $PSMAdminConnectAccountName)
