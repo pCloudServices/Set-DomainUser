@@ -1257,7 +1257,7 @@ Write-LogMessage -Type Verbose -MSG "Checking current safe status"
 $safeStatus = Get-SafeStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -SafeName $Safe
 if ($safeStatus -eq $false) {
     # function returns false if safe does not exist
-    Write-LogMessage -Type Error -MSG "Safe $Safe does not exist. Creating the safe now"
+    Write-LogMessage -Type Verbose -MSG "Safe $Safe does not exist. Creating the safe now"
     Create-PSMSafe -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $Safe
 
 }
