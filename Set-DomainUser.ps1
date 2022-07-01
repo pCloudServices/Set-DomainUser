@@ -892,7 +892,7 @@ Function Create-PSMSafe {
     [Parameter(Mandatory = $false)]
     $safe,
     [Parameter(Mandatory = $false)]
-    $description = "Safe for PSM Users",    
+    $description = "Safe for PSM Users"  
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Safes"
