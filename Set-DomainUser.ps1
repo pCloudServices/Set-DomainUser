@@ -904,7 +904,7 @@ Function Create-PSMSafe {
         $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
         #Permissions for the needed accounts
         #PSMMaster full permissions
-        Set-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PSMMaster"
+        New-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PSMMaster"
         #PVWAAppUser and PVWAAppUsers permissions
         $PVWAAppUser = @{
             useAccounts                            = $False 
@@ -930,8 +930,8 @@ Function Create-PSMSafe {
             requestsAuthorizationLevel1            = $False 
             requestsAuthorizationLevel2            = $False
         }
-        Set-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PVWAAppUser" -memberType "user" -safePermissions $PVWAAppUser
-        Set-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PVWAAppUsers" -safePermissions $PVWAAppUser
+        New-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PVWAAppUser" -memberType "user" -safePermissions $PVWAAppUser
+        New-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PVWAAppUsers" -safePermissions $PVWAAppUser
         #PSMAppUsers
         $PSMAppUsers = @{
             useAccounts                            = $False 
@@ -957,14 +957,81 @@ Function Create-PSMSafe {
             requestsAuthorizationLevel1            = $False 
             requestsAuthorizationLevel2            = $False
         }
-        Set-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PSMAppUsers" -safePermissions $PSMAppUsers        
+        Set-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PSMAppUsers" -safePermissions $PSMAppUsers  
+        return $true      
     }
     catch {
-        Write-Host $_.ErrorDetails.Message
+        Write-LogMessage -Type Error $_.ErrorDetails.Message
+        return $false
     }
 }
 
 Function Set-SafePermissions {
+    <#
+    .SYNOPSIS
+    Update a member's safe permission on a specific safe
+    .DESCRIPTION
+    Update a member's safe permission on a specific safe
+    .PARAMETER pvwaAddress
+    PVWA address to run API commands on
+    .PARAMETER pvwaToken
+    Token to authenticate into the PVWA
+    .PARAMETER safe
+    Which Safe to give permission to (Default PSM)
+    .PARAMETER SafeMember
+    Which Member to give the safe permission
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $pvwaAddress,
+        [Parameter(Mandatory = $true)]
+        $pvwaToken,
+        [Parameter(Mandatory = $false)]
+        $safe = "PSM",
+        [Parameter(Mandatory = $false)]
+        $safeMember = "Vault Admins",
+        [Parameter(Mandatory = $false)]
+        $memberType = "Group",
+        [Parameter(Mandatory = $false)]
+        $safePermissions = @{
+            useAccounts                            = $True 
+            retrieveAccounts                       = $True
+            listAccounts                           = $True
+            addAccounts                            = $True 
+            updateAccountContent                   = $True
+            updateAccountProperties                = $True
+            initiateCPMAccountManagementOperations = $True
+            specifyNextAccountContent              = $True
+            renameAccounts                         = $True
+            deleteAccounts                         = $True
+            unlockAccounts                         = $True
+            manageSafe                             = $True
+            manageSafeMembers                      = $True
+            backupSafe                             = $True
+            viewAuditLog                           = $True
+            viewSafeMembers                        = $True
+            accessWithoutConfirmation              = $True
+            createFolders                          = $True
+            deleteFolders                          = $True
+            moveAccountsAndFolders                 = $True
+            requestsAuthorizationLevel1            = $True 
+            requestsAuthorizationLevel2            = $False
+        }
+    )
+    try {
+        $url = $pvwaAddress + "/PasswordVault/api/Safes/$safe/members/$SafeMember"
+        $body = @{ 
+            permissions = $safePermissions
+        }
+        $json = $body | ConvertTo-Json
+        $null = Invoke-RestMethod -Method 'Put' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
+    }
+    catch {
+        Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message 
+    }
+}
+
+Function New-SafePermissions {
     <#
     .SYNOPSIS
     Adds safe permission to a specific safe
@@ -1258,8 +1325,13 @@ $safeStatus = Get-SafeStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -Sa
 if ($safeStatus -eq $false) {
     # function returns false if safe does not exist
     Write-LogMessage -Type Verbose -MSG "Safe $Safe does not exist. Creating the safe now"
-    Create-PSMSafe -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $Safe
-
+    $CreateSafeResult = Create-PSMSafe -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $Safe
+    If ($CreateSafeResult) {
+        Write-LogMessage -type Verbose "Successfully created safe $safe"
+    } else {
+        Write-LogMessage -Type Error -MSG "Creating PSM safe $Safe failed. Please resolve the error and try again."
+        exit 1
+    }
 }
 If (!($safeStatus.managingCpm)) {
     # Safe exists but no CPM assigned
@@ -1269,7 +1341,7 @@ If (!($safeStatus.managingCpm)) {
 # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
 If ($UM) {
     Write-LogMessage -Type Verbose -MSG "Granting administrators access to PSM safe"
-    Set-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe
+    New-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe
 }
 # Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
 Write-LogMessage -Type Verbose -MSG "Onboarding PSMConnect Account"
@@ -1345,7 +1417,6 @@ If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
             Write-LogMessage -Type Warning -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
             Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
             $Tasks += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
-            
         }
         else {
             Write-LogMessage -Type Error -MSG $AddAdminUserTSShadowPermissionResult.Error
