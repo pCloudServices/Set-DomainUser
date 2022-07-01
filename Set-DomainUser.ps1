@@ -103,9 +103,8 @@ param(
 
 #Functions
 
-Function Write-LogMessage
-{
-<# 
+Function Write-LogMessage {
+    <# 
 .SYNOPSIS 
 	Method to log a message on screen and in a log file
 
@@ -126,94 +125,88 @@ Function Write-LogMessage
 .PARAMETER Type
 	The type of the message to log (Info, Warning, Error, Debug)
 #>
-	param(
-		[Parameter(Mandatory=$true, ValueFromPipeline=$true)]
-		[AllowEmptyString()]
-		[String]$MSG,
-		[Parameter(Mandatory=$false)]
-		[Switch]$Header,
-		[Parameter(Mandatory=$false)]
-		[Switch]$Early,
-		[Parameter(Mandatory=$false)]
-		[Switch]$SubHeader,
-		[Parameter(Mandatory=$false)]
-		[Switch]$Footer,
-		[Parameter(Mandatory=$false)]
-		[ValidateSet("Info","Warning","Error","Debug","Verbose", "Success", "LogOnly")]
-		[String]$type = "Info",
-		[Parameter(Mandatory=$false)]
-		[String]$LogFile = $LOG_FILE_PATH
-	)
-	Try{
-		If ($Header) {
-			"=======================================" | Out-File -Append -FilePath $LogFile 
-			Write-Host "=======================================" -ForegroundColor Magenta
-		}
-		ElseIf($SubHeader) { 
-			"------------------------------------" | Out-File -Append -FilePath $LogFile 
-			Write-Host "------------------------------------" -ForegroundColor Magenta
-		}
+    param(
+        [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
+        [AllowEmptyString()]
+        [String]$MSG,
+        [Parameter(Mandatory = $false)]
+        [Switch]$Header,
+        [Parameter(Mandatory = $false)]
+        [Switch]$Early,
+        [Parameter(Mandatory = $false)]
+        [Switch]$SubHeader,
+        [Parameter(Mandatory = $false)]
+        [Switch]$Footer,
+        [Parameter(Mandatory = $false)]
+        [ValidateSet("Info", "Warning", "Error", "Debug", "Verbose", "Success", "LogOnly")]
+        [String]$type = "Info",
+        [Parameter(Mandatory = $false)]
+        [String]$LogFile = $LOG_FILE_PATH
+    )
+    Try {
+        If ($Header) {
+            "=======================================" | Out-File -Append -FilePath $LogFile 
+            Write-Host "=======================================" -ForegroundColor Magenta
+        }
+        ElseIf ($SubHeader) { 
+            "------------------------------------" | Out-File -Append -FilePath $LogFile 
+            Write-Host "------------------------------------" -ForegroundColor Magenta
+        }
 		
-		$msgToWrite = "[$(Get-Date -Format "yyyy-MM-dd hh:mm:ss")]`t"
-		$writeToFile = $true
-		# Replace empty message with 'N/A'
-		if([string]::IsNullOrEmpty($Msg)) { $Msg = "N/A" }
+        $msgToWrite = "[$(Get-Date -Format "yyyy-MM-dd hh:mm:ss")]`t"
+        $writeToFile = $true
+        # Replace empty message with 'N/A'
+        if ([string]::IsNullOrEmpty($Msg)) { $Msg = "N/A" }
 		
-		# Mask Passwords
-		if($Msg -match '((?:password|credentials|secret)\s{0,}["\:=]{1,}\s{0,}["]{0,})(?=([\w`~!@#$%^&*()-_\=\+\\\/|;:\.,\[\]{}]+))')
-		{
-			$Msg = $Msg.Replace($Matches[2],"****")
-		}
-		# Check the message type
-		switch ($type)
-		{
-			{($_ -eq "Info") -or ($_ -eq "LogOnly")} 
-			{ 
-				If($_ -eq "Info")
-				{
-					Write-Host $MSG.ToString() -ForegroundColor $(If($Header -or $SubHeader) { "magenta" } Elseif($Early){"DarkGray"} Else { "White" })
-				}
-				$msgToWrite += "[INFO]`t$Msg"
-			}
-			"Success" { 
-				Write-Host $MSG.ToString() -ForegroundColor Green
-				$msgToWrite += "[SUCCESS]`t$Msg"
+        # Mask Passwords
+        if ($Msg -match '((?:password|credentials|secret)\s{0,}["\:=]{1,}\s{0,}["]{0,})(?=([\w`~!@#$%^&*()-_\=\+\\\/|;:\.,\[\]{}]+))') {
+            $Msg = $Msg.Replace($Matches[2], "****")
+        }
+        # Check the message type
+        switch ($type) {
+            { ($_ -eq "Info") -or ($_ -eq "LogOnly") } { 
+                If ($_ -eq "Info") {
+                    Write-Host $MSG.ToString() -ForegroundColor $(If ($Header -or $SubHeader) { "magenta" } Elseif ($Early) { "DarkGray" } Else { "White" })
+                }
+                $msgToWrite += "[INFO]`t$Msg"
             }
-			"Warning" {
-				Write-Host $MSG.ToString() -ForegroundColor Yellow
-				$msgToWrite += "[WARNING]`t$Msg"
-			}
-			"Error" {
-				Write-Host $MSG.ToString() -ForegroundColor Red
-				$msgToWrite += "[ERROR]`t$Msg"
-			}
-			"Debug" { 
-				if($InDebug -or $InVerbose)
-				{
-					Write-Debug $MSG
-					$msgToWrite += "[DEBUG]`t$Msg"
-				}
-				else { $writeToFile = $False }
-			}
-			"Verbose" { 
-				if($InVerbose)
-				{
-					Write-Verbose -Msg $MSG
-					$msgToWrite += "[VERBOSE]`t$Msg"
-				}
-				else { $writeToFile = $False }
-			}
-		}
+            "Success" { 
+                Write-Host $MSG.ToString() -ForegroundColor Green
+                $msgToWrite += "[SUCCESS]`t$Msg"
+            }
+            "Warning" {
+                Write-Host $MSG.ToString() -ForegroundColor Yellow
+                $msgToWrite += "[WARNING]`t$Msg"
+            }
+            "Error" {
+                Write-Host $MSG.ToString() -ForegroundColor Red
+                $msgToWrite += "[ERROR]`t$Msg"
+            }
+            "Debug" { 
+                if ($InDebug -or $InVerbose) {
+                    Write-Debug $MSG
+                    $msgToWrite += "[DEBUG]`t$Msg"
+                }
+                else { $writeToFile = $False }
+            }
+            "Verbose" { 
+                if ($InVerbose) {
+                    Write-Verbose -Msg $MSG
+                    $msgToWrite += "[VERBOSE]`t$Msg"
+                }
+                else { $writeToFile = $False }
+            }
+        }
 
-		If($writeToFile) { $msgToWrite | Out-File -Append -FilePath $LogFile }
-		If ($Footer) { 
-			"=======================================" | Out-File -Append -FilePath $LogFile 
-			Write-Host "=======================================" -ForegroundColor Magenta
-		}
-	}
-	catch{
-		Throw $(New-Object System.Exception ("Cannot write message"),$_.Exception)
-	}
+        If ($writeToFile) { $msgToWrite | Out-File -Append -FilePath $LogFile }
+        If ($Footer) { 
+            "=======================================" | Out-File -Append -FilePath $LogFile 
+            Write-Host "=======================================" -ForegroundColor Magenta
+        }
+    }
+    catch {
+        Throw $(New-Object System.Exception ("Cannot write message"), $_.Exception)
+    }
 }
 
 Function Get-DomainDnsName {
@@ -872,7 +865,7 @@ Function Activate-Platform {
 }
 
 Function Create-PSMSafe {
-   <#
+    <#
     .SYNOPSIS
     Creates a new PSM Safe with correct permissions
     .DESCRIPTION
@@ -885,20 +878,20 @@ Function Create-PSMSafe {
     Safe Name to create
     #>
     param (
-    [Parameter(Mandatory = $true)]
-    $pvwaAddress,
-    [Parameter(Mandatory = $true)]
-    $pvwaToken,
-    [Parameter(Mandatory = $false)]
-    $safe,
-    [Parameter(Mandatory = $false)]
-    $description = "Safe for PSM Users"  
+        [Parameter(Mandatory = $true)]
+        $pvwaAddress,
+        [Parameter(Mandatory = $true)]
+        $pvwaToken,
+        [Parameter(Mandatory = $false)]
+        $safe,
+        [Parameter(Mandatory = $false)]
+        $description = "Safe for PSM Users"  
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Safes"
         $body = @{ 
-            safeName     = $safe
-            description  = $description
+            safeName    = $safe
+            description = $description
         }
         $json = $body | ConvertTo-Json    
         $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
@@ -1139,9 +1132,9 @@ function Test-CredentialFormat {
     param (
         [Parameter(Mandatory = $true)][PSCredential]$Credential
     )
-        if ($Credential.username -match '[/\\\[\]:;|=,+*?<>@"]') {
-            return $false
-        }
+    if ($Credential.username -match '[/\\\[\]:;|=,+*?<>@"]') {
+        return $false
+    }
     return $true
 }
 
@@ -1328,7 +1321,8 @@ if ($safeStatus -eq $false) {
     $CreateSafeResult = Create-PSMSafe -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $Safe
     If ($CreateSafeResult) {
         Write-LogMessage -type Verbose "Successfully created safe $safe"
-    } else {
+    }
+    else {
         Write-LogMessage -Type Error -MSG "Creating PSM safe $Safe failed. Please resolve the error and try again."
         exit 1
     }
