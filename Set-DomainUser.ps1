@@ -1127,7 +1127,7 @@ Function New-SafePermissions {
         $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
     }
     catch {
-        Write-LogMessage -Type Error $_.ErrorDetails.Message
+        Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
     }
 }
 
@@ -1333,8 +1333,8 @@ if ($PvwaTokenTestResponse.ErrorCode -eq "Success") {
     $pvwaToken = $pvwaTokenResponse.Response
 }
 else {
-    Write-LogMessage -Type Error "PVWA Token validation failed. Result:"
-    Write-LogMessage -Type Error $PvwaTokenTestResponse.Response
+    Write-LogMessage -Type Error -MSG "PVWA Token validation failed. Result:"
+    Write-LogMessage -Type Error -MSG $PvwaTokenTestResponse.Response
     exit 1
 }
 # Get platform info
