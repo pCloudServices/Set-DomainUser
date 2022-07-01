@@ -1205,16 +1205,6 @@ else {
 }
 
 # Test if PSM credentials were entered in the right format
-$PSMUsers = @(
-    @{
-        UserType = "PSMConnect"
-        CredentialObject = $psmConnectCredentials
-    },
-    @{
-        UserType = "PSMAdminConnect"
-        CredentialObject = $psmAdminCredentials
-    }
-)
 
 Write-LogMessage -Type Verbose -MSG "Verifying PSM credentials were provided in expected format"
 If (!(Test-CredentialFormat -Credential $psmConnectCredentials)) {
