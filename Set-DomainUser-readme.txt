@@ -26,7 +26,7 @@ Optional parameters:
 	pvwaAddress - Please enter the full PVWA Address e.g.: https://tenantname.privilegecloud.cyberark.cloud. Set-DomainUser will attempt to detect this automatically.
 	domain - Please enter the DNS name of the domain of the created accounts e.g.: "lab.net". Set-DomainUser will attempt to detect this automatically.
 	NETBIOS - Please enter the NETBIOS name of the domain of the created accounts e.g.: "LAB". Set-DomainUser will attempt to detect this automatically.
-	safe - Please enter the safe to save the domain accounts in, By default it is PSM
+	safe - Please enter the safe to save the domain accounts in, By default it is PSM, if safe does not exists it will create it.
 	PlatformName - The name of the platform which will be used by the PSM accounts. Default is "WIN-DOM-PSMADMIN-ACCOUNT"
 	TestPsmConnectCredentials - Test whether the PSMConnect user details provided are correct before onboarding. The script will exit if this test fails.
 	TestPsmAdminCredentials - Test whether the PSMAdminConnect user details provided are correct before onboarding. The script will exit if this test fails.
@@ -35,4 +35,4 @@ Optional parameters:
 	PSMAdminConnectAccountName - The Account Name of the object in the vault which will contain the PSMConnect user details. Default "PSMAdminConnect"
 	DoNotHarden - Skip running the PSMHardening.ps1 script to speed up execution if step has already been completed.
 	DoNotConfigureAppLocker - Skip running the PSMConfigureAppLocker.ps1 script to speed up execution if step has already been completed.
-
+	Verbose - Show detailed progress messages to assist with troubleshooting
