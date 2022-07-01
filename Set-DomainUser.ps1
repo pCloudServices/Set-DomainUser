@@ -1317,7 +1317,8 @@ if ($pvwaTokenResponse.ErrorCode -ne "Success") {
     # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.
     # The error message shown could be from a JSON response, e.g. wrong password, or a connection error.
     Write-LogMessage -Type Error "Logon to PVWA failed. Result:"
-    Write-LogMessage -Type Error $pvwaTokenResponse.ErrorMessage
+    Write-LogMessage -Type Error ("Error code: {0}" -f $pvwaTokenResponse.ErrorCode)
+    Write-LogMessage -Type Error ("Error message: {0}" -f $pvwaTokenResponse.ErrorMessage)
     exit 1
 }
 if (!($pvwaTokenResponse.Response -match "[0-9a-zA-Z]{200,256}")) {
