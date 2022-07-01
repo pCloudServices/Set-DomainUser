@@ -1350,6 +1350,8 @@ If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
         else {
             Write-LogMessage -Type Error -MSG $AddAdminUserTSShadowPermissionResult.Error
             Write-LogMessage -Type Error -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
+            Write-LogMessage -Type Error -MSG "Please see the following article for information on resolving this error"
+            Write-LogMessage -Type Error -MSG "https://cyberark-customers.force.com/s/article/PSM-Unable-to-run-WMIC-command"
             Write-LogMessage -Type Error -MSG "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
             exit 1
         }
