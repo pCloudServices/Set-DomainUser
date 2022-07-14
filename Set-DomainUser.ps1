@@ -451,10 +451,12 @@ Function Test-PvwaToken {
     $Headers = @{
         Authorization = $Token
     }
-    $testToken = Invoke-RestMethod -Method 'Get' -Uri $url -Headers $Headers -ContentType 'application/json'
-    if ($testToken) {
-        return @{
-            ErrorCode = "Success"
+    try {
+        $testToken = Invoke-RestMethod -Method 'Get' -Uri $url -Headers $Headers -ContentType 'application/json'
+        if ($testToken) {
+            return @{
+                ErrorCode = "Success"
+            }
         }
     }
     Catch {
