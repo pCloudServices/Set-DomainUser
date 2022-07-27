@@ -13,7 +13,7 @@ The domain of the domain user account(s).
 The NETBIOS for the domain user account(s).
 .PARAMETER safe
 The safe in which to store PSM user credentials
-.PARAMETER tinaCreds
+.PARAMETER InstallUser
 Tenant Administrator/InstallerUser credentials
 .PARAMETER psmConnectCredentials
 PSMConnect domain user credentials
@@ -56,7 +56,8 @@ param(
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Please enter the account credentials for the tenant administrator or installer user.")]
-    [PSCredential]$tinaCreds,
+    [Alias("tinaCreds")]
+    [PSCredential]$InstallUser,
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Please enter the account credentials for the PSMConnect domain account.")]
@@ -397,7 +398,7 @@ Function New-ConnectionToRestAPI {
     (Get-ServiceInstallPath $<ServiceName>) -ne $NULL
     .PARAMETER pvwaAddress
     The PVWA server address (e.g. https://subdomain.privilegecloud.cyberark.cloud)
-    .PARAMETER tinaCreds
+    .PARAMETER InstallUser
     Tenant administrator/installer user credentials
     #>
     # Get PVWA and login informatioN
@@ -405,14 +406,14 @@ Function New-ConnectionToRestAPI {
         [Parameter(Mandatory = $true)]
         $pvwaAddress,
         [Parameter(Mandatory = $true)]
-        [PSCredential]$tinaCreds
+        [PSCredential]$InstallUser
     )
     $url = $pvwaAddress + "/PasswordVault/API/auth/Cyberark/Logon"
-    $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($tinaCreds.Password)
+    $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($InstallUser.Password)
 
     $headerPass = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
     $body = @{
-        username = $tinaCreds.UserName
+        username = $InstallUser.UserName
         password = $headerPass
     }
     $json = $body | ConvertTo-Json
@@ -1210,15 +1211,15 @@ else {
     $UM = $false
 }
 
-if ($null -eq $tinaCreds) {
+if ($null -eq $InstallUser) {
     if ($UM) {
         $TinaUserType = "installer user"
     }
     else {
         $TinaUserType = "tenant administrator"
     }
-    $tinaCreds = Get-Credential -Message ("Please enter {0} credentials" -f $TinaUserType)
-    if (!($tinaCreds)) {
+    $InstallUser = Get-Credential -Message ("Please enter {0} credentials" -f $TinaUserType)
+    if (!($InstallUser)) {
         Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
         exit 1
     }
@@ -1313,7 +1314,7 @@ $DoHardening = !$DoNotHarden
 $DoConfigureAppLocker = !$DoNotConfigureAppLocker
 
 Write-Host "Logging in to CyberArk"
-$pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $pvwaAddress -tinaCreds $tinaCreds
+$pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $pvwaAddress -InstallUser $InstallUser
 if ($pvwaTokenResponse.ErrorCode -ne "Success") {
     # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
     # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.

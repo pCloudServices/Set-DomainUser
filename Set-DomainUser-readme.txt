@@ -18,7 +18,7 @@ The script is provided in a zip file containing:
 ================================================
 
 Mandatory parameters (Set-DomainUser will prompt for these if not provided on the command line):
-	tinaCreds - Credentials of user used to run APIs. Required permissions: Add accounts to PSM safe, manage platforms
+	InstallUser - Credentials of user used to run APIs. Required permissions: Add accounts to PSM safe, manage platforms
 	psmConnectCredentials - Please enter the account credentials for the PSMConnect domain account.
 	psmAdminCredentials - Please enter the account credentials for the PSMAdminConnect domain account.
 
