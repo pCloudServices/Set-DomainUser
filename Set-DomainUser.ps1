@@ -1277,15 +1277,20 @@ if (!($NETBIOS)) {
     $NETBIOS = Get-DomainNetbiosName
 }
 If ($DomainNameAutodetected) {
-    Write-LogMessage -Type Info -MSG "Detected the following domain names. Is this correct?"
-    Write-LogMessage -Type Info -MSG "DNS name:     $domain"
-    Write-LogMessage -Type Info -MSG "NETBIOS name: $NETBIOS"
-    $DomainConfirmPrompt = Read-Host "Please type 'y' for yes or 'n' for no."
-    if ($DomainConfirmPrompt -ne 'y') {
+    $DomainInfo = ("Detected the following domain names:`n  DNS name:     {0}`n  NETBIOS name: {1}`nIs this correct?" -f $domain, $NETBIOS)
+    
+    $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
+    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes","Confirm the domain details are correct"))
+    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No","Exit the script so correct domain details can be provided"))
+    
+    $DomainPromptSelection = $Host.UI.PromptForChoice("", $DomainInfo, $PromptOptions, 1)
+    If ($DomainPromptSelection -eq 0) {
+        Write-LogMessage -Type Info "Domain details confirmed"
+    }
+    Else {
         Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct domain DNS and NETBIOS names on the command line."
         exit 1
     }
-    Write-LogMessage -Type Info "Domain details confirmed"
 }
 
 # Test PSM credentials
