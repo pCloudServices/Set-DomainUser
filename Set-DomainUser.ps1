@@ -1501,9 +1501,11 @@ $Tasks += "Restart Server"
 foreach ($Task in $Tasks) {
     Write-LogMessage -Type Info " - $Task"
 }
-Write-LogMessage -Type Info -MSG " - Provide CyberArk support with the following required details for updating the backend:"
-Write-LogMessage -Type Info -MSG ("     Portal address: {0}" -f $pvwaAddress)
-Write-LogMessage -Type Info -MSG ("     PSM Server ID: {0}" -f $PSMServerId)
-Write-LogMessage -Type Info -MSG ("     PSM Safe: {0}" -f $Safe)
-Write-LogMessage -Type Info -MSG ("     PSMConnect Account Name: {0}" -f $PSMConnectAccountName)
-Write-LogMessage -Type Info -MSG ("     PSMAdminConnect Account Name: {0}" -f $PSMAdminConnectAccountName)
+Write-LogMessage -Type Info -MSG (" - Update the PSM Server configuration:")
+Write-LogMessage -Type Info -MSG ("   - Log in to Privilege Cloud as an administrative user")
+Write-LogMessage -Type Info -MSG ("   - Go to Administration -> Configuration Options")
+Write-LogMessage -Type Info -MSG ("   - Expand Privileged Session Management -> Configured PSM Servers -> {0}" -f $PSMServerId)
+Write-LogMessage -Type Info -MSG ("   - Configure the following:")
+Write-LogMessage -Type Info -MSG ("       Safe: {0}" -f $Safe)
+Write-LogMessage -Type Info -MSG ("       Object: {0}" -f $PSMConnectAccountName)
+Write-LogMessage -Type Info -MSG ("       AdminObject: {0}" -f $PSMAdminConnectAccountName)
