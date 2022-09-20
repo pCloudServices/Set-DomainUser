@@ -706,9 +706,9 @@ Function Add-AdminUserToTS {
     )
     $username = "{0}\{1}" -f $NETBIOS, $Credentials.username
     try {
-        $RDPPermissionSetting = Get-WmiObject -Class "Win32_TSPermissionsSetting" -Namespace "root\CIMV2\terminalservices" | Where-Object TerminalName -eq "RDP-Tcp"
-        return $RDPPermissionSetting.AddAccount($username, 0)
-
+        $CimInstance = Get-CimInstance -Namespace root/cimv2/terminalservices -Query "SELECT * FROM Win32_TSPermissionsSetting WHERE TerminalName = 'RDP-Tcp'"
+        $result = $CimInstance | Invoke-CimMethod -MethodName AddAccount -Arguments @{AccountName = "$username"; PermissionPreSet = 0}
+        return $result
     }
     catch {
         return @{
@@ -737,8 +737,9 @@ Function Add-AdminUserTSShadowPermission {
     )
     $username = "{0}\{1}" -f $NETBIOS, $Credentials.username
     try {
-        $RDPPermissionUserSetting = Get-WmiObject -Class "Win32_TSAccount" -Namespace "root\CIMV2\terminalservices" | Where-Object TerminalName -eq "RDP-Tcp" | Where-Object AccountName -eq $username
-        return $RDPPermissionUserSetting.ModifyPermissions(4, $true)
+        $CimInstance = Get-CimInstance -Namespace root/cimv2/terminalservices -Query "SELECT * FROM Win32_TSAccount WHERE TerminalName = 'RDP-Tcp'" | Where-Object AccountName -eq $username
+        $result = $CimInstance | Invoke-CimMethod -MethodName ModifyPermissions -Arguments @{PermissionMask = 4; Allow = $true}
+        return $result
     }
     catch {
         return @{
