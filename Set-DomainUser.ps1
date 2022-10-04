@@ -1198,7 +1198,9 @@ if ($null -eq $psmAdminCredentials) {
     }
 }
 
-$REGKEY_PSMSERVICE = "Cyber-Ark Privileged Session Manager"
+$PsmServiceNames = "Cyber-Ark Privileged Session Manager","CyberArk Privileged Session Manager"
+$PsmService = Get-Service | Where-Object Name -in $PsmServiceNames
+$REGKEY_PSMSERVICE = $PsmService.Name
 $psmRootInstallLocation = ($(Get-ServiceInstallPath $REGKEY_PSMSERVICE)).Replace("CAPSM.exe", "").Replace('"', "").Trim()
 
 If (Check-UM -psmRootInstallLocation $psmRootInstallLocation) {
