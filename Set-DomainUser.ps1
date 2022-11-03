@@ -522,6 +522,8 @@ Function Update-PSMConfig {
     PSM Connect User name
     .PARAMETER PsmAdminUsername
     PSM Admin Connect user name
+    .PARAMETER PSMAdminConnectAccountName
+    PSM Admin Connect account name
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -531,7 +533,9 @@ Function Update-PSMConfig {
         [Parameter(Mandatory = $true)]
         $PsmConnectUsername,
         [Parameter(Mandatory = $true)]
-        $PsmAdminUsername
+        $PsmAdminUsername,
+        [Parameter(Mandatory = $true)]
+        $PSMAdminConnectAccountName
     )
     try {
         #PSMHardening
@@ -560,7 +564,7 @@ Function Update-PSMConfig {
 
         $psmBasicPSMContent = Get-Content -Path $psmRootInstallLocation\basic_psm.ini
 
-        $psmBasicPSMAdminLine = 'PSMServerAdminId="PSMAdminConnect"'
+        $psmBasicPSMAdminLine = "PSMServerAdminId=`"$PSMAdminConnectAccountName`""
         $newBasicPSMContent = $psmBasicPSMContent -replace 'PSMServerAdminId=".+$', $psmBasicPSMAdminLine
 
         $newBasicPSMContent | Set-Content -Path "$psmRootInstallLocation\test_basic_psm.ini"
@@ -1425,7 +1429,7 @@ Stop-Service $REGKEY_PSMSERVICE
 Write-LogMessage -Type Verbose -MSG "Backing up PSM configuration files and scripts"
 Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupSuffix $BackupSuffix
 Write-LogMessage -Type Verbose -MSG "Updating PSM configuration files and scripts"
-Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $domain -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
+Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $domain -PSMAdminConnectAccountName $PSMAdminConnectAccountName -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
 #TODO: Update Basic_ini
 Write-LogMessage -Type Verbose -MSG "Adding PSMAdminConnect user to Terminal Services configuration"
 # Adding PSMAdminConnect user to Terminal Services configuration
