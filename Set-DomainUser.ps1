@@ -707,7 +707,7 @@ Function Add-AdminUserToTS {
     $username = "{0}\{1}" -f $NETBIOS, $Credentials.username
     try {
         $CimInstance = Get-CimInstance -Namespace root/cimv2/terminalservices -Query "SELECT * FROM Win32_TSPermissionsSetting WHERE TerminalName = 'RDP-Tcp'"
-        $result = $CimInstance | Invoke-CimMethod -MethodName AddAccount -Arguments @{AccountName = "$username"; PermissionPreSet = 0}
+        $result = $CimInstance | Invoke-CimMethod -MethodName AddAccount -Arguments @{AccountName = "$username"; PermissionPreSet = 0 }
         return $result
     }
     catch {
@@ -738,7 +738,7 @@ Function Add-AdminUserTSShadowPermission {
     $username = "{0}\{1}" -f $NETBIOS, $Credentials.username
     try {
         $CimInstance = Get-CimInstance -Namespace root/cimv2/terminalservices -Query "SELECT * FROM Win32_TSAccount WHERE TerminalName = 'RDP-Tcp'" | Where-Object AccountName -eq $username
-        $result = $CimInstance | Invoke-CimMethod -MethodName ModifyPermissions -Arguments @{PermissionMask = 4; Allow = $true}
+        $result = $CimInstance | Invoke-CimMethod -MethodName ModifyPermissions -Arguments @{PermissionMask = 4; Allow = $true }
         return $result
     }
     catch {
@@ -1198,7 +1198,7 @@ if ($null -eq $psmAdminCredentials) {
     }
 }
 
-$PsmServiceNames = "Cyber-Ark Privileged Session Manager","CyberArk Privileged Session Manager"
+$PsmServiceNames = "Cyber-Ark Privileged Session Manager", "CyberArk Privileged Session Manager"
 $PsmService = Get-Service | Where-Object Name -in $PsmServiceNames
 $REGKEY_PSMSERVICE = $PsmService.Name
 $psmRootInstallLocation = ($(Get-ServiceInstallPath $REGKEY_PSMSERVICE)).Replace("CAPSM.exe", "").Replace('"', "").Trim()
@@ -1279,8 +1279,8 @@ If ($DomainNameAutodetected) {
     $DomainInfo = ("Detected the following domain names:`n  DNS name:     {0}`n  NETBIOS name: {1}`nIs this correct?" -f $domain, $NETBIOS)
     
     $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
-    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes","Confirm the domain details are correct"))
-    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No","Exit the script so correct domain details can be provided"))
+    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the domain details are correct"))
+    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct domain details can be provided"))
     
     $DomainPromptSelection = $Host.UI.PromptForChoice("", $DomainInfo, $PromptOptions, 1)
     If ($DomainPromptSelection -eq 0) {
