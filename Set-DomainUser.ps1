@@ -35,6 +35,8 @@ The Account Name for the object in the vault which will contain the PSMAdminConn
 Skip running the PSMHardening.ps1 script to speed up execution if step has already been completed.
 .PARAMETER DoNotConfigureAppLocker
 Skip running the PSMConfigureAppLocker.ps1 script to speed up execution if step has already been completed.
+.PARAMETER LocalConfigurationOnly
+Do not onboard accounts in Privilege Cloud. Use on subsequent servers after first run.
 #>
 
 
@@ -99,7 +101,10 @@ param(
     [switch]$DoNotHarden,
     [Parameter(
         Mandatory = $false)]
-    [switch]$DoNotConfigureAppLocker
+    [switch]$DoNotConfigureAppLocker,
+    [Parameter(
+        Mandatory = $false)]
+    [switch]$LocalConfigurationOnly
 )
 
 #Functions
@@ -1214,21 +1219,6 @@ else {
     $UM = $false
 }
 
-if ($null -eq $InstallUser) {
-    if ($UM) {
-        $TinaUserType = "installer user"
-    }
-    else {
-        $TinaUserType = "tenant administrator"
-    }
-    $InstallUser = Get-Credential -Message ("Please enter {0} credentials" -f $TinaUserType)
-    if (!($InstallUser)) {
-        Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
-        exit 1
-    }
-}
-
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $BackupSuffix = (Get-Date).ToString('yyyMMdd-HHmmss')
 $DomainNameAutodetected = $false
@@ -1321,106 +1311,125 @@ if ($TestPsmAdminCredentials) {
 $DoHardening = !$DoNotHarden
 $DoConfigureAppLocker = !$DoNotConfigureAppLocker
 
-Write-Host "Logging in to CyberArk"
-$pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $pvwaAddress -InstallUser $InstallUser
-if ($pvwaTokenResponse.ErrorCode -ne "Success") {
-    # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
-    # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.
-    # The error message shown could be from a JSON response, e.g. wrong password, or a connection error.
-    Write-LogMessage -Type Error "Logon to PVWA failed. Result:"
-    Write-LogMessage -Type Error ("Error code: {0}" -f $pvwaTokenResponse.ErrorCode)
-    Write-LogMessage -Type Error ("Error message: {0}" -f $pvwaTokenResponse.ErrorMessage)
-    exit 1
-}
-if (!($pvwaTokenResponse.Response -match "[0-9a-zA-Z]{200,256}")) {
-    # If we get here, it means we got a 200 response from the server, but the data it returned was not a valid token.
-    # In this case, we display the response we got from the server to aid troubleshooting.
-    Write-LogMessage -Type Error "Response from server was not a valid token:"
-    Write-LogMessage -Type Error $pvwaTokenResponse.Response
-    exit 1
-}
-# If we get here, the token was retrieved successfully and looks valid. We'll still test it though.
-$PvwaTokenTestResponse = Test-PvwaToken -Token $pvwaTokenResponse.Response -pvwaAddress $pvwaAddress
-if ($PvwaTokenTestResponse.ErrorCode -eq "Success") {
-    $pvwaToken = $pvwaTokenResponse.Response
-}
-else {
-    Write-LogMessage -Type Error -MSG "PVWA Token validation failed. Result:"
-    Write-LogMessage -Type Error -MSG $PvwaTokenTestResponse.Response
-    exit 1
-}
-# Get platform info
-Write-LogMessage -Type Verbose -MSG "Checking current platform status"
-$platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
-if ($platformStatus -eq $false) {
-    # function returns false if platform does not exist
-    # Creating Platform
-    Write-LogMessage -Type Verbose -MSG "Creating new platform"
-    Duplicate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -CurrentPlatformId "7" -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
-    $Tasks += ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
-    # Get platform info again so we can ensure it's activated
-    $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
-}
-else {
-    Write-LogMessage -Type Warning -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
-    $Tasks += ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
-}
-if ($platformStatus.Active -eq $false) {
-    Write-LogMessage -Type Verbose -MSG "Platform is deactivated. Activating."
-    Activate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -Platform $platformStatus.Id
-}
-Write-LogMessage -Type Verbose -MSG "Checking current safe status"
-$safeStatus = Get-SafeStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -SafeName $Safe
-if ($safeStatus -eq $false) {
-    # function returns false if safe does not exist
-    Write-LogMessage -Type Verbose -MSG "Safe $Safe does not exist. Creating the safe now"
-    $CreateSafeResult = Create-PSMSafe -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $Safe
-    If ($CreateSafeResult) {
-        Write-LogMessage -type Verbose "Successfully created safe $safe"
+If ($LocalConfigurationOnly -ne $true) {
+    if ($null -eq $InstallUser) {
+        if ($UM) {
+            $TinaUserType = "installer user"
+        }
+        else {
+            $TinaUserType = "tenant administrator"
+        }
+        $InstallUser = Get-Credential -Message ("Please enter {0} credentials" -f $TinaUserType)
+        if (!($InstallUser)) {
+            Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
+            exit 1
+        }
+    }
+    
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+    Write-Host "Logging in to CyberArk"
+    $pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $pvwaAddress -InstallUser $InstallUser
+    if ($pvwaTokenResponse.ErrorCode -ne "Success") {
+        # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
+        # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.
+        # The error message shown could be from a JSON response, e.g. wrong password, or a connection error.
+        Write-LogMessage -Type Error "Logon to PVWA failed. Result:"
+        Write-LogMessage -Type Error ("Error code: {0}" -f $pvwaTokenResponse.ErrorCode)
+        Write-LogMessage -Type Error ("Error message: {0}" -f $pvwaTokenResponse.ErrorMessage)
+        exit 1
+    }
+    if (!($pvwaTokenResponse.Response -match "[0-9a-zA-Z]{200,256}")) {
+        # If we get here, it means we got a 200 response from the server, but the data it returned was not a valid token.
+        # In this case, we display the response we got from the server to aid troubleshooting.
+        Write-LogMessage -Type Error "Response from server was not a valid token:"
+        Write-LogMessage -Type Error $pvwaTokenResponse.Response
+        exit 1
+    }
+    # If we get here, the token was retrieved successfully and looks valid. We'll still test it though.
+    $PvwaTokenTestResponse = Test-PvwaToken -Token $pvwaTokenResponse.Response -pvwaAddress $pvwaAddress
+    if ($PvwaTokenTestResponse.ErrorCode -eq "Success") {
+        $pvwaToken = $pvwaTokenResponse.Response
     }
     else {
-        Write-LogMessage -Type Error -MSG "Creating PSM safe $Safe failed. Please resolve the error and try again."
+        Write-LogMessage -Type Error -MSG "PVWA Token validation failed. Result:"
+        Write-LogMessage -Type Error -MSG $PvwaTokenTestResponse.Response
+        exit 1
+    }
+    # Get platform info
+    Write-LogMessage -Type Verbose -MSG "Checking current platform status"
+    $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
+    if ($platformStatus -eq $false) {
+        # function returns false if platform does not exist
+        # Creating Platform
+        Write-LogMessage -Type Verbose -MSG "Creating new platform"
+        Duplicate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -CurrentPlatformId "7" -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
+        $Tasks += ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
+        # Get platform info again so we can ensure it's activated
+        $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
+    }
+    else {
+        Write-LogMessage -Type Warning -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
+        $Tasks += ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
+    }
+    if ($platformStatus.Active -eq $false) {
+        Write-LogMessage -Type Verbose -MSG "Platform is deactivated. Activating."
+        Activate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -Platform $platformStatus.Id
+    }
+    Write-LogMessage -Type Verbose -MSG "Checking current safe status"
+    $safeStatus = Get-SafeStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -SafeName $Safe
+    if ($safeStatus -eq $false) {
+        # function returns false if safe does not exist
+        Write-LogMessage -Type Verbose -MSG "Safe $Safe does not exist. Creating the safe now"
+        $CreateSafeResult = Create-PSMSafe -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $Safe
+        If ($CreateSafeResult) {
+            Write-LogMessage -type Verbose "Successfully created safe $safe"
+        }
+        else {
+            Write-LogMessage -Type Error -MSG "Creating PSM safe $Safe failed. Please resolve the error and try again."
+            exit 1
+        }
+    }
+    If (!($safeStatus.managingCpm)) {
+        # Safe exists but no CPM assigned
+        Write-LogMessage -Type Warning -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
+        $Tasks += ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
+    }
+    # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
+    If ($UM) {
+        Write-LogMessage -Type Verbose -MSG "Granting administrators access to PSM safe"
+        New-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe
+    }
+    # Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
+    Write-LogMessage -Type Verbose -MSG "Onboarding PSMConnect Account"
+    $OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $domain -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
+    If ($OnboardResult.name) {
+        Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
+    }
+    ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
+        Write-LogMessage -Type Warning -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
+        $Tasks += "Verify that the $PSMConnectAccountName object in $safe safe contains correct PSMConnect user details"
+    }
+    Else {
+        Write-LogMessage -Type Error -MSG "Error onboarding account: {0}" -f $OnboardResult
+        exit 1
+    }
+    # Creating PSMAdminConnect
+    Write-LogMessage -Type Verbose -MSG "Onboarding PSMAdminConnect Account"
+    $OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $domain -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
+    If ($OnboardResult.name) {
+        Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
+    }
+    ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
+        Write-LogMessage -Type Warning -MSG "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
+        $Tasks += "Verify that the $PSMAdminConnectAccountName object in $safe safe contains correct PSMAdminConnect user details"
+    }
+    Else {
+        Write-LogMessage -Type Error -MSG "Error onboarding account: {0}" -f $OnboardResult
         exit 1
     }
 }
-If (!($safeStatus.managingCpm)) {
-    # Safe exists but no CPM assigned
-    Write-LogMessage -Type Warning -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
-    $Tasks += ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
-}
-# Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
-If ($UM) {
-    Write-LogMessage -Type Verbose -MSG "Granting administrators access to PSM safe"
-    New-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe
-}
-# Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
-Write-LogMessage -Type Verbose -MSG "Onboarding PSMConnect Account"
-$OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $domain -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
-If ($OnboardResult.name) {
-    Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
-}
-ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
-    Write-LogMessage -Type Warning -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
-    $Tasks += "Verify that the $PSMConnectAccountName object in $safe safe contains correct PSMConnect user details"
-}
-Else {
-    Write-LogMessage -Type Error -MSG "Error onboarding account: {0}" -f $OnboardResult
-    exit 1
-}
-# Creating PSMAdminConnect
-Write-LogMessage -Type Verbose -MSG "Onboarding PSMAdminConnect Account"
-$OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $domain -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
-If ($OnboardResult.name) {
-    Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
-}
-ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
-    Write-LogMessage -Type Warning -MSG "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
-    $Tasks += "Verify that the $PSMAdminConnectAccountName object in $safe safe contains correct PSMAdminConnect user details"
-}
-Else {
-    Write-LogMessage -Type Error -MSG "Error onboarding account: {0}" -f $OnboardResult
-    exit 1
-}
+
 Write-LogMessage -Type Info -MSG "Performing local configuration and restarting service"
 
 $PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
