@@ -1404,7 +1404,7 @@ ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
     $Tasks += "Verify that the $PSMConnectAccountName object in $safe safe contains correct PSMConnect user details"
 }
 Else {
-    Write-LogMessage -Type Error -MSG "Error onboarding account: {0}" -f $OnboardResult
+    Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
     exit 1
 }
 # Creating PSMAdminConnect
@@ -1418,7 +1418,7 @@ ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
     $Tasks += "Verify that the $PSMAdminConnectAccountName object in $safe safe contains correct PSMAdminConnect user details"
 }
 Else {
-    Write-LogMessage -Type Error -MSG "Error onboarding account: {0}" -f $OnboardResult
+    Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
     exit 1
 }
 Write-LogMessage -Type Info -MSG "Performing local configuration and restarting service"
