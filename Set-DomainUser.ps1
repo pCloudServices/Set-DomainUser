@@ -1180,6 +1180,16 @@ function Test-CredentialFormat {
     return $true
 }
 
+function Test-PasswordCharactersValid {
+    param (
+        [Parameter(Mandatory = $true)][PSCredential]$Credential
+    )
+    if ($Credential.GetNetworkCredential().Password -match "^[A-Za-z0-9~!@#$%^&*_\-+=`|\(){}[\]:;`"'<>,.?\/]{3,}$") {
+        return $true
+    }
+    return $false
+}
+
 #Running Set-DomainUser script
 
 $global:InVerbose = $PSBoundParameters.Verbose.IsPresent
@@ -1192,12 +1202,37 @@ if ($null -eq $psmConnectCredentials) {
         Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
         exit 1
     }
+    Write-LogMessage -Type Verbose -MSG "Verifying PSM credentials were provided in expected format"
+    If (!(Test-CredentialFormat -Credential $psmConnectCredentials)) {
+        Write-LogMessage -Type Error -MSG "Username provided for PSMConnect user contained invalid characters."
+        Write-LogMessage -Type Error -MSG "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain."
+        exit 1
+    }
+    # Test if credentials were entered in the right format
+    Write-LogMessage -Type Verbose -MSG "Verifying PSMConnect credentials were provided in expected format"
+    If (!(Test-PasswordCharactersValid -Credential $psmConnectCredentials)) {
+        Write-LogMessage -Type Error -MSG "Password provided for PSMConnect user contained invalid characters."
+        Write-LogMessage -Type Error -MSG "Please include only alphanumeric and the following characters: ~!@#$%^&*_\-+=|(){}[]:;`"'<>,.?/"
+        exit 1
+    }
 }
 
 if ($null -eq $psmAdminCredentials) {
     $psmAdminCredentials = Get-Credential -Message "Please enter PSMAdminConnect domain user credentials"
     if (!($psmAdminCredentials)) {
         Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
+        exit 1
+    }
+    # Test if credentials were entered in the right format
+    Write-LogMessage -Type Verbose -MSG "Verifying PSMAdminConnect credentials were provided in expected format"
+    If (!(Test-CredentialFormat -Credential $psmAdminCredentials)) {
+        Write-LogMessage -Type Error -MSG "Username provided for PSMAdminConnect user contained invalid characters."
+        Write-LogMessage -Type Error -MSG "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain."
+        exit 1
+    }
+    If (!(Test-PasswordCharactersValid -Credential $psmAdminCredentials)) {
+        Write-LogMessage -Type Error -MSG "Password provided for PSMAdminConnect user contained invalid characters."
+        Write-LogMessage -Type Error -MSG "Please include only alphanumeric and the following characters: ~!@#$%^&*_\-+=|(){}[]:;`"'<>,.?/"
         exit 1
     }
 }
@@ -1246,23 +1281,6 @@ if (IsUserDomainJoined) {
 else {
     Write-LogMessage -Type Error -MSG "Stopping. Please run this script as a domain user"
     exit 1
-}
-
-# Test if PSM credentials were entered in the right format
-
-Write-LogMessage -Type Verbose -MSG "Verifying PSM credentials were provided in expected format"
-If (!(Test-CredentialFormat -Credential $psmConnectCredentials)) {
-    Write-LogMessage -Type Error -MSG "Username provided for PSMConnect user contained invalid characters."
-    Write-LogMessage -Type Error -MSG "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain."
-    exit 1
-
-}
-
-If (!(Test-CredentialFormat -Credential $psmAdminCredentials)) {
-    Write-LogMessage -Type Error -MSG "Username provided for PSMAdminConnect user contained invalid characters."
-    Write-LogMessage -Type Error -MSG "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain."
-    exit 1
-
 }
 
 # Get-Variables
