@@ -1184,7 +1184,8 @@ function Test-PasswordCharactersValid {
     param (
         [Parameter(Mandatory = $true)][PSCredential]$Credential
     )
-    if ($Credential.GetNetworkCredential().Password -match "^[A-Za-z0-9~!@#$%^&*_\-+=`|\(){}[\]:;`"'<>,.?\/]{3,}$") {
+    if ($Credential.GetNetworkCredential().Password -match '^[A-Za-z0-9~!@#$%^&*_\-+=`|\(){}[\]:;"''<>,.?\\\/]{3,}$') {
+        # The above special characters without escape characters:      ~!@#$%^&*_ -+=`| (){}[ ]:;" '<>,.? \ /
         return $true
     }
     return $false
@@ -1269,7 +1270,7 @@ If (!(Test-CredentialFormat -Credential $psmConnectCredentials)) {
 
 If (!(Test-PasswordCharactersValid -Credential $psmConnectCredentials)) {
     Write-LogMessage -Type Error -MSG "Password provided for PSMConnect user contained invalid characters."
-    Write-LogMessage -Type Error -MSG "Please include only alphanumeric and the following characters: ~!@#$%^&*_\-+=|(){}[]:;`"'<>,.?/"
+    Write-LogMessage -Type Error -MSG 'Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
     exit 1
 }
 
@@ -1282,7 +1283,7 @@ If (!(Test-CredentialFormat -Credential $psmAdminCredentials)) {
 
 If (!(Test-PasswordCharactersValid -Credential $psmAdminCredentials)) {
     Write-LogMessage -Type Error -MSG "Password provided for PSMAdminConnect user contained invalid characters."
-    Write-LogMessage -Type Error -MSG "Please include only alphanumeric and the following characters: ~!@#$%^&*_\-+=|(){}[]:;`"'<>,.?/"
+    Write-LogMessage -Type Error -MSG 'Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
     exit 1
 }
 
