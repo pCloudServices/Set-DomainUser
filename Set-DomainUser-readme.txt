@@ -35,4 +35,5 @@ Optional parameters:
 	PSMAdminConnectAccountName - The Account Name of the object in the vault which will contain the PSMConnect user details. Default "PSMAdminConnect"
 	DoNotHarden - Skip running the PSMHardening.ps1 script to speed up execution if step has already been completed.
 	DoNotConfigureAppLocker - Skip running the PSMConfigureAppLocker.ps1 script to speed up execution if step has already been completed.
+	LocalConfigurationOnly - Do not create platforms or onboard accounts in Privilege Cloud. This may be used when running the script on additional servers after the first.
 	Verbose - Show detailed progress messages to assist with troubleshooting

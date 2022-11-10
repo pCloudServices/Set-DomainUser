@@ -35,6 +35,8 @@ The Account Name for the object in the vault which will contain the PSMAdminConn
 Skip running the PSMHardening.ps1 script to speed up execution if step has already been completed.
 .PARAMETER DoNotConfigureAppLocker
 Skip running the PSMConfigureAppLocker.ps1 script to speed up execution if step has already been completed.
+.PARAMETER LocalConfigurationOnly
+Do not onboard accounts in Privilege Cloud. Use on subsequent servers after first run.
 #>
 
 
@@ -99,7 +101,10 @@ param(
     [switch]$DoNotHarden,
     [Parameter(
         Mandatory = $false)]
-    [switch]$DoNotConfigureAppLocker
+    [switch]$DoNotConfigureAppLocker,
+    [Parameter(
+        Mandatory = $false)]
+    [switch]$LocalConfigurationOnly
 )
 
 #Functions
@@ -522,6 +527,8 @@ Function Update-PSMConfig {
     PSM Connect User name
     .PARAMETER PsmAdminUsername
     PSM Admin Connect user name
+    .PARAMETER PSMAdminConnectAccountName
+    PSM Admin Connect account name
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -531,7 +538,9 @@ Function Update-PSMConfig {
         [Parameter(Mandatory = $true)]
         $PsmConnectUsername,
         [Parameter(Mandatory = $true)]
-        $PsmAdminUsername
+        $PsmAdminUsername,
+        [Parameter(Mandatory = $true)]
+        $PSMAdminConnectAccountName
     )
     try {
         #PSMHardening
@@ -560,7 +569,7 @@ Function Update-PSMConfig {
 
         $psmBasicPSMContent = Get-Content -Path $psmRootInstallLocation\basic_psm.ini
 
-        $psmBasicPSMAdminLine = 'PSMServerAdminId="PSMAdminConnect"'
+        $psmBasicPSMAdminLine = "PSMServerAdminId=`"$PSMAdminConnectAccountName`""
         $newBasicPSMContent = $psmBasicPSMContent -replace 'PSMServerAdminId=".+$', $psmBasicPSMAdminLine
 
         $newBasicPSMContent | Set-Content -Path "$psmRootInstallLocation\test_basic_psm.ini"
@@ -705,12 +714,10 @@ Function Add-AdminUserToTS {
         [PSCredential]$Credentials
     )
     $username = "{0}\{1}" -f $NETBIOS, $Credentials.username
-    #    $cmd1 = "wmic.exe /namespace:\\root\CIMV2\TerminalServices PATH Win32_TSPermissionsSetting WHERE (TerminalName=""RDP-Tcp"") CALL AddAccount ""$NETBIOS\$username"",0"
-    #    $cmd2 = "wmic.exe /namespace:\\root\cimv2\TerminalServices PATH Win32_TSAccount WHERE ""TerminalName='RDP-Tcp' AND AccountName='$NETBIOS\\$username'"" CALL ModifyPermissions TRUE,4"
     try {
-        $RDPPermissionSetting = Get-WmiObject -Class "Win32_TSPermissionsSetting" -Namespace "root\CIMV2\terminalservices" | Where-Object TerminalName -eq "RDP-Tcp"
-        return $RDPPermissionSetting.AddAccount($username, 0)
-
+        $CimInstance = Get-CimInstance -Namespace root/cimv2/terminalservices -Query "SELECT * FROM Win32_TSPermissionsSetting WHERE TerminalName = 'RDP-Tcp'"
+        $result = $CimInstance | Invoke-CimMethod -MethodName AddAccount -Arguments @{AccountName = "$username"; PermissionPreSet = 0 }
+        return $result
     }
     catch {
         return @{
@@ -738,11 +745,10 @@ Function Add-AdminUserTSShadowPermission {
         [PSCredential]$Credentials
     )
     $username = "{0}\{1}" -f $NETBIOS, $Credentials.username
-    #    $cmd1 = "wmic.exe /namespace:\\root\CIMV2\TerminalServices PATH Win32_TSPermissionsSetting WHERE (TerminalName=""RDP-Tcp"") CALL AddAccount ""$NETBIOS\$username"",0"
-    #    $cmd2 = "wmic.exe /namespace:\\root\cimv2\TerminalServices PATH Win32_TSAccount WHERE ""TerminalName='RDP-Tcp' AND AccountName='$NETBIOS\\$username'"" CALL ModifyPermissions TRUE,4"
     try {
-        $RDPPermissionUserSetting = Get-WmiObject -Class "Win32_TSAccount" -Namespace "root\CIMV2\terminalservices" | Where-Object TerminalName -eq "RDP-Tcp" | Where-Object AccountName -eq $username
-        return $RDPPermissionUserSetting.ModifyPermissions(4, $true)
+        $CimInstance = Get-CimInstance -Namespace root/cimv2/terminalservices -Query "SELECT * FROM Win32_TSAccount WHERE TerminalName = 'RDP-Tcp'" | Where-Object AccountName -eq $username
+        $result = $CimInstance | Invoke-CimMethod -MethodName ModifyPermissions -Arguments @{PermissionMask = 4; Allow = $true }
+        return $result
     }
     catch {
         return @{
@@ -1179,6 +1185,17 @@ function Test-CredentialFormat {
     return $true
 }
 
+function Test-PasswordCharactersValid {
+    param (
+        [Parameter(Mandatory = $true)][PSCredential]$Credential
+    )
+    if ($Credential.GetNetworkCredential().Password -match '^[A-Za-z0-9~!@#$%^&*_\-+=`|\(){}[\]:;"''<>,.?\\\/]{3,}$') {
+        # The above special characters without escape characters:      ~!@#$%^&*_ -+=`| (){}[ ]:;" '<>,.? \ /
+        return $true
+    }
+    return $false
+}
+
 #Running Set-DomainUser script
 
 $global:InVerbose = $PSBoundParameters.Verbose.IsPresent
@@ -1201,7 +1218,9 @@ if ($null -eq $psmAdminCredentials) {
     }
 }
 
-$REGKEY_PSMSERVICE = "Cyber-Ark Privileged Session Manager"
+$PsmServiceNames = "Cyber-Ark Privileged Session Manager", "CyberArk Privileged Session Manager"
+$PsmService = Get-Service | Where-Object Name -in $PsmServiceNames
+$REGKEY_PSMSERVICE = $PsmService.Name
 $psmRootInstallLocation = ($(Get-ServiceInstallPath $REGKEY_PSMSERVICE)).Replace("CAPSM.exe", "").Replace('"', "").Trim()
 
 If (Check-UM -psmRootInstallLocation $psmRootInstallLocation) {
@@ -1211,21 +1230,6 @@ else {
     $UM = $false
 }
 
-if ($null -eq $InstallUser) {
-    if ($UM) {
-        $TinaUserType = "installer user"
-    }
-    else {
-        $TinaUserType = "tenant administrator"
-    }
-    $InstallUser = Get-Credential -Message ("Please enter {0} credentials" -f $TinaUserType)
-    if (!($InstallUser)) {
-        Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
-        exit 1
-    }
-}
-
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $BackupSuffix = (Get-Date).ToString('yyyMMdd-HHmmss')
 $DomainNameAutodetected = $false
@@ -1252,15 +1256,27 @@ If (!(Test-CredentialFormat -Credential $psmConnectCredentials)) {
     Write-LogMessage -Type Error -MSG "Username provided for PSMConnect user contained invalid characters."
     Write-LogMessage -Type Error -MSG "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain."
     exit 1
-
 }
+
+If (!(Test-PasswordCharactersValid -Credential $psmConnectCredentials)) {
+    Write-LogMessage -Type Error -MSG "Password provided for PSMConnect user contained invalid characters."
+    Write-LogMessage -Type Error -MSG 'Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
+    exit 1
+}
+
 
 If (!(Test-CredentialFormat -Credential $psmAdminCredentials)) {
     Write-LogMessage -Type Error -MSG "Username provided for PSMAdminConnect user contained invalid characters."
     Write-LogMessage -Type Error -MSG "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain."
     exit 1
-
 }
+
+If (!(Test-PasswordCharactersValid -Credential $psmAdminCredentials)) {
+    Write-LogMessage -Type Error -MSG "Password provided for PSMAdminConnect user contained invalid characters."
+    Write-LogMessage -Type Error -MSG 'Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
+    exit 1
+}
+
 
 # Get-Variables
 if (!($pvwaAddress)) {
@@ -1277,15 +1293,20 @@ if (!($NETBIOS)) {
     $NETBIOS = Get-DomainNetbiosName
 }
 If ($DomainNameAutodetected) {
-    Write-LogMessage -Type Info -MSG "Detected the following domain names. Is this correct?"
-    Write-LogMessage -Type Info -MSG "DNS name:     $domain"
-    Write-LogMessage -Type Info -MSG "NETBIOS name: $NETBIOS"
-    $DomainConfirmPrompt = Read-Host "Please type 'y' for yes or 'n' for no."
-    if ($DomainConfirmPrompt -ne 'y') {
+    $DomainInfo = ("Detected the following domain names:`n  DNS name:     {0}`n  NETBIOS name: {1}`nIs this correct?" -f $domain, $NETBIOS)
+    
+    $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
+    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the domain details are correct"))
+    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct domain details can be provided"))
+    
+    $DomainPromptSelection = $Host.UI.PromptForChoice("", $DomainInfo, $PromptOptions, 1)
+    If ($DomainPromptSelection -eq 0) {
+        Write-LogMessage -Type Info "Domain details confirmed"
+    }
+    Else {
         Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct domain DNS and NETBIOS names on the command line."
         exit 1
     }
-    Write-LogMessage -Type Info "Domain details confirmed"
 }
 
 # Test PSM credentials
@@ -1313,105 +1334,123 @@ if ($TestPsmAdminCredentials) {
 $DoHardening = !$DoNotHarden
 $DoConfigureAppLocker = !$DoNotConfigureAppLocker
 
-Write-Host "Logging in to CyberArk"
-$pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $pvwaAddress -InstallUser $InstallUser
-if ($pvwaTokenResponse.ErrorCode -ne "Success") {
-    # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
-    # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.
-    # The error message shown could be from a JSON response, e.g. wrong password, or a connection error.
-    Write-LogMessage -Type Error "Logon to PVWA failed. Result:"
-    Write-LogMessage -Type Error ("Error code: {0}" -f $pvwaTokenResponse.ErrorCode)
-    Write-LogMessage -Type Error ("Error message: {0}" -f $pvwaTokenResponse.ErrorMessage)
-    exit 1
-}
-if (!($pvwaTokenResponse.Response -match "[0-9a-zA-Z]{200,256}")) {
-    # If we get here, it means we got a 200 response from the server, but the data it returned was not a valid token.
-    # In this case, we display the response we got from the server to aid troubleshooting.
-    Write-LogMessage -Type Error "Response from server was not a valid token:"
-    Write-LogMessage -Type Error $pvwaTokenResponse.Response
-    exit 1
-}
-# If we get here, the token was retrieved successfully and looks valid. We'll still test it though.
-$PvwaTokenTestResponse = Test-PvwaToken -Token $pvwaTokenResponse.Response -pvwaAddress $pvwaAddress
-if ($PvwaTokenTestResponse.ErrorCode -eq "Success") {
-    $pvwaToken = $pvwaTokenResponse.Response
-}
-else {
-    Write-LogMessage -Type Error -MSG "PVWA Token validation failed. Result:"
-    Write-LogMessage -Type Error -MSG $PvwaTokenTestResponse.Response
-    exit 1
-}
-# Get platform info
-Write-LogMessage -Type Verbose -MSG "Checking current platform status"
-$platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
-if ($platformStatus -eq $false) {
-    # function returns false if platform does not exist
-    # Creating Platform
-    Write-LogMessage -Type Verbose -MSG "Creating new platform"
-    Duplicate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -CurrentPlatformId "7" -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
-    $Tasks += ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
-    # Get platform info again so we can ensure it's activated
-    $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
-}
-else {
-    Write-LogMessage -Type Warning -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
-    $Tasks += ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
-}
-if ($platformStatus.Active -eq $false) {
-    Write-LogMessage -Type Verbose -MSG "Platform is deactivated. Activating."
-    Activate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -Platform $platformStatus.Id
-}
-Write-LogMessage -Type Verbose -MSG "Checking current safe status"
-$safeStatus = Get-SafeStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -SafeName $Safe
-if ($safeStatus -eq $false) {
-    # function returns false if safe does not exist
-    Write-LogMessage -Type Verbose -MSG "Safe $Safe does not exist. Creating the safe now"
-    $CreateSafeResult = Create-PSMSafe -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $Safe
-    If ($CreateSafeResult) {
-        Write-LogMessage -type Verbose "Successfully created safe $safe"
+If ($LocalConfigurationOnly -ne $true) {
+    if ($null -eq $InstallUser) {
+        if ($UM) {
+            $TinaUserType = "installer user"
+        }
+        else {
+            $TinaUserType = "tenant administrator"
+        }
+        $InstallUser = Get-Credential -Message ("Please enter {0} credentials" -f $TinaUserType)
+        if (!($InstallUser)) {
+            Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
+            exit 1
+        }
     }
-    else {
-        Write-LogMessage -Type Error -MSG "Creating PSM safe $Safe failed. Please resolve the error and try again."
+    
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    
+    Write-Host "Logging in to CyberArk"
+    $pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $pvwaAddress -InstallUser $InstallUser
+    if ($pvwaTokenResponse.ErrorCode -ne "Success") {
+        # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
+        # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.
+        # The error message shown could be from a JSON response, e.g. wrong password, or a connection error.
+        Write-LogMessage -Type Error "Logon to PVWA failed. Result:"
+        Write-LogMessage -Type Error ("Error code: {0}" -f $pvwaTokenResponse.ErrorCode)
+        Write-LogMessage -Type Error ("Error message: {0}" -f $pvwaTokenResponse.ErrorMessage)
         exit 1
     }
-}
-If (!($safeStatus.managingCpm)) {
-    # Safe exists but no CPM assigned
-    Write-LogMessage -Type Warning -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
-    $Tasks += ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
-}
-# Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
-If ($UM) {
-    Write-LogMessage -Type Verbose -MSG "Granting administrators access to PSM safe"
-    New-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe
-}
-# Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
-Write-LogMessage -Type Verbose -MSG "Onboarding PSMConnect Account"
-$OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $domain -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
-If ($OnboardResult.name) {
-    Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
-}
-ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
-    Write-LogMessage -Type Warning -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
-    $Tasks += "Verify that the $PSMConnectAccountName object in $safe safe contains correct PSMConnect user details"
-}
-Else {
-    Write-LogMessage -Type Error -MSG "Error onboarding account: {0}" -f $OnboardResult
-    exit 1
-}
-# Creating PSMAdminConnect
-Write-LogMessage -Type Verbose -MSG "Onboarding PSMAdminConnect Account"
-$OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $domain -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
-If ($OnboardResult.name) {
-    Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
-}
-ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
-    Write-LogMessage -Type Warning -MSG "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
-    $Tasks += "Verify that the $PSMAdminConnectAccountName object in $safe safe contains correct PSMAdminConnect user details"
-}
-Else {
-    Write-LogMessage -Type Error -MSG "Error onboarding account: {0}" -f $OnboardResult
-    exit 1
+    if (!($pvwaTokenResponse.Response -match "[0-9a-zA-Z]{200,256}")) {
+        # If we get here, it means we got a 200 response from the server, but the data it returned was not a valid token.
+        # In this case, we display the response we got from the server to aid troubleshooting.
+        Write-LogMessage -Type Error "Response from server was not a valid token:"
+        Write-LogMessage -Type Error $pvwaTokenResponse.Response
+        exit 1
+    }
+    # If we get here, the token was retrieved successfully and looks valid. We'll still test it though.
+    $PvwaTokenTestResponse = Test-PvwaToken -Token $pvwaTokenResponse.Response -pvwaAddress $pvwaAddress
+    if ($PvwaTokenTestResponse.ErrorCode -eq "Success") {
+        $pvwaToken = $pvwaTokenResponse.Response
+    }
+    else {
+        Write-LogMessage -Type Error -MSG "PVWA Token validation failed. Result:"
+        Write-LogMessage -Type Error -MSG $PvwaTokenTestResponse.Response
+        exit 1
+    }
+    # Get platform info
+    Write-LogMessage -Type Verbose -MSG "Checking current platform status"
+    $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
+    if ($platformStatus -eq $false) {
+        # function returns false if platform does not exist
+        # Creating Platform
+        Write-LogMessage -Type Verbose -MSG "Creating new platform"
+        Duplicate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -CurrentPlatformId "7" -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
+        $Tasks += ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
+        # Get platform info again so we can ensure it's activated
+        $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
+    }
+    else {
+        Write-LogMessage -Type Warning -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
+        $Tasks += ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
+    }
+    if ($platformStatus.Active -eq $false) {
+        Write-LogMessage -Type Verbose -MSG "Platform is deactivated. Activating."
+        Activate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -Platform $platformStatus.Id
+    }
+    Write-LogMessage -Type Verbose -MSG "Checking current safe status"
+    $safeStatus = Get-SafeStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -SafeName $Safe
+    if ($safeStatus -eq $false) {
+        # function returns false if safe does not exist
+        Write-LogMessage -Type Verbose -MSG "Safe $Safe does not exist. Creating the safe now"
+        $CreateSafeResult = Create-PSMSafe -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $Safe
+        If ($CreateSafeResult) {
+            Write-LogMessage -type Verbose "Successfully created safe $safe"
+        }
+        else {
+            Write-LogMessage -Type Error -MSG "Creating PSM safe $Safe failed. Please resolve the error and try again."
+            exit 1
+        }
+    }
+    If (!($safeStatus.managingCpm)) {
+        # Safe exists but no CPM assigned
+        Write-LogMessage -Type Warning -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
+        $Tasks += ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
+    }
+    # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
+    If ($UM) {
+        Write-LogMessage -Type Verbose -MSG "Granting administrators access to PSM safe"
+        New-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe
+    }
+    # Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
+    Write-LogMessage -Type Verbose -MSG "Onboarding PSMConnect Account"
+    $OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $domain -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
+    If ($OnboardResult.name) {
+        Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
+    }
+    ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
+        Write-LogMessage -Type Warning -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
+        $Tasks += "Verify that the $PSMConnectAccountName object in $safe safe contains correct PSMConnect user details"
+    }
+    Else {
+        Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
+        exit 1
+    }
+    # Creating PSMAdminConnect
+    Write-LogMessage -Type Verbose -MSG "Onboarding PSMAdminConnect Account"
+    $OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $domain -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
+    If ($OnboardResult.name) {
+        Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
+    }
+    ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
+        Write-LogMessage -Type Warning -MSG "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
+        $Tasks += "Verify that the $PSMAdminConnectAccountName object in $safe safe contains correct PSMAdminConnect user details"
+    }
+    Else {
+        Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
+        exit 1
+    }
 }
 Write-LogMessage -Type Info -MSG "Performing local configuration and restarting service"
 
@@ -1421,7 +1460,7 @@ Stop-Service $REGKEY_PSMSERVICE
 Write-LogMessage -Type Verbose -MSG "Backing up PSM configuration files and scripts"
 Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupSuffix $BackupSuffix
 Write-LogMessage -Type Verbose -MSG "Updating PSM configuration files and scripts"
-Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $domain -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
+Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $domain -PSMAdminConnectAccountName $PSMAdminConnectAccountName -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
 #TODO: Update Basic_ini
 Write-LogMessage -Type Verbose -MSG "Adding PSMAdminConnect user to Terminal Services configuration"
 # Adding PSMAdminConnect user to Terminal Services configuration
@@ -1501,185 +1540,12 @@ $Tasks += "Restart Server"
 foreach ($Task in $Tasks) {
     Write-LogMessage -Type Info " - $Task"
 }
-Write-LogMessage -Type Info -MSG " - Provide CyberArk support with the following required details for updating the backend:"
-Write-LogMessage -Type Info -MSG ("     Portal address: {0}" -f $pvwaAddress)
-Write-LogMessage -Type Info -MSG ("     PSM Server ID: {0}" -f $PSMServerId)
-Write-LogMessage -Type Info -MSG ("     PSM Safe: {0}" -f $Safe)
-Write-LogMessage -Type Info -MSG ("     PSMConnect Account Name: {0}" -f $PSMConnectAccountName)
-Write-LogMessage -Type Info -MSG ("     PSMAdminConnect Account Name: {0}" -f $PSMAdminConnectAccountName)
-
-# SIG # Begin signature block
-# MIIgTgYJKoZIhvcNAQcCoIIgPzCCIDsCAQExDzANBglghkgBZQMEAgEFADB5Bgor
-# BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCFMdNCrRsiCYaY
-# NE/0WKhG2rZ3uu3FEZ7Qkyi6/lYx4aCCDl8wggboMIIE0KADAgECAhB3vQ4Ft1kL
-# th1HYVMeP3XtMA0GCSqGSIb3DQEBCwUAMFMxCzAJBgNVBAYTAkJFMRkwFwYDVQQK
-# ExBHbG9iYWxTaWduIG52LXNhMSkwJwYDVQQDEyBHbG9iYWxTaWduIENvZGUgU2ln
-# bmluZyBSb290IFI0NTAeFw0yMDA3MjgwMDAwMDBaFw0zMDA3MjgwMDAwMDBaMFwx
-# CzAJBgNVBAYTAkJFMRkwFwYDVQQKExBHbG9iYWxTaWduIG52LXNhMTIwMAYDVQQD
-# EylHbG9iYWxTaWduIEdDQyBSNDUgRVYgQ29kZVNpZ25pbmcgQ0EgMjAyMDCCAiIw
-# DQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAMsg75ceuQEyQ6BbqYoj/SBerjgS
-# i8os1P9B2BpV1BlTt/2jF+d6OVzA984Ro/ml7QH6tbqT76+T3PjisxlMg7BKRFAE
-# eIQQaqTWlpCOgfh8qy+1o1cz0lh7lA5tD6WRJiqzg09ysYp7ZJLQ8LRVX5YLEeWa
-# tSyyEc8lG31RK5gfSaNf+BOeNbgDAtqkEy+FSu/EL3AOwdTMMxLsvUCV0xHK5s2z
-# BZzIU+tS13hMUQGSgt4T8weOdLqEgJ/SpBUO6K/r94n233Hw0b6nskEzIHXMsdXt
-# HQcZxOsmd/KrbReTSam35sOQnMa47MzJe5pexcUkk2NvfhCLYc+YVaMkoog28vmf
-# vpMusgafJsAMAVYS4bKKnw4e3JiLLs/a4ok0ph8moKiueG3soYgVPMLq7rfYrWGl
-# r3A2onmO3A1zwPHkLKuU7FgGOTZI1jta6CLOdA6vLPEV2tG0leis1Ult5a/dm2tj
-# IF2OfjuyQ9hiOpTlzbSYszcZJBJyc6sEsAnchebUIgTvQCodLm3HadNutwFsDeCX
-# pxbmJouI9wNEhl9iZ0y1pzeoVdwDNoxuz202JvEOj7A9ccDhMqeC5LYyAjIwfLWT
-# yCH9PIjmaWP47nXJi8Kr77o6/elev7YR8b7wPcoyPm593g9+m5XEEofnGrhO7izB
-# 36Fl6CSDySrC/blTAgMBAAGjggGtMIIBqTAOBgNVHQ8BAf8EBAMCAYYwEwYDVR0l
-# BAwwCgYIKwYBBQUHAwMwEgYDVR0TAQH/BAgwBgEB/wIBADAdBgNVHQ4EFgQUJZ3Q
-# /FkJhmPF7POxEztXHAOSNhEwHwYDVR0jBBgwFoAUHwC/RoAK/Hg5t6W0Q9lWULvO
-# ljswgZMGCCsGAQUFBwEBBIGGMIGDMDkGCCsGAQUFBzABhi1odHRwOi8vb2NzcC5n
-# bG9iYWxzaWduLmNvbS9jb2Rlc2lnbmluZ3Jvb3RyNDUwRgYIKwYBBQUHMAKGOmh0
-# dHA6Ly9zZWN1cmUuZ2xvYmFsc2lnbi5jb20vY2FjZXJ0L2NvZGVzaWduaW5ncm9v
-# dHI0NS5jcnQwQQYDVR0fBDowODA2oDSgMoYwaHR0cDovL2NybC5nbG9iYWxzaWdu
-# LmNvbS9jb2Rlc2lnbmluZ3Jvb3RyNDUuY3JsMFUGA1UdIAROMEwwQQYJKwYBBAGg
-# MgECMDQwMgYIKwYBBQUHAgEWJmh0dHBzOi8vd3d3Lmdsb2JhbHNpZ24uY29tL3Jl
-# cG9zaXRvcnkvMAcGBWeBDAEDMA0GCSqGSIb3DQEBCwUAA4ICAQAldaAJyTm6t6E5
-# iS8Yn6vW6x1L6JR8DQdomxyd73G2F2prAk+zP4ZFh8xlm0zjWAYCImbVYQLFY4/U
-# ovG2XiULd5bpzXFAM4gp7O7zom28TbU+BkvJczPKCBQtPUzosLp1pnQtpFg6bBNJ
-# +KUVChSWhbFqaDQlQq+WVvQQ+iR98StywRbha+vmqZjHPlr00Bid/XSXhndGKj0j
-# fShziq7vKxuav2xTpxSePIdxwF6OyPvTKpIz6ldNXgdeysEYrIEtGiH6bs+XYXvf
-# cXo6ymP31TBENzL+u0OF3Lr8psozGSt3bdvLBfB+X3Uuora/Nao2Y8nOZNm9/Lws
-# 80lWAMgSK8YnuzevV+/Ezx4pxPTiLc4qYc9X7fUKQOL1GNYe6ZAvytOHX5OKSBoR
-# HeU3hZ8uZmKaXoFOlaxVV0PcU4slfjxhD4oLuvU/pteO9wRWXiG7n9dqcYC/lt5y
-# A9jYIivzJxZPOOhRQAyuku++PX33gMZMNleElaeEFUgwDlInCI2Oor0ixxnJpsoO
-# qHo222q6YV8RJJWk4o5o7hmpSZle0LQ0vdb5QMcQlzFSOTUpEYck08T7qWPLd0jV
-# +mL8JOAEek7Q5G7ezp44UCb0IXFl1wkl1MkHAHq4x/N36MXU4lXQ0x72f1LiSY25
-# EXIMiEQmM2YBRN/kMw4h3mKJSAfa9TCCB28wggVXoAMCAQICDHBNxPwWOpXgXVV8
-# DDANBgkqhkiG9w0BAQsFADBcMQswCQYDVQQGEwJCRTEZMBcGA1UEChMQR2xvYmFs
-# U2lnbiBudi1zYTEyMDAGA1UEAxMpR2xvYmFsU2lnbiBHQ0MgUjQ1IEVWIENvZGVT
-# aWduaW5nIENBIDIwMjAwHhcNMjIwMjE1MTMzODM1WhcNMjUwMjE1MTMzODM1WjCB
-# 1DEdMBsGA1UEDwwUUHJpdmF0ZSBPcmdhbml6YXRpb24xEjAQBgNVBAUTCTUxMjI5
-# MTY0MjETMBEGCysGAQQBgjc8AgEDEwJJTDELMAkGA1UEBhMCSUwxEDAOBgNVBAgT
-# B0NlbnRyYWwxFDASBgNVBAcTC1BldGFoIFRpa3ZhMRMwEQYDVQQJEwo5IEhhcHNh
-# Z290MR8wHQYDVQQKExZDeWJlckFyayBTb2Z0d2FyZSBMdGQuMR8wHQYDVQQDExZD
-# eWJlckFyayBTb2Z0d2FyZSBMdGQuMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIIC
-# CgKCAgEA8rPX6yAVM64+/qMQEttWp7FdAvq9UfgxBrW+R0NtuXhKnjV05zmIL6zi
-# AS0TlNrQqu5ypmuagOWzYKDtIcWEDm6AuSK+QeZprW69c0XYRdIf8X/xNUawXLGe
-# 5LG6ngs2uHGtch9lt2GLMRWILnKviS6l6F06HOAow+aIDcNGOukddypveFrqMEbP
-# 7YKMekkB6c2/whdHzDQiW6V0K82Xp9XUexrbdnFpKWXLfQwkzjcG1xmSiHQUpkSH
-# 4w2AzBzcs+Nidoon5FEIFXGS2b1CcCA8+Po5Dg7//vn2thirXtOqaC+fjP1pUG7m
-# vrZQMg3lTHQA/LTL78R3UzzNb4I9dc8yualcYK155hRU3vZJ3/UtktAvDPC/ewoW
-# thebG77NuKU8YI6l2lMg7jMFZ1//brICD0RGqhmPMK9MrB3elSuMLaO566Ihdrlp
-# zmj4BRDCfPuH0QfwkrejsikGEMo0lErfHSjL3NaiE0PPoC4NW7nc6Wh4Va4e3VFF
-# Z9zdnoTsCKJqk4s13MxBbjdLIkCcfknMSxAloOF9h6IhzWOylSROAy/TZfGL5kzQ
-# qxzcIhdXLWHHWdbz4DD3qxYc6g1G3ZwgFPWf7VbKQU3FsAxgiJvmKPVeOfIN4iYT
-# V4toilRR8KX/IaA1NMrN9EiA//ZhN3HONS/s6AxjjHJTR29GOQkCAwEAAaOCAbYw
-# ggGyMA4GA1UdDwEB/wQEAwIHgDCBnwYIKwYBBQUHAQEEgZIwgY8wTAYIKwYBBQUH
-# MAKGQGh0dHA6Ly9zZWN1cmUuZ2xvYmFsc2lnbi5jb20vY2FjZXJ0L2dzZ2NjcjQ1
-# ZXZjb2Rlc2lnbmNhMjAyMC5jcnQwPwYIKwYBBQUHMAGGM2h0dHA6Ly9vY3NwLmds
-# b2JhbHNpZ24uY29tL2dzZ2NjcjQ1ZXZjb2Rlc2lnbmNhMjAyMDBVBgNVHSAETjBM
-# MEEGCSsGAQQBoDIBAjA0MDIGCCsGAQUFBwIBFiZodHRwczovL3d3dy5nbG9iYWxz
-# aWduLmNvbS9yZXBvc2l0b3J5LzAHBgVngQwBAzAJBgNVHRMEAjAAMEcGA1UdHwRA
-# MD4wPKA6oDiGNmh0dHA6Ly9jcmwuZ2xvYmFsc2lnbi5jb20vZ3NnY2NyNDVldmNv
-# ZGVzaWduY2EyMDIwLmNybDATBgNVHSUEDDAKBggrBgEFBQcDAzAfBgNVHSMEGDAW
-# gBQlndD8WQmGY8Xs87ETO1ccA5I2ETAdBgNVHQ4EFgQU0Vg7IAYAK18fI9dI1YKi
-# WA0D1bEwDQYJKoZIhvcNAQELBQADggIBAFOdA15mFwRIM54PIL/BDZq9RU9IO+YO
-# lAoAYTJHbiTY9ZqvA1isS6EtdYKJgdP/MyZoW7RZmcY5IDXvXFj70TWWvfdqW/Qc
-# MMHtSqhiRb4L92LtR4lS+hWM2fptECpl9BKH28LBZemdKS0jryBEqyAmuEoFJNDk
-# wxzQVKPksvapvmSYwPiBCtzPyHTRo5HnLBXpK/LUBJu8epAgKz6LoJjnrTIF4U8R
-# owrtUC0I6f4uj+sKYE0iV3/TzwsTJsp7MQShoILPr1/75fQjU/7Pl2fbM++uAFBC
-# sHQHYvar9KLslFPX4g+cDdtOHz5vId8QYZnhCduVgzUGvELmXXR1FYV7oJNnh3eY
-# Xc5gm7vSNKlZB8l7Ls6h8icBV2zQbojDiH0JOD//ph62qvnMp8ev9mvhvLXRCIxc
-# aU7CYI0gNVvg9LPi5j1/tswqBc9XAfHUG9ZYVxYCgvynEmnJ5TuEh6GesGRPbNIL
-# l418MFn4EPQUqxB51SMihIcyqu6+3qOlco8Dsy1y0gC0Hcx+unDZPsN8k+rhueN2
-# HXrPkAJ2bsEJd7adPy423FKbA7bRCOc6dWOFH1OGANfEG0Rjw9RfcsI84OkKpQ7R
-# XldpKIcWuaYMlfYzsl+P8dJru+KgA8Vh7GTVb5USzFGeMyOMtyr1/L2bIyRVSiLL
-# 8goMl4DTDOWeMYIRRTCCEUECAQEwbDBcMQswCQYDVQQGEwJCRTEZMBcGA1UEChMQ
-# R2xvYmFsU2lnbiBudi1zYTEyMDAGA1UEAxMpR2xvYmFsU2lnbiBHQ0MgUjQ1IEVW
-# IENvZGVTaWduaW5nIENBIDIwMjACDHBNxPwWOpXgXVV8DDANBglghkgBZQMEAgEF
-# AKB8MBAGCisGAQQBgjcCAQwxAjAAMBkGCSqGSIb3DQEJAzEMBgorBgEEAYI3AgEE
-# MBwGCisGAQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMC8GCSqGSIb3DQEJBDEiBCCE
-# E6fLL0jv6zobIwVlALecdb/HHpkMA4VngjGk6NstLjANBgkqhkiG9w0BAQEFAASC
-# AgBdgUiRIxMb5UII2xj5Je2W+mOOLmL9NZqQenTTJYcI/kCtHmoY4cqq9x3zGByg
-# C3lEozM9v7ljIFxzr6cKeH4JEyO6hg8Fd6ErshJTLe3q+c8RVhoxiieCL/kvkrhw
-# YumCMsmbIKncPgzdrNaxrMbEZcfwoow+93zC/U62/Zma4dH9jnZ91077a2wOU89i
-# H92KaFh6cL0PGkjz+o3IK2iC4ijhSmb0MVi2wKblxrCzj2GRYlRPoLojAfohf8AF
-# 7he2lhHwTeuYGsdJEAtgu4r3JJERYtd1Xpc4liih5lVCpIvseAmU0TCA/RT9AYLR
-# /9UTTH7aQKbqjm/u3yoJoK3u4qCCWiL67XjxsR/XFmuA7v99LMblcR76eprnNM9J
-# /yqn4XBCcMD5o6i8AeN4EBNaEH5IL1b4PNJPzBowhoCKzz85rPsO8tXemIHXsUxN
-# gazZWmFM26YZ5uQQem+dTGqVT+6ll5ucF2TvC2QQMZvKUdMEA+JOWw1Uya0CcoH/
-# OmiwtQyLg5JVsmlmYwMzDyj+leGxZU2fUYCOj3qNBtrx+F/YPkTkdV6qmzDfGW+A
-# 4jYL2QAPgQY9u0/jllOIy2TOhI3P4b5V7i0V7cQT3CR4vNlNaXFbHp5//b6GvM2N
-# Ebkj99yH7tbw+DlIJPEa1kB7VbnJ8pxyX88YiyfRQJx/TKGCDiwwgg4oBgorBgEE
-# AYI3AwMBMYIOGDCCDhQGCSqGSIb3DQEHAqCCDgUwgg4BAgEDMQ0wCwYJYIZIAWUD
-# BAIBMIH/BgsqhkiG9w0BCRABBKCB7wSB7DCB6QIBAQYLYIZIAYb4RQEHFwMwITAJ
-# BgUrDgMCGgUABBQujlVV0lA87rGdShA/3ndcBvHqEwIVAL0rYajDwWbu8mbRusKU
-# Tzzj7BNuGA8yMDIyMDcyNzEyMTk0N1owAwIBHqCBhqSBgzCBgDELMAkGA1UEBhMC
-# VVMxHTAbBgNVBAoTFFN5bWFudGVjIENvcnBvcmF0aW9uMR8wHQYDVQQLExZTeW1h
-# bnRlYyBUcnVzdCBOZXR3b3JrMTEwLwYDVQQDEyhTeW1hbnRlYyBTSEEyNTYgVGlt
-# ZVN0YW1waW5nIFNpZ25lciAtIEczoIIKizCCBTgwggQgoAMCAQICEHsFsdRJaFFE
-# 98mJ0pwZnRIwDQYJKoZIhvcNAQELBQAwgb0xCzAJBgNVBAYTAlVTMRcwFQYDVQQK
-# Ew5WZXJpU2lnbiwgSW5jLjEfMB0GA1UECxMWVmVyaVNpZ24gVHJ1c3QgTmV0d29y
-# azE6MDgGA1UECxMxKGMpIDIwMDggVmVyaVNpZ24sIEluYy4gLSBGb3IgYXV0aG9y
-# aXplZCB1c2Ugb25seTE4MDYGA1UEAxMvVmVyaVNpZ24gVW5pdmVyc2FsIFJvb3Qg
-# Q2VydGlmaWNhdGlvbiBBdXRob3JpdHkwHhcNMTYwMTEyMDAwMDAwWhcNMzEwMTEx
-# MjM1OTU5WjB3MQswCQYDVQQGEwJVUzEdMBsGA1UEChMUU3ltYW50ZWMgQ29ycG9y
-# YXRpb24xHzAdBgNVBAsTFlN5bWFudGVjIFRydXN0IE5ldHdvcmsxKDAmBgNVBAMT
-# H1N5bWFudGVjIFNIQTI1NiBUaW1lU3RhbXBpbmcgQ0EwggEiMA0GCSqGSIb3DQEB
-# AQUAA4IBDwAwggEKAoIBAQC7WZ1ZVU+djHJdGoGi61XzsAGtPHGsMo8Fa4aaJwAy
-# l2pNyWQUSym7wtkpuS7sY7Phzz8LVpD4Yht+66YH4t5/Xm1AONSRBudBfHkcy8ut
-# G7/YlZHz8O5s+K2WOS5/wSe4eDnFhKXt7a+Hjs6Nx23q0pi1Oh8eOZ3D9Jqo9ITh
-# xNF8ccYGKbQ/5IMNJsN7CD5N+Qq3M0n/yjvU9bKbS+GImRr1wOkzFNbfx4Dbke7+
-# vJJXcnf0zajM/gn1kze+lYhqxdz0sUvUzugJkV+1hHk1inisGTKPI8EyQRtZDqk+
-# scz51ivvt9jk1R1tETqS9pPJnONI7rtTDtQ2l4Z4xaE3AgMBAAGjggF3MIIBczAO
-# BgNVHQ8BAf8EBAMCAQYwEgYDVR0TAQH/BAgwBgEB/wIBADBmBgNVHSAEXzBdMFsG
-# C2CGSAGG+EUBBxcDMEwwIwYIKwYBBQUHAgEWF2h0dHBzOi8vZC5zeW1jYi5jb20v
-# Y3BzMCUGCCsGAQUFBwICMBkaF2h0dHBzOi8vZC5zeW1jYi5jb20vcnBhMC4GCCsG
-# AQUFBwEBBCIwIDAeBggrBgEFBQcwAYYSaHR0cDovL3Muc3ltY2QuY29tMDYGA1Ud
-# HwQvMC0wK6ApoCeGJWh0dHA6Ly9zLnN5bWNiLmNvbS91bml2ZXJzYWwtcm9vdC5j
-# cmwwEwYDVR0lBAwwCgYIKwYBBQUHAwgwKAYDVR0RBCEwH6QdMBsxGTAXBgNVBAMT
-# EFRpbWVTdGFtcC0yMDQ4LTMwHQYDVR0OBBYEFK9j1sqjToVy4Ke8QfMpojh/gHVi
-# MB8GA1UdIwQYMBaAFLZ3+mlIR59TEtXC6gcydgfRlwcZMA0GCSqGSIb3DQEBCwUA
-# A4IBAQB16rAt1TQZXDJF/g7h1E+meMFv1+rd3E/zociBiPenjxXmQCmt5l30otlW
-# ZIRxMCrdHmEXZiBWBpgZjV1x8viXvAn9HJFHyeLojQP7zJAv1gpsTjPs1rSTyEyQ
-# Y0g5QCHE3dZuiZg8tZiX6KkGtwnJj1NXQZAv4R5NTtzKEHhsQm7wtsX4YVxS9U72
-# a433Snq+8839A9fZ9gOoD+NT9wp17MZ1LqpmhQSZt/gGV+HGDvbor9rsmxgfqrnj
-# OgC/zoqUywHbnsc4uw9Sq9HjlANgCk2g/idtFDL8P5dA4b+ZidvkORS92uTTw+or
-# WrOVWFUEfcea7CMDjYUq0v+uqWGBMIIFSzCCBDOgAwIBAgIQe9Tlr7rMBz+hASME
-# IkFNEjANBgkqhkiG9w0BAQsFADB3MQswCQYDVQQGEwJVUzEdMBsGA1UEChMUU3lt
-# YW50ZWMgQ29ycG9yYXRpb24xHzAdBgNVBAsTFlN5bWFudGVjIFRydXN0IE5ldHdv
-# cmsxKDAmBgNVBAMTH1N5bWFudGVjIFNIQTI1NiBUaW1lU3RhbXBpbmcgQ0EwHhcN
-# MTcxMjIzMDAwMDAwWhcNMjkwMzIyMjM1OTU5WjCBgDELMAkGA1UEBhMCVVMxHTAb
-# BgNVBAoTFFN5bWFudGVjIENvcnBvcmF0aW9uMR8wHQYDVQQLExZTeW1hbnRlYyBU
-# cnVzdCBOZXR3b3JrMTEwLwYDVQQDEyhTeW1hbnRlYyBTSEEyNTYgVGltZVN0YW1w
-# aW5nIFNpZ25lciAtIEczMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA
-# rw6Kqvjcv2l7VBdxRwm9jTyB+HQVd2eQnP3eTgKeS3b25TY+ZdUkIG0w+d0dg+k/
-# J0ozTm0WiuSNQI0iqr6nCxvSB7Y8tRokKPgbclE9yAmIJgg6+fpDI3VHcAyzX1uP
-# CB1ySFdlTa8CPED39N0yOJM/5Sym81kjy4DeE035EMmqChhsVWFX0fECLMS1q/Js
-# I9KfDQ8ZbK2FYmn9ToXBilIxq1vYyXRS41dsIr9Vf2/KBqs/SrcidmXs7DbylpWB
-# Jiz9u5iqATjTryVAmwlT8ClXhVhe6oVIQSGH5d600yaye0BTWHmOUjEGTZQDRcTO
-# PAPstwDyOiLFtG/l77CKmwIDAQABo4IBxzCCAcMwDAYDVR0TAQH/BAIwADBmBgNV
-# HSAEXzBdMFsGC2CGSAGG+EUBBxcDMEwwIwYIKwYBBQUHAgEWF2h0dHBzOi8vZC5z
-# eW1jYi5jb20vY3BzMCUGCCsGAQUFBwICMBkaF2h0dHBzOi8vZC5zeW1jYi5jb20v
-# cnBhMEAGA1UdHwQ5MDcwNaAzoDGGL2h0dHA6Ly90cy1jcmwud3Muc3ltYW50ZWMu
-# Y29tL3NoYTI1Ni10c3MtY2EuY3JsMBYGA1UdJQEB/wQMMAoGCCsGAQUFBwMIMA4G
-# A1UdDwEB/wQEAwIHgDB3BggrBgEFBQcBAQRrMGkwKgYIKwYBBQUHMAGGHmh0dHA6
-# Ly90cy1vY3NwLndzLnN5bWFudGVjLmNvbTA7BggrBgEFBQcwAoYvaHR0cDovL3Rz
-# LWFpYS53cy5zeW1hbnRlYy5jb20vc2hhMjU2LXRzcy1jYS5jZXIwKAYDVR0RBCEw
-# H6QdMBsxGTAXBgNVBAMTEFRpbWVTdGFtcC0yMDQ4LTYwHQYDVR0OBBYEFKUTAamf
-# hcwbbhYeXzsxqnk2AHsdMB8GA1UdIwQYMBaAFK9j1sqjToVy4Ke8QfMpojh/gHVi
-# MA0GCSqGSIb3DQEBCwUAA4IBAQBGnq/wuKJfoplIz6gnSyHNsrmmcnBjL+NVKXs5
-# Rk7nfmUGWIu8V4qSDQjYELo2JPoKe/s702K/SpQV5oLbilRt/yj+Z89xP+YzCdmi
-# WRD0Hkr+Zcze1GvjUil1AEorpczLm+ipTfe0F1mSQcO3P4bm9sB/RDxGXBda46Q7
-# 1Wkm1SF94YBnfmKst04uFZrlnCOvWxHqcalB+Q15OKmhDc+0sdo+mnrHIsV0zd9H
-# CYbE/JElshuW6YUI6N3qdGBuYKVWeg3IRFjc5vlIFJ7lv94AvXexmBRyFCTfxxEs
-# HwA/w0sUxmcczB4Go5BfXFSLPuMzW4IPxbeGAk5xn+lmRT92MYICWjCCAlYCAQEw
-# gYswdzELMAkGA1UEBhMCVVMxHTAbBgNVBAoTFFN5bWFudGVjIENvcnBvcmF0aW9u
-# MR8wHQYDVQQLExZTeW1hbnRlYyBUcnVzdCBOZXR3b3JrMSgwJgYDVQQDEx9TeW1h
-# bnRlYyBTSEEyNTYgVGltZVN0YW1waW5nIENBAhB71OWvuswHP6EBIwQiQU0SMAsG
-# CWCGSAFlAwQCAaCBpDAaBgkqhkiG9w0BCQMxDQYLKoZIhvcNAQkQAQQwHAYJKoZI
-# hvcNAQkFMQ8XDTIyMDcyNzEyMTk0N1owLwYJKoZIhvcNAQkEMSIEIO06VnRZdLZu
-# QsTXPLPIyZqgs/XtSSRVXbKivAjO5XXqMDcGCyqGSIb3DQEJEAIvMSgwJjAkMCIE
-# IMR0znYAfQI5Tg2l5N58FMaA+eKCATz+9lPvXbcf32H4MAsGCSqGSIb3DQEBAQSC
-# AQCir/uw9S8hB5ilzcnslv7+mUwdo6+8mrgWw2xyjIRfK+GpXziS9V5i5x7vizTo
-# 4LMRhSGkhTpDUcJLr3TT7BUc4i8viKJxoe9XPXAHi7cs85onb23ox2pKZVdouSs7
-# 0g9lRvYvztu9mGvdmTyIQ6AccL8Ptvh/X/q18kDwelFzmpMHoGE4E8nnfyfd9o8E
-# tDmbrvApmjF0ciRdvRpTx4YZ8F0CWLVaHtKeVUcy2fmlzuv3DpM1sNCDMT6osqrA
-# 4LDGZnnwK82xUE3IkJTgJ2fyStGvO+da7po9txIZ4wY1Bw9gUx9DsAUTTjbnJpgY
-# UnVMDe0RD7TkhV5bsEgSt9dz
-# SIG # End signature block
+Write-LogMessage -Type Info -MSG (" - Update the PSM Server configuration:")
+Write-LogMessage -Type Info -MSG ("   - Log in to Privilege Cloud as an administrative user")
+Write-LogMessage -Type Info -MSG ("   - Go to Administration -> Configuration Options")
+Write-LogMessage -Type Info -MSG ("   - Expand Privileged Session Management -> Configured PSM Servers -> {0} -> " -f $PSMServerId)
+Write-LogMessage -Type Info -MSG ("       Connection Details -> Server")
+Write-LogMessage -Type Info -MSG ("   - Configure the following:")
+Write-LogMessage -Type Info -MSG ("       Safe: {0}" -f $Safe)
+Write-LogMessage -Type Info -MSG ("       Object: {0}" -f $PSMConnectAccountName)
+Write-LogMessage -Type Info -MSG ("       AdminObject: {0}" -f $PSMAdminConnectAccountName)
