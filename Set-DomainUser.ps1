@@ -19,10 +19,6 @@ Tenant Administrator/InstallerUser credentials
 PSMConnect domain user credentials
 .PARAMETER psmAdminCredentials
 PSMAdminConnect domain user credentials
-.PARAMETER TestPsmConnectCredentials
-Validate psmConnectCredentials domain user credentials
-.PARAMETER TestPsmAdminCredentials
-Validate PSMAdminConnect domain user credentials
 .PARAMETER IgnoreShadowPermissionErrors
 Ignore errors while granting PSMAdminConnect user shadow permissions
 .PARAMETER PlatformName
@@ -37,6 +33,8 @@ Skip running the PSMHardening.ps1 script to speed up execution if step has alrea
 Skip running the PSMConfigureAppLocker.ps1 script to speed up execution if step has already been completed.
 .PARAMETER LocalConfigurationOnly
 Do not onboard accounts in Privilege Cloud. Use on subsequent servers after first run.
+.PARAMETER SkipPSMUserTests
+Do not check the configuration of the PSM domain users for errors
 #>
 
 
@@ -74,14 +72,6 @@ param(
     [String]$safe = "PSM",
     [Parameter(
         Mandatory = $false,
-        HelpMessage = "Verify the provided PSMConnect credentials")]
-    [switch]$TestPsmConnectCredentials,
-    [Parameter(
-        Mandatory = $false,
-        HelpMessage = "Verify the provided PSMAdminConnect credentials")]
-    [switch]$TestPsmAdminCredentials,
-    [Parameter(
-        Mandatory = $false,
         HelpMessage = "Ignore errors while granting PSMAdminConnect user shadow permissions")]
     [switch]$IgnoreShadowPermissionErrors,
     [Parameter(
@@ -104,7 +94,10 @@ param(
     [switch]$DoNotConfigureAppLocker,
     [Parameter(
         Mandatory = $false)]
-    [switch]$LocalConfigurationOnly
+    [switch]$LocalConfigurationOnly,
+    [Parameter(
+        Mandatory = $false)]
+    [switch]$SkipPSMUserTests
 )
 
 #Functions
@@ -1199,6 +1192,47 @@ function Test-PasswordCharactersValid {
     return $false
 }
 
+
+
+function Get-UserDNFromSamAccountName {
+    param (
+        [Parameter(Mandatory = $True)]
+        [string]
+        $Username
+    )    
+    $Searcher = [adsisearcher]"samaccountname=$Username"
+    $Result = $Searcher.FindAll()
+    If ($Result) {
+        return $Result.Path
+    }
+    return $False
+}
+
+function Get-UserObjectFromDN {
+    param (
+        [Parameter(Mandatory = $True)]
+        [string]
+        $DistinguishedName
+    )
+    $UserObject = [adsi]"$DistinguishedName"
+    If ($UserObject) {
+        return $UserObject
+    }
+    return $False
+}
+
+function Get-UserProperty {
+    param (
+        [Parameter(Mandatory = $True)]
+        [string]
+        $UserObject,
+        [Parameter(Mandatory = $True)]
+        [string]
+        $Property
+    )
+    return $UserObject.InvokeGet("$Property")
+}
+
 #Running Set-DomainUser script
 
 $global:InVerbose = $PSBoundParameters.Verbose.IsPresent
@@ -1314,23 +1348,145 @@ If ($DomainNameAutodetected) {
     }
 }
 
-# Test PSM credentials
-if ($TestPsmConnectCredentials) {
+
+If (!($SkipPSMUserTests)) {
+    # Gather the information we'll be comparing
+    $PSMComponentsPath = $psmRootInstallLocation + "Components"
+    $PSMInitSessionPath = $PSMComponentsPath + "\PSMInitSession.exe"
+    
+    # Get PSMConnect user information
+    $UsersToCheck = @(
+        @{
+            UserType = "PSMConnect"
+            Username = $psmConnectCredentials.UserName
+        },
+        @{
+            UserType = "PSMAdminConnect"
+            Username = $psmAdminCredentials.UserName
+        }
+    )
+    $SettingsToCheck = @(
+        @{
+            UserType      = "All"
+            Name          = "TerminalServicesInitialProgram"
+            DisplayName   = "Initial Program"
+            ExpectedValue = $PSMInitSessionPath
+        },
+        @{
+            UserType      = "All"
+            Name          = "TerminalServicesWorkDirectory"
+            DisplayName   = "Working Directory"
+            ExpectedValue = $PSMComponentsPath
+        },
+        @{
+            UserType      = "All"
+            Name          = "ConnectClientDrivesAtLogon"
+            DisplayName   = "Connect client drives at logon"
+            ExpectedValue = 0
+        },
+        @{
+            UserType      = "All"
+            Name          = "ConnectClientPrintersAtLogon"
+            DisplayName   = "Connect client drives at logon"
+            ExpectedValue = 0
+        },
+        @{
+            UserType      = "All"
+            Name          = "DefaultToMainPrinter"
+            DisplayName   = "Default to main client printer"
+            ExpectedValue = 0
+        },
+        @{
+            UserType      = "All"
+            Name          = "EnableRemoteControl"
+            DisplayName   = "Enable remote control"
+            ExpectedValue = 2, 4
+        },
+        @{
+            UserType      = "All"
+            Name          = "MaxDisconnectionTime"
+            DisplayName   = "End a disconnected session"
+            ExpectedValue = 1
+        },
+        @{
+            UserType      = "All"
+            Name          = "ReconnectionAction"
+            DisplayName   = "Allow reconnection"
+            ExpectedValue = 1
+        }
+    )
+
+    $UserConfigurationErrors = @()
+    $UsersToCheck | ForEach-Object {
+        $UserType = $_.UserType
+        $Username = $_.Username
+        
+        # Initialise array containing issues
+        try {
+            $UserDN = Get-UserDNFromSamAccountName -Username $Username
+            If ($UserDN) {
+                $UserObject = Get-UserObjectFromDN $UserDN
+            }
+            else {
+                Write-LogMessage -type Error -MSG ("User {0} not found on domain {1}. Please ensure the user exists, or" -f $Username, $domain)
+                Write-LogMessage -type Error -MSG ("run this script with the -SkipPSMUserConfigureCheck option to skip")
+                Write-LogMessage -type Error -MSG ("this check.")
+            }
+        }
+        catch {
+            Write-LogMessage -type Error -MSG ("Failed to retrieve {0} user details from Active Directory." -f $UserType)
+            Write-LogMessage -type Error -MSG ("Please ensure the user exists and is configured correctly")
+            Write-LogMessage -type Error -MSG ("  and run this script again, or run the script with the ")
+            Write-LogMessage -type Error -MSG ("  -SkipPSMUserTests flag to skip this check.")
+            exit 1
+        }
+
+        $SettingsToCheck | ForEach-Object {
+            $SettingName = $_.Name
+            $SettingDisplayName = $_.DisplayName
+            $SettingExpectedValue = $_.ExpectedValue
+            $SettingCurrentValue = $UserObject.InvokeGet($SettingName)
+
+            If ($SettingCurrentValue -notin $SettingExpectedValue) {
+                $UserConfigurationErrors += [PSCustomObject]@{
+                    User        = $UserType
+                    SettingName = $SettingDisplayName
+                    Current     = $SettingCurrentValue
+                    Expected    = $SettingExpectedValue
+                }
+            }
+        }
+    }
+    
+    If ($UserConfigurationErrors) {
+        $UsersWithConfigurationErrors = $UserConfigurationErrors.User | Select-Object -Unique
+        $UsersWithConfigurationErrors | ForEach-Object {
+            $User = $_
+            Write-LogMessage -Type Error -MSG ("Configuration errors for {0}:" -f $User)
+            $UserConfigurationErrors | Where-Object User -eq $user | ForEach-Object {
+                Write-LogMessage -type Error -MSG ("Setting:        " + $_.SettingName)
+                Write-LogMessage -type Error -MSG ("Expected value: " + ($_.Expected -join " or "))
+                Write-LogMessage -type Error -MSG ("Current value:  " + $_.Current)
+                Write-LogMessage -type Error -MSG (" ")
+            }
+        }
+        Write-LogMessage -type Error -MSG "Please resolve the issues above or rerun this script with -SkipPSMUserTests to ignore these errors."
+        exit 1
+    }
+    
+    # Test PSM credentials
     if (ValidateCredentials -domain $domain -Credential $psmConnectCredentials) {
         Write-LogMessage -Type Verbose -MSG "PSMConnect user credentials validated"
     }
     else {
-        Write-LogMessage -Type Error -MSG "PSMConnect user validation failed. Please validate PSMConnect user name and password or remove -TestPsmConnectCredentials to skip this test"
+        Write-LogMessage -Type Error -MSG "PSMConnect user validation failed. Please validate PSMConnect user name and password or run script with -SkipPSMUserTests to skip this test"
         exit 1
     }
-}
-
-if ($TestPsmAdminCredentials) {
     if (ValidateCredentials -domain $domain -Credential $psmAdminCredentials) {
         Write-LogMessage -Type Verbose -MSG "PSMAdminConnect user credentials validated"
     }
     else {
-        Write-LogMessage -Type Error -MSG "PSMAdminConnect user validation failed. Please validate PSMConnect user name and password or remove -TestPsmAdminCredentials to skip this test."
+        Write-LogMessage -Type Error -MSG "PSMAdminConnect user validation failed. Please validate PSMAdminConnectuser name and password or run script with -SkipPSMUserTests to skip this test."
         exit 1
     }
 }
