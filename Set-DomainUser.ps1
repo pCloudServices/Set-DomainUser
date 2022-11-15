@@ -1185,8 +1185,9 @@ function Test-PasswordCharactersValid {
     param (
         [Parameter(Mandatory = $true)][PSCredential]$Credential
     )
-    if ($Credential.GetNetworkCredential().Password -match '^[A-Za-z0-9~!@#$%^&*_\-+=`|\(){}[\]:;"''<>,.?\\\/]{3,}$') {
+    if ($Credential.GetNetworkCredential().Password -match '^[A-Za-z0-9~!@#$%^&*_\-+=`|\(){}[\]:;"''<>,.?\\\/ ]+$') {
         # The above special characters without escape characters:      ~!@#$%^&*_ -+=`| (){}[ ]:;" '<>,.? \ /
+        # space character is also valid
         return $true
     }
     return $false
