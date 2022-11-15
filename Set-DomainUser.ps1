@@ -1175,6 +1175,9 @@ function Test-CredentialFormat {
     if ($Credential.username -match '[/\\\[\]:;|=,+*?<>@"]') {
         return $false
     }
+    if ($Credential.username.Length -gt 20) {
+        return $false
+    }
     return $true
 }
 
@@ -1185,9 +1188,6 @@ function Test-PasswordCharactersValid {
     if ($Credential.GetNetworkCredential().Password -match '^[A-Za-z0-9~!@#$%^&*_\-+=`|\(){}[\]:;"''<>,.?\\\/]{3,}$') {
         # The above special characters without escape characters:      ~!@#$%^&*_ -+=`| (){}[ ]:;" '<>,.? \ /
         return $true
-    }
-    if ($Credential.username.Length -gt 20) {
-        return $false
     }
     return $false
 }
