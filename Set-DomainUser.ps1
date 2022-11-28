@@ -1492,7 +1492,7 @@ If (!($SkipPSMUserTests)) {
         Write-LogMessage -Type Verbose -MSG "PSMAdminConnect user credentials validated"
     }
     else {
-        Write-LogMessage -Type Error -MSG "PSMAdminConnect user validation failed. Please validate PSMAdminConnectuser name and password or run script with -SkipPSMUserTests to skip this test."
+        Write-LogMessage -Type Error -MSG "PSMAdminConnect user validation failed. Please validate PSMAdminConnect user name and password or run script with -SkipPSMUserTests to skip this test."
         exit 1
     }
 }
