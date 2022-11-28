@@ -471,19 +471,24 @@ Function Backup-PSMConfig {
     Copies PSM config items to -backup.ps1
     .PARAMETER psmRootInstallLocation
     PSM root installation folder
-    .PARAMETER BackupSuffix
+    .PARAMETER BackupSubDirectory
     Append this string to the end of backup file names
     #>
     param (
         [Parameter(Mandatory = $true)]
         $psmRootInstallLocation,
         [Parameter(Mandatory = $true)]
-        [string]$BackupSuffix
+        [string]$BackupSubDirectory
     )
+    $BackupPath = "$psmRootInstallLocation\Backup\Set-DomainUser\$BackupSubDirectory"
     try {
-        $PSMHardeningBackupFileName = ("{0}\Hardening\PSMHardening.{1}.bkp" -f $psmRootInstallLocation, $BackupSuffix)
-        $PSMConfigureAppLockerBackupFileName = ("{0}\Hardening\PSMConfigureAppLocker.{1}.bkp" -f $psmRootInstallLocation, $BackupSuffix)
-        $BasicPSMBackupFileName = ("{0}\basic_psm.{1}.bkp" -f $psmRootInstallLocation, $BackupSuffix)
+
+        If (!(Test-Path -Path $psmRootInstallLocation\Backup\$BackupSubDirectory -PathType Container)) {
+            New-Item -ItemType Directory -Path $BackupPath
+        }
+        $PSMHardeningBackupFileName = ("{0}\Hardening\PSMHardening.ps1" -f $BackupPath)
+        $PSMConfigureAppLockerBackupFileName = ("{0}\Hardening\PSMConfigureAppLocker.ps1" -f $BackupPath)
+        $BasicPSMBackupFileName = ("{0}\basic_psm.ini" -f $BackupPath)
 
         Copy-Item -path "$psmRootInstallLocation\Hardening\PSMHardening.ps1" -Destination $PSMHardeningBackupFileName
         Copy-Item -path "$psmRootInstallLocation\Hardening\PSMConfigureAppLocker.ps1" -Destination $PSMConfigureAppLockerBackupFileName
@@ -1269,7 +1274,7 @@ else {
 }
 
 
-$BackupSuffix = (Get-Date).ToString('yyyMMdd-HHmmss')
+$BackupSubDirectory = (Get-Date).ToString('yyyMMdd-HHmmss')
 $DomainNameAutodetected = $false
 
 $Tasks = @(
@@ -1620,7 +1625,7 @@ $PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
 Write-LogMessage -Type Verbose -MSG "Stopping CyberArk Privileged Session Manager Service"
 Stop-Service $REGKEY_PSMSERVICE
 Write-LogMessage -Type Verbose -MSG "Backing up PSM configuration files and scripts"
-Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupSuffix $BackupSuffix
+Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupSubDirectory $BackupSubDirectory
 Write-LogMessage -Type Verbose -MSG "Updating PSM configuration files and scripts"
 Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $domain -PSMAdminConnectAccountName $PSMAdminConnectAccountName -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
 #TODO: Update Basic_ini
