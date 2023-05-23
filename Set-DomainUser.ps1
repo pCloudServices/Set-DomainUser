@@ -838,6 +838,47 @@ Function Get-PlatformStatus {
     }
 }
 
+Function Get-PlatformStatusById {
+    <#
+    .SYNOPSIS
+    Get the platform status to check whether it exists and is active
+    .DESCRIPTION
+    Get the platform status to check whether it exists and is active
+    .PARAMETER pvwaAddress
+    PVWA address to run API commands on
+    .PARAMETER pvwaToken
+    Token to authenticate into the PVWA
+    .PARAMETER PlatformId
+    ID (string) of platform to retrieve
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$pvwaAddress,
+        [Parameter(Mandatory = $true)]
+        [string]$pvwaToken,
+        [Parameter(Mandatory = $true)]
+        [string]$PlatformId
+
+    )
+    try {
+        $url = $pvwaAddress + "/PasswordVault/api/Platforms/targets"
+        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError
+        # This query returns a list of platforms where the name contains the search string. Find and return just the one with an exactly matching name.
+        $TargetPlatform = $Getresult.Platforms | Where-Object PlatformID -eq $PlatformId
+        if ($TargetPlatform) {
+            return $TargetPlatform
+        }
+        else {
+            return $false
+        }
+    }
+    catch {
+        Write-LogMessage -Type Error -MSG "Error getting platform status."
+        Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
+        exit 1
+    }
+}
+
 Function Get-SafeStatus {
     <#
     .SYNOPSIS
@@ -1384,9 +1425,18 @@ If ($LocalConfigurationOnly -ne $true) {
     $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
     if ($platformStatus -eq $false) {
         # function returns false if platform does not exist
+        # Get Platform ID for duplication
+        $WinDomainPlatform = Get-PlatformStatusById -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId WinDomain
+        If ($WinDomainPlatform) {
+            Write-LogMessage -Type Verbose -MSG "Checking Windows Domain platform status"
+            $WinDomainPlatformId = $WinDomainPlatform.Id
+        } else { # Get-PlatformStatus returns false if platform not found
+            Write-LogMessage -type Error -MSG "Could not find Windows Domain platform to duplicate. Please import it from the marketplace."
+            exit 1
+        }
         # Creating Platform
         Write-LogMessage -Type Verbose -MSG "Creating new platform"
-        Duplicate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -CurrentPlatformId "7" -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
+        Duplicate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -CurrentPlatformId $WinDomainPlatformId -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
         $Tasks += ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
         # Get platform info again so we can ensure it's activated
         $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
