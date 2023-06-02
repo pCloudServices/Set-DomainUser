@@ -1599,7 +1599,9 @@ If ($LocalConfigurationOnly -ne $true) {
         If ($WinDomainPlatform) {
             Write-LogMessage -Type Verbose -MSG "Checking Windows Domain platform status"
             $WinDomainPlatformId = $WinDomainPlatform.Id
-        } else { # Get-PlatformStatus returns false if platform not found
+        }
+        else {
+            # Get-PlatformStatus returns false if platform not found
             Write-LogMessage -type Error -MSG "Could not find Windows Domain platform to duplicate. Please import it from the marketplace."
             exit 1
         }
