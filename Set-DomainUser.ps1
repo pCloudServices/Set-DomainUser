@@ -1,5 +1,3 @@
-### Script to help move the PSM users from local to domain users
-
 <#
 .SYNOPSIS
 This script will update the connector server to a domain user setup. It will also onboard the domain users into the portal inside the PSM safe.
