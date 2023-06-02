@@ -5,13 +5,13 @@
 This script will update the connector server to a domain user setup. It will also onboard the domain users into the portal inside the PSM safe.
 .DESCRIPTION
 Does the Domain User for PSM setup.
-.PARAMETER pvwaAddress
-The PVWA Address (https://tenant.privilegecloud.cyberark.com, or on-prem URL)
-.PARAMETER domain
-The domain of the domain user account(s).
-.PARAMETER NETBIOS
-The NETBIOS for the domain user account(s).
-.PARAMETER safe
+.PARAMETER PrivilegeCloudUrl
+The PVWA Address (e.g. https://tenant.privilegecloud.cyberark.cloud, or on-prem URL)
+.PARAMETER DomainDNSName
+The fully qualified domain name of the domain user account(s).
+.PARAMETER DomainNetbiosName
+The NETBIOS name for the domain user account(s).
+.PARAMETER Safe
 The safe in which to store PSM user credentials
 .PARAMETER InstallUser
 Tenant Administrator/InstallerUser credentials
@@ -44,15 +44,18 @@ param(
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Please enter the full PVWA Address IE: https://tenantname.privilegecloud.cyberark.cloud")]
-    [string]$pvwaAddress,
+    [Alias("pvwaAddress")]
+    [string]$PrivilegeCloudUrl,
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Please enter the domain of the created accounts IE: lab.net")]
-    [string]$domain,
+    [Alias("domain")]
+    [string]$DomainDNSName,
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Please enter the NETBIOS of the created accounts IE: LAB")]
-    [string]$NETBIOS,
+    [Alias("NETBIOS")]
+    [string]$DomainNetbiosName,
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Please enter the account credentials for the tenant administrator or installer user.")]
@@ -69,7 +72,7 @@ param(
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Please enter the Safe to save the domain accounts in, By default it is PSM")]
-    [String]$safe = "PSM",
+    [String]$Safe = "PSM",
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Ignore errors while granting PSMAdminConnect user shadow permissions")]
@@ -255,7 +258,7 @@ Function Get-DomainDnsName {
         return $env:USERDNSDOMAIN
     }
     else {
-        Write-LogMessage -Type Error -MSG "Unable to determine domain DNS name. Please provide it on the command line."
+        Write-LogMessage -Type Error -MSG "Unable to determine domain DNS name. Please provide it on the command line with the -DomainDNSName parameter."
         exit 1
     }
 }
@@ -265,7 +268,7 @@ Function Get-DomainNetbiosName {
         return $env:USERDOMAIN
     }
     else {
-        Write-LogMessage -Type Error -MSG "Unable to determine domain NETBIOS name. Please provide it on the command line."
+        Write-LogMessage -Type Error -MSG "Unable to determine domain NETBIOS name. Please provide it on the command line with the -DomainNetbiosName parameter."
         exit 1
     }
 }
@@ -294,7 +297,7 @@ Function Get-PvwaAddress {
         return $Address
     }
     catch {
-        Write-LogMessage -Type Error -MSG "Unable to detect PVWA address automatically. Please rerun script and provide it using the -PvwaAddress parameter."
+        Write-LogMessage -Type Error -MSG "Unable to detect PVWA address automatically. Please rerun script and provide it using the -PrivilegeCloudUrl parameter."
         exit 1
     }
 }
