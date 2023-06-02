@@ -1318,7 +1318,7 @@ else {
 $BackupSubDirectory = (Get-Date).ToString('yyyMMdd-HHmmss')
 $DomainNameAutodetected = $false
 
-$Tasks = @(
+$TasksTop = @(
     "Modify local/group policies to allow PSM users to use Remote Desktop"
 )
 
@@ -1604,13 +1604,13 @@ If ($LocalConfigurationOnly -ne $true) {
         # Creating Platform
         Write-LogMessage -Type Verbose -MSG "Creating new platform"
         Duplicate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -CurrentPlatformId $WinDomainPlatformId -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
-        $Tasks += ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
+        $TasksTop += ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
         # Get platform info again so we can ensure it's activated
         $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
     }
     else {
         Write-LogMessage -Type Warning -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
-        $Tasks += ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
+        $TasksTop += ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
     }
     if ($platformStatus.Active -eq $false) {
         Write-LogMessage -Type Verbose -MSG "Platform is deactivated. Activating."
@@ -1633,7 +1633,7 @@ If ($LocalConfigurationOnly -ne $true) {
     If (!($safeStatus.managingCpm)) {
         # Safe exists but no CPM assigned
         Write-LogMessage -Type Warning -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
-        $Tasks += ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
+        $TasksTop += ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
     }
     # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
     If ($UM) {
@@ -1648,7 +1648,7 @@ If ($LocalConfigurationOnly -ne $true) {
     }
     ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
         Write-LogMessage -Type Warning -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
-        $Tasks += "Verify that the $PSMConnectAccountName object in $safe safe contains correct PSMConnect user details"
+        $TasksTop += "Verify that the $PSMConnectAccountName object in $safe safe contains correct PSMConnect user details"
     }
     Else {
         Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
@@ -1662,7 +1662,7 @@ If ($LocalConfigurationOnly -ne $true) {
     }
     ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
         Write-LogMessage -Type Warning -MSG "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
-        $Tasks += "Verify that the $PSMAdminConnectAccountName object in $safe safe contains correct PSMAdminConnect user details"
+        $TasksTop += "Verify that the $PSMAdminConnectAccountName object in $safe safe contains correct PSMAdminConnect user details"
     }
     Else {
         Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
@@ -1691,7 +1691,7 @@ else {
         Write-LogMessage -Type Warning -MSG $AddAdminUserToTSResult.Error
         Write-LogMessage -Type Warning -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration."
         Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"  
-        $Tasks += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
+        $TasksTop += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
     }
     else {
         Write-LogMessage -Type Error -MSG $AddAdminUserToTSResult.Error
@@ -1714,7 +1714,7 @@ If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
             Write-LogMessage -Type Warning -MSG $AddAdminUserTSShadowPermissionResult.Error
             Write-LogMessage -Type Warning -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
             Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
-            $Tasks += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
+            $TasksTop += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
         }
         else {
             Write-LogMessage -Type Error -MSG $AddAdminUserTSShadowPermissionResult.Error
@@ -1736,7 +1736,7 @@ If ($DoHardening) {
 }
 else {
     Write-LogMessage -Type Info -MSG "Skipping Hardening due to -DoNotHarden parameter"
-    $Tasks += "Run script for perform server hardening (PSMHardening.ps1)"
+    $TasksTop += "Run script for perform server hardening (PSMHardening.ps1)"
 }
 If ($DoConfigureAppLocker) {
     Write-LogMessage -Type Info -MSG "Running PSM Configure AppLocker script"
@@ -1747,14 +1747,14 @@ If ($DoConfigureAppLocker) {
 }  
 else {
     Write-LogMessage -Type Info -MSG "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
-    $Tasks += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
+    $TasksTop += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
 }  
 Write-LogMessage -Type Verbose -MSG "Restarting CyberArk Privileged Session Manager Service"
 Restart-Service $REGKEY_PSMSERVICE
 Write-LogMessage -Type Success -MSG "All tasks completed."
 Write-LogMessage -type Info -MSG "The following additional steps may be required:"
-$Tasks += "Restart Server"
-foreach ($Task in $Tasks) {
+$TasksBottom += "Restart Server"
+foreach ($Task in $TasksTop) {
     Write-LogMessage -Type Info " - $Task"
 }
 Write-LogMessage -Type Info -MSG (" - Update the PSM Server configuration:")
@@ -1766,3 +1766,6 @@ Write-LogMessage -Type Info -MSG ("   - Configure the following:")
 Write-LogMessage -Type Info -MSG ("       Safe: {0}" -f $Safe)
 Write-LogMessage -Type Info -MSG ("       Object: {0}" -f $PSMConnectAccountName)
 Write-LogMessage -Type Info -MSG ("       AdminObject: {0}" -f $PSMAdminConnectAccountName)
+foreach ($Task in $TasksBottom) {
+    Write-LogMessage -Type Info " - $Task"
+}
