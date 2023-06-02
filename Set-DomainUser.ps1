@@ -1369,21 +1369,21 @@ if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
 
 
 # Get-Variables
-if (!($pvwaAddress)) {
+if (!($PrivilegeCloudUrl)) {
     Write-LogMessage -Type Verbose -MSG "Getting PVWA address"
-    $pvwaAddress = Get-PvwaAddress -psmRootInstallLocation $psmRootInstallLocation
+    $PrivilegeCloudUrl = Get-PvwaAddress -psmRootInstallLocation $psmRootInstallLocation
 }
 Write-LogMessage -Type Verbose -MSG "Getting domain details"
-if (!($domain)) {
+if (!($DomainDNSName)) {
     $DomainNameAutodetected = $true
-    $domain = Get-DomainDnsName
+    $DomainDNSName = Get-DomainDnsName
 }
-if (!($NETBIOS)) {
+if (!($DomainNetbiosName)) {
     $DomainNameAutodetected = $true
-    $NETBIOS = Get-DomainNetbiosName
+    $DomainNetbiosName = Get-DomainNetbiosName
 }
 If ($DomainNameAutodetected) {
-    $DomainInfo = ("Detected the following domain names:`n  DNS name:     {0}`n  NETBIOS name: {1}`nIs this correct?" -f $domain, $NETBIOS)
+    $DomainInfo = ("Detected the following domain names:`n  DNS name:     {0}`n  NETBIOS name: {1}`nIs this correct?" -f $DomainDNSName, $DomainNetbiosName)
     
     $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
     $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the domain details are correct"))
@@ -1479,7 +1479,7 @@ If (!($SkipPSMUserTests)) {
                 $UserObject = Get-UserObjectFromDN $UserDN
             }
             else {
-                Write-LogMessage -type Error -MSG ("User {0} not found on domain {1}. Please ensure the user exists, or" -f $Username, $domain)
+                Write-LogMessage -type Error -MSG ("User {0} not found on domain {1}. Please ensure the user exists, or" -f $Username, $DomainDNSName)
                 Write-LogMessage -type Error -MSG ("run this script with the -SkipPSMUserConfigureCheck option to skip")
                 Write-LogMessage -type Error -MSG ("this check.")
             }
@@ -1526,14 +1526,14 @@ If (!($SkipPSMUserTests)) {
     }
     
     # Test PSM credentials
-    if (ValidateCredentials -domain $domain -Credential $psmConnectCredentials) {
+    if (ValidateCredentials -domain $DomainDNSName -Credential $psmConnectCredentials) {
         Write-LogMessage -Type Verbose -MSG "PSMConnect user credentials validated"
     }
     else {
         Write-LogMessage -Type Error -MSG "PSMConnect user validation failed. Please validate PSMConnect user name and password or run script with -SkipPSMUserTests to skip this test"
         exit 1
     }
-    if (ValidateCredentials -domain $domain -Credential $psmAdminCredentials) {
+    if (ValidateCredentials -domain $DomainDNSName -Credential $psmAdminCredentials) {
         Write-LogMessage -Type Verbose -MSG "PSMAdminConnect user credentials validated"
     }
     else {
@@ -1564,7 +1564,7 @@ If ($LocalConfigurationOnly -ne $true) {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     
     Write-Host "Logging in to CyberArk"
-    $pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $pvwaAddress -InstallUser $InstallUser
+    $pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $PrivilegeCloudUrl -InstallUser $InstallUser
     if ($pvwaTokenResponse.ErrorCode -ne "Success") {
         # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
         # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.
@@ -1582,7 +1582,7 @@ If ($LocalConfigurationOnly -ne $true) {
         exit 1
     }
     # If we get here, the token was retrieved successfully and looks valid. We'll still test it though.
-    $PvwaTokenTestResponse = Test-PvwaToken -Token $pvwaTokenResponse.Response -pvwaAddress $pvwaAddress
+    $PvwaTokenTestResponse = Test-PvwaToken -Token $pvwaTokenResponse.Response -pvwaAddress $PrivilegeCloudUrl
     if ($PvwaTokenTestResponse.ErrorCode -eq "Success") {
         $pvwaToken = $pvwaTokenResponse.Response
     }
@@ -1593,11 +1593,11 @@ If ($LocalConfigurationOnly -ne $true) {
     }
     # Get platform info
     Write-LogMessage -Type Verbose -MSG "Checking current platform status"
-    $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
+    $platformStatus = Get-PlatformStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId $PlatformName
     if ($platformStatus -eq $false) {
         # function returns false if platform does not exist
         # Get Platform ID for duplication
-        $WinDomainPlatform = Get-PlatformStatusById -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId WinDomain
+        $WinDomainPlatform = Get-PlatformStatusById -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId WinDomain
         If ($WinDomainPlatform) {
             Write-LogMessage -Type Verbose -MSG "Checking Windows Domain platform status"
             $WinDomainPlatformId = $WinDomainPlatform.Id
@@ -1609,10 +1609,10 @@ If ($LocalConfigurationOnly -ne $true) {
         }
         # Creating Platform
         Write-LogMessage -Type Verbose -MSG "Creating new platform"
-        Duplicate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -CurrentPlatformId $WinDomainPlatformId -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
+        Duplicate-Platform -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -CurrentPlatformId $WinDomainPlatformId -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
         $TasksTop += ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
         # Get platform info again so we can ensure it's activated
-        $platformStatus = Get-PlatformStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -PlatformId $PlatformName
+        $platformStatus = Get-PlatformStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId $PlatformName
     }
     else {
         Write-LogMessage -Type Warning -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
@@ -1620,14 +1620,14 @@ If ($LocalConfigurationOnly -ne $true) {
     }
     if ($platformStatus.Active -eq $false) {
         Write-LogMessage -Type Verbose -MSG "Platform is deactivated. Activating."
-        Activate-Platform -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -Platform $platformStatus.Id
+        Activate-Platform -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -Platform $platformStatus.Id
     }
     Write-LogMessage -Type Verbose -MSG "Checking current safe status"
-    $safeStatus = Get-SafeStatus -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -SafeName $Safe
+    $safeStatus = Get-SafeStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -SafeName $Safe
     if ($safeStatus -eq $false) {
         # function returns false if safe does not exist
         Write-LogMessage -Type Verbose -MSG "Safe $Safe does not exist. Creating the safe now"
-        $CreateSafeResult = Create-PSMSafe -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $Safe
+        $CreateSafeResult = Create-PSMSafe -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $Safe
         If ($CreateSafeResult) {
             Write-LogMessage -type Verbose "Successfully created safe $safe"
         }
@@ -1644,11 +1644,11 @@ If ($LocalConfigurationOnly -ne $true) {
     # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
     If ($UM) {
         Write-LogMessage -Type Verbose -MSG "Granting administrators access to PSM safe"
-        New-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe
+        New-SafePermissions -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $safe
     }
     # Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
     Write-LogMessage -Type Verbose -MSG "Onboarding PSMConnect Account"
-    $OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $domain -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
+    $OnboardResult = New-VaultAdminObject -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $DomainDNSName -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
     If ($OnboardResult.name) {
         Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
     }
@@ -1662,7 +1662,7 @@ If ($LocalConfigurationOnly -ne $true) {
     }
     # Creating PSMAdminConnect
     Write-LogMessage -Type Verbose -MSG "Onboarding PSMAdminConnect Account"
-    $OnboardResult = New-VaultAdminObject -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $domain -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
+    $OnboardResult = New-VaultAdminObject -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $DomainDNSName -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
     If ($OnboardResult.name) {
         Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
     }
@@ -1683,11 +1683,11 @@ Stop-Service $REGKEY_PSMSERVICE
 Write-LogMessage -Type Verbose -MSG "Backing up PSM configuration files and scripts"
 Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupSubDirectory $BackupSubDirectory
 Write-LogMessage -Type Verbose -MSG "Updating PSM configuration files and scripts"
-Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $domain -PSMAdminConnectAccountName $PSMAdminConnectAccountName -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
+Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $DomainDNSName -PSMAdminConnectAccountName $PSMAdminConnectAccountName -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
 #TODO: Update Basic_ini
 Write-LogMessage -Type Verbose -MSG "Adding PSMAdminConnect user to Terminal Services configuration"
 # Adding PSMAdminConnect user to Terminal Services configuration
-$AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $NETBIOS -Credentials $psmAdminCredentials
+$AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $DomainNetbiosName -Credentials $psmAdminCredentials
 If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
     Write-LogMessage -Type Verbose -MSG "Successfully added PSMAdminConnect user to Terminal Services configuration"
 }
@@ -1710,7 +1710,7 @@ else {
 If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
     # Grant shadow permission only if first command was succesful
     Write-LogMessage -Type Verbose -MSG "Granting PSMAdminConnect user permission to shadow sessions"
-    $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $NETBIOS -Credentials $psmAdminCredentials
+    $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $DomainNetbiosName -Credentials $psmAdminCredentials
     If ($AddAdminUserTSShadowPermissionResult.ReturnValue -eq 0) {
         Write-LogMessage -Type Verbose -MSG "Successfully granted PSMAdminConnect permission to shadow sessions"
     }
