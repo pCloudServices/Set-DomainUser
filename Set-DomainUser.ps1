@@ -482,12 +482,11 @@ Function Backup-PSMConfig {
     )
     $BackupPath = "$psmRootInstallLocation\Backup\Set-DomainUser\$BackupSubDirectory"
     try {
-
         If (!(Test-Path -Path $psmRootInstallLocation\Backup\$BackupSubDirectory -PathType Container)) {
             New-Item -ItemType Directory -Path $BackupPath
         }
-        $PSMHardeningBackupFileName = ("{0}\Hardening\PSMHardening.ps1" -f $BackupPath)
-        $PSMConfigureAppLockerBackupFileName = ("{0}\Hardening\PSMConfigureAppLocker.ps1" -f $BackupPath)
+        $PSMHardeningBackupFileName = ("{0}\PSMHardening.ps1" -f $BackupPath)
+        $PSMConfigureAppLockerBackupFileName = ("{0}\PSMConfigureAppLocker.ps1" -f $BackupPath)
         $BasicPSMBackupFileName = ("{0}\basic_psm.ini" -f $BackupPath)
 
         Copy-Item -path "$psmRootInstallLocation\Hardening\PSMHardening.ps1" -Destination $PSMHardeningBackupFileName
