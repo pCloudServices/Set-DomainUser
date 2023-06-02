@@ -1343,6 +1343,14 @@ If (!(Test-CredentialFormat -Credential $psmConnectCredentials)) {
     exit 1
 }
 
+If (!(Test-CredentialFormat -Credential $psmAdminCredentials)) {
+    Write-LogMessage -Type Error -MSG "Username provided for PSMAdminConnect user contained invalid characters or is too long."
+    Write-LogMessage -Type Error -MSG "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain, and ensure"
+    Write-LogMessage -Type Error -MSG "the username is no more than 20 characters long"
+    exit 1
+}
+    
+if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
 If (!(Test-PasswordCharactersValid -Credential $psmConnectCredentials)) {
     Write-LogMessage -Type Error -MSG "Password provided for PSMConnect user contained invalid characters."
     Write-LogMessage -Type Error -MSG 'Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
@@ -1350,17 +1358,11 @@ If (!(Test-PasswordCharactersValid -Credential $psmConnectCredentials)) {
 }
 
 
-If (!(Test-CredentialFormat -Credential $psmAdminCredentials)) {
-    Write-LogMessage -Type Error -MSG "Username provided for PSMAdminConnect user contained invalid characters or is too long."
-    Write-LogMessage -Type Error -MSG "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain, and ensure"
-    Write-LogMessage -Type Error -MSG "the username is no more than 20 characters long"
-    exit 1
-}
-
 If (!(Test-PasswordCharactersValid -Credential $psmAdminCredentials)) {
     Write-LogMessage -Type Error -MSG "Password provided for PSMAdminConnect user contained invalid characters."
     Write-LogMessage -Type Error -MSG 'Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
     exit 1
+}
 }
 
 
