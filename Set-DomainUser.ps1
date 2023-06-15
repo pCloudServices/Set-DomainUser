@@ -1452,13 +1452,13 @@ If (!($SkipPSMUserTests)) {
             ExpectedValue = 2, 4
         },
         @{
-            UserType      = "All"
+            UserType      = "PSMConnect"
             Name          = "MaxDisconnectionTime"
             DisplayName   = "End a disconnected session"
             ExpectedValue = 1
         },
         @{
-            UserType      = "All"
+            UserType      = "PSMConnect"
             Name          = "ReconnectionAction"
             DisplayName   = "Allow reconnection"
             ExpectedValue = 1
@@ -1492,16 +1492,21 @@ If (!($SkipPSMUserTests)) {
 
         $SettingsToCheck | ForEach-Object {
             $SettingName = $_.Name
+            $SettingUserType = $_.UserType
             $SettingDisplayName = $_.DisplayName
             $SettingExpectedValue = $_.ExpectedValue
             $SettingCurrentValue = $UserObject.InvokeGet($SettingName)
 
-            If ($SettingCurrentValue -notin $SettingExpectedValue) {
-                $UserConfigurationErrors += [PSCustomObject]@{
-                    User        = $UserType
-                    SettingName = $SettingDisplayName
-                    Current     = $SettingCurrentValue
-                    Expected    = $SettingExpectedValue
+
+            if ($SettingUserType -in "All", $UserType) {
+                # If the setting that we are checking applies to the user we're checking, or all users
+                If ($SettingCurrentValue -notin $SettingExpectedValue) {
+                    $UserConfigurationErrors += [PSCustomObject]@{
+                        User        = $UserType
+                        SettingName = $SettingDisplayName
+                        Current     = $SettingCurrentValue
+                        Expected    = $SettingExpectedValue
+                    }
                 }
             }
         }
