@@ -1398,7 +1398,7 @@ If ($DomainNameAutodetected) {
 }
 
 
-If (!($SkipPSMUserTests)) {
+if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
     # Gather the information we'll be comparing
     $PSMComponentsPath = $psmRootInstallLocation + "Components"
     $PSMInitSessionPath = $PSMComponentsPath + "\PSMInitSession.exe"
