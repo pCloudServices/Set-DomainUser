@@ -35,70 +35,84 @@ Do not onboard accounts in Privilege Cloud. Use on subsequent servers after firs
 Do not check the configuration of the PSM domain users for errors
 #>
 
-
-
 [CmdletBinding()]
 param(
     [Parameter(
-        Mandatory = $false,
-        HelpMessage = "Please enter the full PVWA Address IE: https://tenantname.privilegecloud.cyberark.cloud")]
-    [Alias("pvwaAddress")]
-    [string]$PrivilegeCloudUrl,
-    [Parameter(
-        Mandatory = $false,
-        HelpMessage = "Please enter the domain of the created accounts IE: lab.net")]
-    [Alias("domain")]
-    [string]$DomainDNSName,
-    [Parameter(
-        Mandatory = $false,
-        HelpMessage = "Please enter the NETBIOS of the created accounts IE: LAB")]
-    [Alias("NETBIOS")]
-    [string]$DomainNetbiosName,
+        Mandatory = $false, 
+        HelpMessage = "Do not onboard accounts in Privilege Cloud. Use on subsequent servers after first run.")]
+    [switch]$LocalConfigurationOnly,
+
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Please enter the account credentials for the tenant administrator or installer user.")]
     [Alias("tinaCreds")]
     [PSCredential]$InstallUser,
+
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Please enter the account credentials for the PSMConnect domain account.")]
     [PSCredential]$psmConnectCredentials,
+
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Please enter the account credentials for the PSMAdminConnect domain account.")]
     [PSCredential]$psmAdminCredentials,
+
     [Parameter(
         Mandatory = $false,
-        HelpMessage = "Please enter the Safe to save the domain accounts in, By default it is PSM")]
-    [String]$Safe = "PSM",
+        HelpMessage = "Please enter the domain of the created accounts IE: lab.net")]
+    [Alias("domain")]
+    [string]$DomainDNSName,
+
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Please enter the NETBIOS of the created accounts IE: LAB")]
+    [Alias("NETBIOS")]
+    [string]$DomainNetbiosName,
+
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Do not test PSM user configurations")]
+    [switch]$SkipPSMUserTests,
+
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Ignore errors while granting PSMAdminConnect user shadow permissions")]
     [switch]$IgnoreShadowPermissionErrors,
+
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Please enter the full PVWA Address IE: https://tenantname.privilegecloud.cyberark.cloud")]
+    [Alias("pvwaAddress")]
+    [string]$PrivilegeCloudUrl,
+
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Please enter the Safe to save the domain accounts in, By default it is PSM")]
+    [String]$Safe = "PSM",
+
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Name of Platform to be used for PSM accounts")]
     [String]$PlatformName = "WIN-DOM-PSMADMIN-ACCOUNT",
+
     [Parameter(
         Mandatory = $false,
-        HelpMessage = "Name of Platform to be used for PSM accounts")]
+        HelpMessage = "Account name in CyberArk of the PSMConnect user")]
     [String]$PSMConnectAccountName = "PSMConnect",
+
     [Parameter(
         Mandatory = $false,
-        HelpMessage = "Name of Platform to be used for PSM accounts")]
+        HelpMessage = "Account name in CyberArk of the PSMAdminConnect user")]
     [String]$PSMAdminConnectAccountName = "PSMAdminConnect",
+
     [Parameter(
         Mandatory = $false)]
     [switch]$DoNotHarden,
+
     [Parameter(
         Mandatory = $false)]
-    [switch]$DoNotConfigureAppLocker,
-    [Parameter(
-        Mandatory = $false)]
-    [switch]$LocalConfigurationOnly,
-    [Parameter(
-        Mandatory = $false)]
-    [switch]$SkipPSMUserTests
+    [switch]$DoNotConfigureAppLocker
 )
 
 #Functions
