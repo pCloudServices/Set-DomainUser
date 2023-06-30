@@ -107,11 +107,13 @@ param(
     [String]$PSMAdminConnectAccountName = "PSMAdminConnect",
 
     [Parameter(
-        Mandatory = $false)]
+        Mandatory = $false,
+        HelpMessage = "Do not run Hardening script after configuration")]
     [switch]$DoNotHarden,
 
     [Parameter(
-        Mandatory = $false)]
+        Mandatory = $false,
+        HelpMessage = "Do not run AppLocker script after configuration")]
     [switch]$DoNotConfigureAppLocker
 )
 
