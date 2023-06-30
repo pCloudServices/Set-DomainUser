@@ -1271,13 +1271,18 @@ function Get-UserObjectFromDN {
 function Get-UserProperty {
     param (
         [Parameter(Mandatory = $True)]
-        [string]
+        [System.DirectoryServices.DirectoryEntry]
         $UserObject,
         [Parameter(Mandatory = $True)]
         [string]
         $Property
     )
-    return $UserObject.InvokeGet("$Property")
+    try {
+        $Result = $UserObject.InvokeGet($Property)
+    } catch {
+        $Result = "An error occurred while retrieving this property. It may not be set."
+    }
+    return $Result
 }
 
 #Running Set-DomainUser script
@@ -1495,7 +1500,7 @@ if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
             $SettingUserType = $_.UserType
             $SettingDisplayName = $_.DisplayName
             $SettingExpectedValue = $_.ExpectedValue
-            $SettingCurrentValue = $UserObject.InvokeGet($SettingName)
+            $SettingCurrentValue = Get-UserProperty -UserObject $UserObject -Property $SettingName
 
 
             if ($SettingUserType -in "All", $UserType) {
