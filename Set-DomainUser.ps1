@@ -1279,7 +1279,8 @@ function Get-UserProperty {
     )
     try {
         $Result = $UserObject.InvokeGet($Property)
-    } catch {
+    }
+    catch {
         $Result = "An error occurred while retrieving this property. It may not be set."
     }
     return $Result
