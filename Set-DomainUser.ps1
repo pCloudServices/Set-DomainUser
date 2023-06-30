@@ -1126,6 +1126,52 @@ Function Set-SafePermissions {
     }
 }
 
+Function Get-SafePermissions {
+    <#
+    .SYNOPSIS
+    Adds safe permission to a specific safe
+    .DESCRIPTION
+    Adds safe permission to a specific safe
+    .PARAMETER pvwaAddress
+    PVWA address to run API commands on
+    .PARAMETER pvwaToken
+    Token to authenticate into the PVWA
+    .PARAMETER safe
+    Which Safe to give permission to (Default PSM)
+    .PARAMETER SafeMember
+    Which Member to give the safe permission
+    .PARAMETER memberType
+    What type of member to give permission to (group,role,user)
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $pvwaAddress,
+        [Parameter(Mandatory = $true)]
+        $pvwaToken,
+        [Parameter(Mandatory = $false)]
+        $safe = "PSM",
+        [Parameter(Mandatory = $false)]
+        $safeMember = "Vault Admins",
+        [Parameter(Mandatory = $false)]
+        $SearchIn = "Vault",
+        [Parameter(Mandatory = $false)]
+        $memberType = "Group"
+    )
+    try {
+        $url = $pvwaAddress + "/PasswordVault/api/Safes/$safe/members/$safeMember/"
+        $result = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
+        if ($result) {
+            return $result.permissions
+        }
+        else {
+            throw
+        }
+    }
+    catch {
+        return $false
+    }
+}
+
 Function New-SafePermissions {
     <#
     .SYNOPSIS
@@ -1152,6 +1198,8 @@ Function New-SafePermissions {
         $safe = "PSM",
         [Parameter(Mandatory = $false)]
         $safeMember = "Vault Admins",
+        [Parameter(Mandatory = $false)]
+        $SearchIn = "Vault",
         [Parameter(Mandatory = $false)]
         $memberType = "Group",
         [Parameter(Mandatory = $false)]
@@ -1185,6 +1233,7 @@ Function New-SafePermissions {
         $body = @{
             memberName  = $SafeMember
             memberType  = $memberType
+            searchIn    = $SearchIn
             permissions = $safePermissions
         }
         $json = $body | ConvertTo-Json
@@ -1667,10 +1716,14 @@ If ($LocalConfigurationOnly -ne $true) {
         Write-LogMessage -Type Warning -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
         $TasksTop += ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
     }
-    # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
-    If ($UM) {
+}
+# Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
+If ($UM) {
+    $SafePermissions = Get-SafePermissions -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $safe -safeMember "Vault Admins"
+    If ($false -eq $SafePermissions) {
+        # Vault Admins does not appear to be a member of the safe. Adding.
         Write-LogMessage -Type Verbose -MSG "Granting administrators access to PSM safe"
-        New-SafePermissions -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $safe
+        New-SafePermissions -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $safe -safeMember "Vault Admins"
     }
     # Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
     Write-LogMessage -Type Verbose -MSG "Onboarding PSMConnect Account"
