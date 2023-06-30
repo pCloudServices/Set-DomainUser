@@ -1470,6 +1470,7 @@ if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
         }
     )
 
+    # Initialise array containing issues
     $UserConfigurationErrors = @()
     $UsersToCheck | ForEach-Object {
         $UserType = $_.UserType
