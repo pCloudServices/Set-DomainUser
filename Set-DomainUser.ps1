@@ -1726,33 +1726,33 @@ If ($UM) {
         New-SafePermissions -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $safe -safeMember "Vault Admins"
     }
     # Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
-    Write-LogMessage -Type Verbose -MSG "Onboarding PSMConnect Account"
-    $OnboardResult = New-VaultAdminObject -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $DomainDNSName -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
-    If ($OnboardResult.name) {
-        Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
-    }
-    ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
-        Write-LogMessage -Type Warning -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
-        $TasksTop += "Verify that the $PSMConnectAccountName object in $safe safe contains correct PSMConnect user details"
-    }
-    Else {
-        Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
-        exit 1
-    }
-    # Creating PSMAdminConnect
-    Write-LogMessage -Type Verbose -MSG "Onboarding PSMAdminConnect Account"
-    $OnboardResult = New-VaultAdminObject -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $DomainDNSName -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
-    If ($OnboardResult.name) {
-        Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
-    }
-    ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
-        Write-LogMessage -Type Warning -MSG "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
-        $TasksTop += "Verify that the $PSMAdminConnectAccountName object in $safe safe contains correct PSMAdminConnect user details"
-    }
-    Else {
-        Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
-        exit 1
-    }
+}
+Write-LogMessage -Type Verbose -MSG "Onboarding PSMConnect Account"
+$OnboardResult = New-VaultAdminObject -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $DomainDNSName -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
+If ($OnboardResult.name) {
+    Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
+}
+ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
+    Write-LogMessage -Type Warning -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
+    $TasksTop += "Verify that the $PSMConnectAccountName object in $safe safe contains correct PSMConnect user details"
+}
+Else {
+    Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
+    exit 1
+}
+# Creating PSMAdminConnect
+Write-LogMessage -Type Verbose -MSG "Onboarding PSMAdminConnect Account"
+$OnboardResult = New-VaultAdminObject -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $DomainDNSName -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
+If ($OnboardResult.name) {
+    Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
+}
+ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
+    Write-LogMessage -Type Warning -MSG "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
+    $TasksTop += "Verify that the $PSMAdminConnectAccountName object in $safe safe contains correct PSMAdminConnect user details"
+}
+Else {
+    Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
+    exit 1
 }
 Write-LogMessage -Type Info -MSG "Performing local configuration and restarting service"
 
