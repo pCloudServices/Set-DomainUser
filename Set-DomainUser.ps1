@@ -1816,6 +1816,10 @@ If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
     }
 }
 
+## End Local Configuration Block
+
+## Post-Configuration Block
+
 If ($DoHardening) {
     Write-LogMessage -Type Info -MSG "Running PSM Hardening script"
     Write-LogMessage -Type Info -MSG "---"
