@@ -318,6 +318,31 @@ Function Get-PvwaAddress {
     }
 }
 
+Function Get-VaultAddress {
+    <#
+    .SYNOPSIS
+    Backs up PSMConfig ps1 scripts
+    .DESCRIPTION
+    Copies PSM config items to -backup.ps1
+    .PARAMETER psmRootInstallLocation
+    PSM root installation folder
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $psmRootInstallLocation
+    )
+    try {
+        $VaultIni = Get-Content "$psmRootInstallLocation\vault\vault.ini"
+        $VaultIniAddressesLine = $VaultIni | Select-String "^ADDRESS\s*="
+        $VaultAddress = $VaultIniAddressesLine.toString().Split("=")[1].trim()
+        return $VaultAddress
+    }
+    catch {
+        Write-LogMessage -Type Error -MSG "Unable to detect vault address automatically. Please rerun script and provide it using the -VaultAddress parameter."
+        exit 1
+    }
+}
+
 
 Function ValidateCredentials {
     <#
