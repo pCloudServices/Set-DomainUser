@@ -1623,6 +1623,7 @@ $DoHardening = !$DoNotHarden
 $DoConfigureAppLocker = !$DoNotConfigureAppLocker
 $PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
 
+## Remote Configuration Block
 If ($LocalConfigurationOnly -ne $true) {
     if ($null -eq $InstallUser) {
         if ($UM) {
@@ -1755,7 +1756,9 @@ If ($LocalConfigurationOnly -ne $true) {
         Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
         exit 1
     }
-}
+## End Remote Configuration Block
+
+## Local Configuration Block
 Write-LogMessage -Type Info -MSG "Performing local configuration and restarting service"
 
 Write-LogMessage -Type Verbose -MSG "Stopping CyberArk Privileged Session Manager Service"
@@ -1857,3 +1860,4 @@ Write-LogMessage -Type Info -MSG ("       AdminObject: {0}" -f $PSMAdminConnectA
 foreach ($Task in $TasksBottom) {
     Write-LogMessage -Type Info " - $Task"
 }
+## End Post-Configuration Block
