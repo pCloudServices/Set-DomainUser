@@ -5,6 +5,8 @@ This script will update the connector server to a domain user setup. It will als
 Does the Domain User for PSM setup.
 .PARAMETER PrivilegeCloudUrl
 The PVWA Address (e.g. https://tenant.privilegecloud.cyberark.cloud, or on-prem URL)
+.PARAMETER VaultAddress
+The Vault Address (e.g. vault-SUBDOMAIN.privilegecloud.cyberark.cloud)
 .PARAMETER DomainDNSName
 The fully qualified domain name of the domain user account(s).
 .PARAMETER DomainNetbiosName
@@ -90,6 +92,11 @@ param(
 
     [Parameter(
         Mandatory = $false,
+        HelpMessage = "Please enter the full Vault Address e.g.: vault-SUBDOMAIN.privilegecloud.cyberark.cloud")]
+    [string]$VaultAddress,
+
+    [Parameter(
+        Mandatory = $false,
         HelpMessage = "Please enter the Safe to save the domain accounts in, By default it is PSM")]
     [String]$Safe = "PSM",
 
@@ -116,7 +123,12 @@ param(
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Do not run AppLocker script after configuration")]
-    [switch]$DoNotConfigureAppLocker
+    [switch]$DoNotConfigureAppLocker,
+
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Do not update PSM Server Object configuration in backend")]
+    [switch]$SkipPSMObjectUpdate
 )
 
 #Functions
@@ -1844,6 +1856,47 @@ If ($LocalConfigurationOnly -ne $true) {
         Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
         exit 1
     }
+    
+    If ($true -ne $SkipPSMObjectUpdate) {
+        Write-LogMessage -type Info -MSG "Configuring backend PSM server objects"
+        $VaultAddress = Get-VaultAddress -psmRootInstallLocation $psmRootInstallLocation
+        $VaultOperationsTesterDir = "$ScriptLocation\..\VaultOperationsTester"
+        $VaultOperationsTesterExe = "$VaultOperationsTesterDir\VaultOperationsTester.exe"
+        If (Test-Path -Type Leaf $VaultOperationsTesterExe) {
+            # Check that VaultOperationsTester is available
+            # Check for and install C++ Redistributable
+            if ((Get-CimInstance -Class win32_product | where { $_.Name -like "Microsoft Visual C++ 2013 x86*" }) -eq $null) {
+                $CppRedis = "$VaultOperationsTesterDir\vcredist_x86.exe"
+                Write-LogMessage -type Info -MSG "Installing Redis++ x86 from $CppRedis..." -Early
+                try {
+                    Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
+                }
+                catch {
+                    Write-LogMessage -type Error -MSG "Failed to install Visual C++ Redistributable. Resolve the error or"
+                    Write-LogMessage -type Error -MSG "  run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+
+                    exit 1
+                }
+            }
+            # after C++ redistributable install
+            try {
+                Set-PSMServerObject -VaultAddress $VaultAddress `
+                    -VaultCredentials $InstallUser `
+                    -PSMServerId $PSMServerId `
+                    -VaultOperationsFolder $VaultOperationsTesterDir `
+                    -PSMSafe $Safe `
+                    -PSMConnectAccountName $PSMConnectAccountName `
+                    -PSMAdminConnectAccountName $PSMAdminConnectAccountName
+            }
+            catch {
+                Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors or"
+                Write-LogMessage -type Error -MSG "  run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+                exit 1
+            }
+        }
+    }
+}
+
 ## End Remote Configuration Block
 
 ## Local Configuration Block
@@ -1940,15 +1993,17 @@ $TasksBottom += "Restart Server"
 foreach ($Task in $TasksTop) {
     Write-LogMessage -Type Info " - $Task"
 }
-Write-LogMessage -Type Info -MSG (" - Update the PSM Server configuration:")
-Write-LogMessage -Type Info -MSG ("   - Log in to Privilege Cloud as an administrative user")
-Write-LogMessage -Type Info -MSG ("   - Go to Administration -> Configuration Options")
-Write-LogMessage -Type Info -MSG ("   - Expand Privileged Session Management -> Configured PSM Servers -> {0} -> " -f $PSMServerId)
-Write-LogMessage -Type Info -MSG ("       Connection Details -> Server")
-Write-LogMessage -Type Info -MSG ("   - Configure the following:")
-Write-LogMessage -Type Info -MSG ("       Safe: {0}" -f $Safe)
-Write-LogMessage -Type Info -MSG ("       Object: {0}" -f $PSMConnectAccountName)
-Write-LogMessage -Type Info -MSG ("       AdminObject: {0}" -f $PSMAdminConnectAccountName)
+If ($SkipPSMObjectUpdate) {
+    Write-LogMessage -Type Info -MSG (" - Update the PSM Server configuration:")
+    Write-LogMessage -Type Info -MSG ("   - Log in to Privilege Cloud as an administrative user")
+    Write-LogMessage -Type Info -MSG ("   - Go to Administration -> Configuration Options")
+    Write-LogMessage -Type Info -MSG ("   - Expand Privileged Session Management -> Configured PSM Servers -> {0} -> " -f $PSMServerId)
+    Write-LogMessage -Type Info -MSG ("       Connection Details -> Server")
+    Write-LogMessage -Type Info -MSG ("   - Configure the following:")
+    Write-LogMessage -Type Info -MSG ("       Safe: {0}" -f $Safe)
+    Write-LogMessage -Type Info -MSG ("       Object: {0}" -f $PSMConnectAccountName)
+    Write-LogMessage -Type Info -MSG ("       AdminObject: {0}" -f $PSMAdminConnectAccountName)
+}
 foreach ($Task in $TasksBottom) {
     Write-LogMessage -Type Info " - $Task"
 }
