@@ -40,7 +40,7 @@ Do not check the configuration of the PSM domain users for errors
 [CmdletBinding()]
 param(
     [Parameter(
-        Mandatory = $false, 
+        Mandatory = $false,
         HelpMessage = "Do not onboard accounts in Privilege Cloud. Use on subsequent servers after first run.")]
     [switch]$LocalConfigurationOnly,
 
@@ -164,12 +164,12 @@ Function Get-RestMethodError {
 }
 
 Function Write-LogMessage {
-    <# 
-.SYNOPSIS 
+    <#
+.SYNOPSIS
 	Method to log a message on screen and in a log file
 
 .DESCRIPTION
-	Logging The input Message to the Screen and the Log File. 
+	Logging The input Message to the Screen and the Log File.
 	The Message Type is presented in colours on the screen based on the type
 
 .PARAMETER LogFile
@@ -205,32 +205,32 @@ Function Write-LogMessage {
     )
     Try {
         If ($Header) {
-            "=======================================" | Out-File -Append -FilePath $LogFile 
+            "=======================================" | Out-File -Append -FilePath $LogFile
             Write-Host "=======================================" -ForegroundColor Magenta
         }
-        ElseIf ($SubHeader) { 
-            "------------------------------------" | Out-File -Append -FilePath $LogFile 
+        ElseIf ($SubHeader) {
+            "------------------------------------" | Out-File -Append -FilePath $LogFile
             Write-Host "------------------------------------" -ForegroundColor Magenta
         }
-		
+
         $msgToWrite = "[$(Get-Date -Format "yyyy-MM-dd hh:mm:ss")]`t"
         $writeToFile = $true
         # Replace empty message with 'N/A'
         if ([string]::IsNullOrEmpty($Msg)) { $Msg = "N/A" }
-		
+
         # Mask Passwords
         if ($Msg -match '((?:password|credentials|secret)\s{0,}["\:=]{1,}\s{0,}["]{0,})(?=([\w`~!@#$%^&*()-_\=\+\\\/|;:\.,\[\]{}]+))') {
             $Msg = $Msg.Replace($Matches[2], "****")
         }
         # Check the message type
         switch ($type) {
-            { ($_ -eq "Info") -or ($_ -eq "LogOnly") } { 
+            { ($_ -eq "Info") -or ($_ -eq "LogOnly") } {
                 If ($_ -eq "Info") {
                     Write-Host $MSG.ToString() -ForegroundColor $(If ($Header -or $SubHeader) { "magenta" } Elseif ($Early) { "DarkGray" } Else { "White" })
                 }
                 $msgToWrite += "[INFO]`t$Msg"
             }
-            "Success" { 
+            "Success" {
                 Write-Host $MSG.ToString() -ForegroundColor Green
                 $msgToWrite += "[SUCCESS]`t$Msg"
             }
@@ -242,14 +242,14 @@ Function Write-LogMessage {
                 Write-Host $MSG.ToString() -ForegroundColor Red
                 $msgToWrite += "[ERROR]`t$Msg"
             }
-            "Debug" { 
+            "Debug" {
                 if ($InDebug -or $InVerbose) {
                     Write-Debug $MSG
                     $msgToWrite += "[DEBUG]`t$Msg"
                 }
                 else { $writeToFile = $False }
             }
-            "Verbose" { 
+            "Verbose" {
                 if ($InVerbose) {
                     Write-Verbose -Msg $MSG
                     $msgToWrite += "[VERBOSE]`t$Msg"
@@ -259,8 +259,8 @@ Function Write-LogMessage {
         }
 
         If ($writeToFile) { $msgToWrite | Out-File -Append -FilePath $LogFile }
-        If ($Footer) { 
-            "=======================================" | Out-File -Append -FilePath $LogFile 
+        If ($Footer) {
+            "=======================================" | Out-File -Append -FilePath $LogFile
             Write-Host "=======================================" -ForegroundColor Magenta
         }
     }
@@ -989,25 +989,25 @@ Function Create-PSMSafe {
         [Parameter(Mandatory = $false)]
         $safe,
         [Parameter(Mandatory = $false)]
-        $description = "Safe for PSM Users"  
+        $description = "Safe for PSM Users"
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Safes"
-        $body = @{ 
+        $body = @{
             safeName    = $safe
             description = $description
         }
-        $json = $body | ConvertTo-Json    
+        $json = $body | ConvertTo-Json
         $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
         #Permissions for the needed accounts
         #PSMMaster full permissions
         New-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PSMMaster"
         #PVWAAppUser and PVWAAppUsers permissions
         $PVWAAppUser = @{
-            useAccounts                            = $False 
+            useAccounts                            = $False
             retrieveAccounts                       = $True
             listAccounts                           = $True
-            addAccounts                            = $False 
+            addAccounts                            = $False
             updateAccountContent                   = $True
             updateAccountProperties                = $False
             initiateCPMAccountManagementOperations = $False
@@ -1024,17 +1024,17 @@ Function Create-PSMSafe {
             createFolders                          = $False
             deleteFolders                          = $False
             moveAccountsAndFolders                 = $False
-            requestsAuthorizationLevel1            = $False 
+            requestsAuthorizationLevel1            = $False
             requestsAuthorizationLevel2            = $False
         }
         New-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PVWAAppUser" -memberType "user" -safePermissions $PVWAAppUser
         New-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PVWAAppUsers" -safePermissions $PVWAAppUser
         #PSMAppUsers
         $PSMAppUsers = @{
-            useAccounts                            = $False 
+            useAccounts                            = $False
             retrieveAccounts                       = $True
             listAccounts                           = $True
-            addAccounts                            = $False 
+            addAccounts                            = $False
             updateAccountContent                   = $False
             updateAccountProperties                = $False
             initiateCPMAccountManagementOperations = $False
@@ -1051,11 +1051,11 @@ Function Create-PSMSafe {
             createFolders                          = $False
             deleteFolders                          = $False
             moveAccountsAndFolders                 = $False
-            requestsAuthorizationLevel1            = $False 
+            requestsAuthorizationLevel1            = $False
             requestsAuthorizationLevel2            = $False
         }
-        Set-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PSMAppUsers" -safePermissions $PSMAppUsers  
-        return $true      
+        Set-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PSMAppUsers" -safePermissions $PSMAppUsers
+        return $true
     }
     catch {
         Write-LogMessage -Type Error $_.ErrorDetails.Message
@@ -1091,10 +1091,10 @@ Function Set-SafePermissions {
         $memberType = "Group",
         [Parameter(Mandatory = $false)]
         $safePermissions = @{
-            useAccounts                            = $True 
+            useAccounts                            = $True
             retrieveAccounts                       = $True
             listAccounts                           = $True
-            addAccounts                            = $True 
+            addAccounts                            = $True
             updateAccountContent                   = $True
             updateAccountProperties                = $True
             initiateCPMAccountManagementOperations = $True
@@ -1111,20 +1111,20 @@ Function Set-SafePermissions {
             createFolders                          = $True
             deleteFolders                          = $True
             moveAccountsAndFolders                 = $True
-            requestsAuthorizationLevel1            = $True 
+            requestsAuthorizationLevel1            = $True
             requestsAuthorizationLevel2            = $False
         }
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Safes/$safe/members/$SafeMember"
-        $body = @{ 
+        $body = @{
             permissions = $safePermissions
         }
         $json = $body | ConvertTo-Json
         $null = Invoke-RestMethod -Method 'Put' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
     }
     catch {
-        Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message 
+        Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
     }
 }
 
@@ -1206,10 +1206,10 @@ Function New-SafePermissions {
         $memberType = "Group",
         [Parameter(Mandatory = $false)]
         $safePermissions = @{
-            useAccounts                            = $True 
+            useAccounts                            = $True
             retrieveAccounts                       = $True
             listAccounts                           = $True
-            addAccounts                            = $True 
+            addAccounts                            = $True
             updateAccountContent                   = $True
             updateAccountProperties                = $True
             initiateCPMAccountManagementOperations = $True
@@ -1226,7 +1226,7 @@ Function New-SafePermissions {
             createFolders                          = $True
             deleteFolders                          = $True
             moveAccountsAndFolders                 = $True
-            requestsAuthorizationLevel1            = $True 
+            requestsAuthorizationLevel1            = $True
             requestsAuthorizationLevel2            = $False
         }
     )
@@ -1313,7 +1313,7 @@ function Get-UserDNFromSamAccountName {
         [Parameter(Mandatory = $True)]
         [string]
         $Username
-    )    
+    )
     $Searcher = [adsisearcher]"samaccountname=$Username"
     $Result = $Searcher.FindAll()
     If ($Result) {
@@ -1422,7 +1422,7 @@ If (!(Test-CredentialFormat -Credential $psmAdminCredentials)) {
     Write-LogMessage -Type Error -MSG "the username is no more than 20 characters long"
     exit 1
 }
-    
+
 if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
     If (!(Test-PasswordCharactersValid -Credential $psmConnectCredentials)) {
         Write-LogMessage -Type Error -MSG "Password provided for PSMConnect user contained invalid characters."
@@ -1455,11 +1455,11 @@ if (!($DomainNetbiosName)) {
 }
 If ($DomainNameAutodetected) {
     $DomainInfo = ("Detected the following domain names:`n  DNS name:     {0}`n  NETBIOS name: {1}`nIs this correct?" -f $DomainDNSName, $DomainNetbiosName)
-    
+
     $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
     $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the domain details are correct"))
     $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct domain details can be provided"))
-    
+
     $DomainPromptSelection = $Host.UI.PromptForChoice("", $DomainInfo, $PromptOptions, 1)
     If ($DomainPromptSelection -eq 0) {
         Write-LogMessage -Type Info "Domain details confirmed"
@@ -1470,12 +1470,11 @@ If ($DomainNameAutodetected) {
     }
 }
 
-
 if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
     # Gather the information we'll be comparing
     $PSMComponentsPath = $psmRootInstallLocation + "Components"
     $PSMInitSessionPath = $PSMComponentsPath + "\PSMInitSession.exe"
-    
+
     # Get PSMConnect user information
     $UsersToCheck = @(
         @{
@@ -1543,7 +1542,7 @@ if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
     $UsersToCheck | ForEach-Object {
         $UserType = $_.UserType
         $Username = $_.Username
-        
+
         # Initialise array containing issues
         try {
             $UserDN = Get-UserDNFromSamAccountName -Username $Username
@@ -1585,7 +1584,7 @@ if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
             }
         }
     }
-    
+
     If ($UserConfigurationErrors) {
         $UsersWithConfigurationErrors = $UserConfigurationErrors.User | Select-Object -Unique
         $UsersWithConfigurationErrors | ForEach-Object {
@@ -1601,7 +1600,7 @@ if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
         Write-LogMessage -type Error -MSG "Please resolve the issues above or rerun this script with -SkipPSMUserTests to ignore these errors."
         exit 1
     }
-    
+
     # Test PSM credentials
     if (ValidateCredentials -domain $DomainDNSName -Credential $psmConnectCredentials) {
         Write-LogMessage -Type Verbose -MSG "PSMConnect user credentials validated"
@@ -1777,7 +1776,7 @@ else {
     if ($IgnoreShadowPermissionErrors) {
         Write-LogMessage -Type Warning -MSG $AddAdminUserToTSResult.Error
         Write-LogMessage -Type Warning -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration."
-        Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"  
+        Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
         $TasksTop += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
     }
     else {
@@ -1831,16 +1830,18 @@ If ($DoConfigureAppLocker) {
     Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation
     Write-LogMessage -Type Info -MSG "---"
     Write-LogMessage -Type Info -MSG "End of PSM Configure AppLocker script output"
-}  
+}
 else {
     Write-LogMessage -Type Info -MSG "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
     $TasksTop += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
-}  
+}
 Write-LogMessage -Type Verbose -MSG "Restarting CyberArk Privileged Session Manager Service"
 Restart-Service $REGKEY_PSMSERVICE
 Write-LogMessage -Type Success -MSG "All tasks completed."
+
 Write-LogMessage -type Info -MSG "The following additional steps may be required:"
 $TasksBottom += "Restart Server"
+
 foreach ($Task in $TasksTop) {
     Write-LogMessage -Type Info " - $Task"
 }
