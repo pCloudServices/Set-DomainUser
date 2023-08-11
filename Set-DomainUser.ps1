@@ -1638,10 +1638,11 @@ If ($LocalConfigurationOnly -ne $true) {
             exit 1
         }
     }
-    
+
+    Write-LogMessage -type Info -MSG "Starting backend configuration"
+
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    
-    Write-Host "Logging in to CyberArk"
+
     $pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $PrivilegeCloudUrl -InstallUser $InstallUser
     if ($pvwaTokenResponse.ErrorCode -ne "Success") {
         # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
