@@ -35,6 +35,8 @@ Do not onboard accounts in Privilege Cloud. Use on subsequent servers after firs
 Do not check the configuration of the PSM domain users for errors
 #>
 
+# Version: 1.4.0
+
 [CmdletBinding()]
 param(
     [Parameter(
