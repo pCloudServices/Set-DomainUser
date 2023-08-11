@@ -1353,6 +1353,68 @@ function Get-UserProperty {
     return $Result
 }
 
+Function Set-PSMServerObject {
+    param (
+        [Parameter(Mandatory = $True)]
+        [String]
+        $VaultOperationsFolder,
+        [Parameter(Mandatory = $True)]
+        [String]
+        $VaultAddress,
+        [Parameter(Mandatory = $True)]
+        [PSCredential]
+        $VaultCredentials,
+        [Parameter(Mandatory = $True)]
+        [String]
+        $PSMServerId,
+        [Parameter(Mandatory = $True)]
+        [String]
+        $PSMSafe,
+        [Parameter(Mandatory = $True)]
+        [String]
+        $PSMConnectAccountName,
+        [Parameter(Mandatory = $True)]
+        [String]
+        $PSMAdminConnectAccountName
+    )
+
+    $VaultOperationsExe = "$VaultOperationsFolder\VaultOperationsTester.exe"
+    $stdoutFile = "$VaultOperationsFolder\Log\stdout.log"
+    $LOG_FILE_PATH_CasosArchive = "$VaultOperationsFolder\Log\old"
+
+    #Cleanup log file if it gets too big
+    if (Test-Path $LOG_FILE_PATH_CasosArchive) {
+        if (Get-ChildItem $LOG_FILE_PATH_CasosArchive | Measure-Object -Property length -Sum | Where-Object { $_.sum -gt 5MB }) {
+            Write-LogMessage -type Info -MSG "Archive log folder is getting too big, deleting it." -Early
+            Write-LogMessage -type Info -MSG "Deleting $LOG_FILE_PATH_CasosArchive" -Early
+            Remove-Item $LOG_FILE_PATH_CasosArchive -Recurse -Force
+        }
+    }
+
+    #create log file
+    New-Item -Path $stdoutFile -Force | Out-Null
+
+    #Get Credentials
+    $VaultUser = $VaultCredentials.UserName
+    $VaultPass = $VaultCredentials.GetNetworkCredential().Password
+    $ConfigString = ("//PSMServer[@ID='{0}']/ConnectionDetails/Server Safe={1},Object={2},AdminObject={3}" `
+            -f $PSMServerId, $Safe, $PSMConnectAccountName, $PSMAdminConnectAccountName)
+    try {
+        $VaultOperationsTesterProcess = Start-Process -FilePath $VaultOperationsExe `
+            -ArgumentList $VaultUser, $VaultPass, $VaultAddress, "EditConfigNode", $ConfigString `
+            -WorkingDirectory "$VaultOperationsFolder" -NoNewWindow -PassThru -Wait -RedirectStandardOutput $stdoutFile
+    }
+    catch {
+        return $false
+    }
+    if ($VaultOperationsTesterProcess.ExitCode -ne 0) {
+        return $false
+    }
+    else {
+        return $true
+    }
+}
+
 #Running Set-DomainUser script
 
 $global:InVerbose = $PSBoundParameters.Verbose.IsPresent
