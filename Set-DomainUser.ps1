@@ -1621,6 +1621,7 @@ if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
 # Reverse logic on script invocation setting because double negatives suck
 $DoHardening = !$DoNotHarden
 $DoConfigureAppLocker = !$DoNotConfigureAppLocker
+$PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
 
 If ($LocalConfigurationOnly -ne $true) {
     if ($null -eq $InstallUser) {
@@ -1757,7 +1758,7 @@ If ($LocalConfigurationOnly -ne $true) {
 }
 Write-LogMessage -Type Info -MSG "Performing local configuration and restarting service"
 
-$PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
+
 Write-LogMessage -Type Verbose -MSG "Stopping CyberArk Privileged Session Manager Service"
 Stop-Service $REGKEY_PSMSERVICE
 Write-LogMessage -Type Verbose -MSG "Backing up PSM configuration files and scripts"
