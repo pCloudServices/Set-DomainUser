@@ -1867,7 +1867,13 @@ If ($LocalConfigurationOnly -ne $true) {
             # Check for and install C++ Redistributable
             if ($false -eq (Test-Path -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\12.0\VC\Runtimes\x86" -PathType Container)) {
                 $CppRedis = "$VaultOperationsTesterDir\vcredist_x86.exe"
-                Write-LogMessage -type Info -MSG "Installing Redis++ x86 from $CppRedis..." -Early
+                If ($false -eq (Test-Path -PathType Leaf -Path $CppRedis)) {
+                    Write-LogMessage -type Error -MSG "File not found: $CppRedis"
+                    Write-LogMessage -type Error -MSG "Visual Studio 2013 x86 Runtime not installed and redistributable not found. Please resolve the issue, install manually"
+                    Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+                    exit 1
+                }
+                Write-LogMessage -type Info -MSG "Installing Visual Studio 2013 (VC++ 12.0) x86 Runtime from $CppRedis..."
                 try {
                     Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
                 }
