@@ -2021,7 +2021,7 @@ $TasksBottom += "Restart Server"
 foreach ($Task in $TasksTop) {
     Write-LogMessage -Type Info " - $Task"
 }
-If ($SkipPSMObjectUpdate) {
+If ($SkipPSMObjectUpdate -or $LocalConfigurationOnly) {
     Write-LogMessage -Type Info -MSG (" - Update the PSM Server configuration:")
     Write-LogMessage -Type Info -MSG ("   - Log in to Privilege Cloud as an administrative user")
     Write-LogMessage -Type Info -MSG ("   - Go to Administration -> Configuration Options")
