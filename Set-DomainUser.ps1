@@ -1860,8 +1860,17 @@ If ($LocalConfigurationOnly -ne $true) {
     If ($true -ne $SkipPSMObjectUpdate) {
         Write-LogMessage -type Verbose -MSG "Configuring backend PSM server objects"
         $VaultAddress = Get-VaultAddress -psmRootInstallLocation $psmRootInstallLocation
-        $VaultOperationsTesterDir = "$ScriptLocation\..\VaultOperationsTester"
-        $VaultOperationsTesterExe = "$VaultOperationsTesterDir\VaultOperationsTester.exe"
+        $PossibleVaultOperationsTesterLocations = @(
+            "$ScriptLocation\..\VaultOperationsTester\VaultOperationsTester.exe",
+            "$ScriptLocation\..\..\VaultOperationsTester\VaultOperationsTester.exe"
+        )
+        foreach ($Possibility in $PossibleVaultOperationsTesterLocations) {
+            If (Test-Path -PathType Leaf -Path $Possibility) {
+                $VaultOperationsTesterExe = Get-Item $Possibility
+                break
+            }
+        }
+
         If (Test-Path -Type Leaf $VaultOperationsTesterExe) {
             # Check that VaultOperationsTester is available
             # Check for and install C++ Redistributable
