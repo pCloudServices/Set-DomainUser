@@ -1878,9 +1878,8 @@ If ($LocalConfigurationOnly -ne $true) {
                     $null = Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
                 }
                 catch {
-                    Write-LogMessage -type Error -MSG "Failed to install Visual C++ Redistributable. Resolve the error"
+                    Write-LogMessage -type Error -MSG "Failed to install Visual Studio 2013 x86 Redistributable. Resolve the error"
                     Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
-
                     exit 1
                 }
             }
