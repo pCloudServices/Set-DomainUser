@@ -1872,8 +1872,8 @@ If ($LocalConfigurationOnly -ne $true) {
                     Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
                 }
                 catch {
-                    Write-LogMessage -type Error -MSG "Failed to install Visual C++ Redistributable. Resolve the error or"
-                    Write-LogMessage -type Error -MSG "  run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+                    Write-LogMessage -type Error -MSG "Failed to install Visual C++ Redistributable. Resolve the error"
+                    Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
 
                     exit 1
                 }
@@ -1889,8 +1889,8 @@ If ($LocalConfigurationOnly -ne $true) {
                     -PSMAdminConnectAccountName $PSMAdminConnectAccountName
             }
             catch {
-                Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors or"
-                Write-LogMessage -type Error -MSG "  run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+                Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
+                Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
                 exit 1
             }
         }
