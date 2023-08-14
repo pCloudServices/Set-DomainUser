@@ -1894,6 +1894,11 @@ If ($LocalConfigurationOnly -ne $true) {
                 exit 1
             }
         }
+        else {
+            Write-LogMessage -type Error -MSG "VaultOperationsTester exe was not found. Please ensure it is located at $VaultOperationsTesterDir"
+            Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+            exit 1
+        }
     }
 }
 
