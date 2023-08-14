@@ -1864,6 +1864,7 @@ If ($LocalConfigurationOnly -ne $true) {
         Write-LogMessage -type Verbose -MSG "Configuring backend PSM server objects"
         $VaultAddress = Get-VaultAddress -psmRootInstallLocation $psmRootInstallLocation
         $PossibleVaultOperationsTesterLocations = @(
+            "$ScriptLocation\VaultOperationsTester\VaultOperationsTester.exe",
             "$ScriptLocation\..\VaultOperationsTester\VaultOperationsTester.exe",
             "$ScriptLocation\..\..\VaultOperationsTester\VaultOperationsTester.exe"
         )
@@ -1878,6 +1879,7 @@ If ($LocalConfigurationOnly -ne $true) {
             Write-LogMessage -type Error -MSG "VaultOperationsTester.exe not found. Please ensure it's present in one of the following locations:"
             Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation\..\..).FullName) + "\VaultOperationsTester"))
             Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation\..).FullName) + "\VaultOperationsTester"))
+            Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation).FullName) + "\VaultOperationsTester"))
             Write-LogMessage -type Error -MSG ("  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually.")
             exit 1
         }
