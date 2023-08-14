@@ -1865,7 +1865,7 @@ If ($LocalConfigurationOnly -ne $true) {
         If (Test-Path -Type Leaf $VaultOperationsTesterExe) {
             # Check that VaultOperationsTester is available
             # Check for and install C++ Redistributable
-            if ($null -eq (Get-CimInstance -Class win32_product | Where-Object { $_.Name -like "Microsoft Visual C++ 2013 x86*" })) {
+            if ($false -eq (Test-Path -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\12.0\VC\Runtimes\x86" -PathType Container)) {
                 $CppRedis = "$VaultOperationsTesterDir\vcredist_x86.exe"
                 Write-LogMessage -type Info -MSG "Installing Redis++ x86 from $CppRedis..." -Early
                 try {
