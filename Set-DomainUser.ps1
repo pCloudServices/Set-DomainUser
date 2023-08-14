@@ -1875,7 +1875,7 @@ If ($LocalConfigurationOnly -ne $true) {
                 }
                 Write-LogMessage -type Info -MSG "Installing Visual Studio 2013 (VC++ 12.0) x86 Runtime from $CppRedis..."
                 try {
-                    Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
+                    $null = Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
                 }
                 catch {
                     Write-LogMessage -type Error -MSG "Failed to install Visual C++ Redistributable. Resolve the error"
