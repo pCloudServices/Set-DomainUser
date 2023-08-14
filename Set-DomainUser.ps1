@@ -35,6 +35,8 @@ Skip running the PSMConfigureAppLocker.ps1 script to speed up execution if step 
 Do not onboard accounts in Privilege Cloud. Use on subsequent servers after first run.
 .PARAMETER SkipPSMUserTests
 Do not check the configuration of the PSM domain users for errors
+.PARAMETER SkipPSMObjectUpdate
+Do not update the PSM server object in backend
 #>
 
 # Version: 1.4.0
