@@ -25,6 +25,7 @@ Mandatory parameters (Set-DomainUser will prompt for these if not provided on th
 Optional parameters:
 
 	PrivilegeCloudUrl 				- Please enter the full PVWA Address e.g.: https://tenantname.privilegecloud.cyberark.cloud. Set-DomainUser will attempt to detect this automatically.
+	VaultAddress					- FQDN or IP address of the vault. Should be detected automatically, only use this option if auto-detection fails.
 	DomainDNSName 					- Please enter the DNS name of the domain of the created accounts e.g.: "lab.net". Set-DomainUser will attempt to detect this automatically.
 	DomainNetbiosName 				- Please enter the NETBIOS name of the domain of the created accounts e.g.: "LAB". Set-DomainUser will attempt to detect this automatically.
 	safe 							- Please enter the safe to save the domain accounts in, By default it is PSM, if safe does not exists it will create it.
@@ -36,5 +37,6 @@ Optional parameters:
 	DoNotConfigureAppLocker			- Skip running the PSMConfigureAppLocker.ps1 script to speed up execution if step has already been completed.
 	LocalConfigurationOnly 			- Do not create platforms or onboard accounts in Privilege Cloud. This may be used when running the script on additional servers after the first.
 	SkipPSMUserTests 				- By default the script will attempt to check the domain users for configuration errors. This option skips these tests.
+	SkipPSMObjectUpdate				- By default the script will configure the PSM server object with the updated PSM user details. This option skips this configuration.
 	Verbose 						- Show detailed progress messages to assist with troubleshooting
 	
