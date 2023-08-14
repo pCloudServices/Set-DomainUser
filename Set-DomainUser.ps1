@@ -1885,7 +1885,7 @@ If ($LocalConfigurationOnly -ne $true) {
             }
             # after C++ redistributable install
             try {
-                Set-PSMServerObject -VaultAddress $VaultAddress `
+                $null = Set-PSMServerObject -VaultAddress $VaultAddress `
                     -VaultCredentials $InstallUser `
                     -PSMServerId $PSMServerId `
                     -VaultOperationsFolder $VaultOperationsTesterDir `
