@@ -1871,6 +1871,15 @@ If ($LocalConfigurationOnly -ne $true) {
             }
         }
 
+        If ($null -eq $VaultOperationsTesterExe) {
+            Write-LogMessage -type Error -MSG "VaultOperationsTester.exe not found. Please ensure it's present in one of the following locations:"
+            ((Get-Item $ScriptLocation\..\..).FullName) + "\VaultOperationsTester"
+            ((Get-Item $ScriptLocation\..).FullName) + "\VaultOperationsTester"
+            Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+            exit 1
+        }
+
+        $VaultOperationsTesterDir = (Get-Item $VaultOperationsTesterExe).Directory
         If (Test-Path -Type Leaf $VaultOperationsTesterExe) {
             # Check that VaultOperationsTester is available
             # Check for and install C++ Redistributable
