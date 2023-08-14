@@ -1884,6 +1884,12 @@ If ($LocalConfigurationOnly -ne $true) {
             exit 1
         }
 
+        If ("Valid" -ne (Get-AuthenticodeSignature $VaultOperationsTesterExe).Status) {
+            Write-LogMessage -type Error -MSG "VaultOperationsTester.exe signature validation failed. Please replace with a correctly signed version"
+            Write-LogMessage -type Error -MSG ("  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually.")
+            exit 1
+        }
+
         $VaultOperationsTesterDir = (Get-Item $VaultOperationsTesterExe).Directory
         # Check that VaultOperationsTester is available
         # Check for and install C++ Redistributable
