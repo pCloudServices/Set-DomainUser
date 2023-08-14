@@ -1422,8 +1422,8 @@ Function Set-PSMServerObject {
     #Cleanup log file if it gets too big
     if (Test-Path $LOG_FILE_PATH_CasosArchive) {
         if (Get-ChildItem $LOG_FILE_PATH_CasosArchive | Measure-Object -Property length -Sum | Where-Object { $_.sum -gt 5MB }) {
-            Write-LogMessage -type Info -MSG "Archive log folder is getting too big, deleting it." -Early
-            Write-LogMessage -type Info -MSG "Deleting $LOG_FILE_PATH_CasosArchive" -Early
+            Write-LogMessage -type Verbose -MSG "Archive log folder is getting too big, deleting it."
+            Write-LogMessage -type Verbose -MSG "Deleting $LOG_FILE_PATH_CasosArchive"
             Remove-Item $LOG_FILE_PATH_CasosArchive -Recurse -Force
         }
     }
@@ -1858,7 +1858,7 @@ If ($LocalConfigurationOnly -ne $true) {
     }
     
     If ($true -ne $SkipPSMObjectUpdate) {
-        Write-LogMessage -type Info -MSG "Configuring backend PSM server objects"
+        Write-LogMessage -type Verbose -MSG "Configuring backend PSM server objects"
         $VaultAddress = Get-VaultAddress -psmRootInstallLocation $psmRootInstallLocation
         $VaultOperationsTesterDir = "$ScriptLocation\..\VaultOperationsTester"
         $VaultOperationsTesterExe = "$VaultOperationsTesterDir\VaultOperationsTester.exe"
@@ -1974,7 +1974,7 @@ If ($DoHardening) {
     Write-LogMessage -Type Info -MSG "End of PSM Hardening script output"
 }
 else {
-    Write-LogMessage -Type Info -MSG "Skipping Hardening due to -DoNotHarden parameter"
+    Write-LogMessage -Type Warning -MSG "Skipping Hardening due to -DoNotHarden parameter"
     $TasksTop += "Run script for perform server hardening (PSMHardening.ps1)"
 }
 If ($DoConfigureAppLocker) {
@@ -1985,7 +1985,7 @@ If ($DoConfigureAppLocker) {
     Write-LogMessage -Type Info -MSG "End of PSM Configure AppLocker script output"
 }
 else {
-    Write-LogMessage -Type Info -MSG "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
+    Write-LogMessage -Type Warning -MSG "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
     $TasksTop += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
 }
 Write-LogMessage -Type Verbose -MSG "Restarting CyberArk Privileged Session Manager Service"
