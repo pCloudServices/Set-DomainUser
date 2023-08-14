@@ -1882,45 +1882,38 @@ If ($LocalConfigurationOnly -ne $true) {
         }
 
         $VaultOperationsTesterDir = (Get-Item $VaultOperationsTesterExe).Directory
-        If (Test-Path -Type Leaf $VaultOperationsTesterExe) {
-            # Check that VaultOperationsTester is available
-            # Check for and install C++ Redistributable
-            if ($false -eq (Test-Path -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\12.0\VC\Runtimes\x86" -PathType Container)) {
-                $CppRedis = "$VaultOperationsTesterDir\vcredist_x86.exe"
-                If ($false -eq (Test-Path -PathType Leaf -Path $CppRedis)) {
-                    Write-LogMessage -type Error -MSG "File not found: $CppRedis"
-                    Write-LogMessage -type Error -MSG "Visual Studio 2013 x86 Runtime not installed and redistributable not found. Please resolve the issue, install manually"
-                    Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
-                    exit 1
-                }
-                Write-LogMessage -type Info -MSG "Installing Visual Studio 2013 (VC++ 12.0) x86 Runtime from $CppRedis..."
-                try {
-                    $null = Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
-                }
-                catch {
-                    Write-LogMessage -type Error -MSG "Failed to install Visual Studio 2013 x86 Redistributable. Resolve the error"
-                    Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
-                    exit 1
-                }
+        # Check that VaultOperationsTester is available
+        # Check for and install C++ Redistributable
+        if ($false -eq (Test-Path -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\12.0\VC\Runtimes\x86" -PathType Container)) {
+            $CppRedis = "$VaultOperationsTesterDir\vcredist_x86.exe"
+            If ($false -eq (Test-Path -PathType Leaf -Path $CppRedis)) {
+                Write-LogMessage -type Error -MSG "File not found: $CppRedis"
+                Write-LogMessage -type Error -MSG "Visual Studio 2013 x86 Runtime not installed and redistributable not found. Please resolve the issue, install manually"
+                Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+                exit 1
             }
-            # after C++ redistributable install
+            Write-LogMessage -type Info -MSG "Installing Visual Studio 2013 (VC++ 12.0) x86 Runtime from $CppRedis..."
             try {
-                $null = Set-PSMServerObject -VaultAddress $VaultAddress `
-                    -VaultCredentials $InstallUser `
-                    -PSMServerId $PSMServerId `
-                    -VaultOperationsFolder $VaultOperationsTesterDir `
-                    -PSMSafe $Safe `
-                    -PSMConnectAccountName $PSMConnectAccountName `
-                    -PSMAdminConnectAccountName $PSMAdminConnectAccountName
+                $null = Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
             }
             catch {
-                Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
+                Write-LogMessage -type Error -MSG "Failed to install Visual Studio 2013 x86 Redistributable. Resolve the error"
                 Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
                 exit 1
             }
         }
-        else {
-            Write-LogMessage -type Error -MSG "VaultOperationsTester exe was not found. Please ensure it is located at $VaultOperationsTesterDir"
+        # after C++ redistributable install
+        try {
+            $null = Set-PSMServerObject -VaultAddress $VaultAddress `
+                -VaultCredentials $InstallUser `
+                -PSMServerId $PSMServerId `
+                -VaultOperationsFolder $VaultOperationsTesterDir `
+                -PSMSafe $Safe `
+                -PSMConnectAccountName $PSMConnectAccountName `
+                -PSMAdminConnectAccountName $PSMAdminConnectAccountName
+        }
+        catch {
+            Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
             Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
             exit 1
         }
