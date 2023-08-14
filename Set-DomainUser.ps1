@@ -1436,12 +1436,13 @@ Function Set-PSMServerObject {
     #Get Credentials
     $VaultUser = $VaultCredentials.UserName
     $VaultPass = $VaultCredentials.GetNetworkCredential().Password
+    $Operation = "EditConfigNode"
     $ConfigString = ("//PSMServer[@ID='{0}']/ConnectionDetails/Server Safe={1},Object={2},AdminObject={3}" `
             -f $PSMServerId, $Safe, $PSMConnectAccountName, $PSMAdminConnectAccountName)
     try {
         $VaultOperationsTesterProcess = Start-Process -FilePath $VaultOperationsExe `
-            -ArgumentList $VaultUser, $VaultPass, $VaultAddress, "EditConfigNode", $ConfigString `
-            -WorkingDirectory "$VaultOperationsFolder" -NoNewWindow -PassThru -Wait -RedirectStandardOutput $stdoutFile
+        -WorkingDirectory "$VaultOperationsFolder" -NoNewWindow -PassThru -Wait -RedirectStandardOutput $stdoutFile `
+        -ArgumentList $VaultUser, $VaultPass, $VaultAddress, $Operation, $ConfigString
     }
     catch {
         return $false
