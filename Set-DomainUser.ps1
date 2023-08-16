@@ -39,7 +39,7 @@ Do not check the configuration of the PSM domain users for errors
 Do not update the PSM server object in backend
 #>
 
-# Version: 1.4.0
+# Version: 1.4.1
 
 [CmdletBinding()]
 param(
