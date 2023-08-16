@@ -2002,7 +2002,7 @@ If ($DoHardening) {
 }
 else {
     Write-LogMessage -Type Warning -MSG "Skipping Hardening due to -DoNotHarden parameter"
-    $TasksTop += "Run script for perform server hardening (PSMHardening.ps1)"
+    $TasksTop += "Run script to perform server hardening (PSMHardening.ps1)"
 }
 If ($DoConfigureAppLocker) {
     Write-LogMessage -Type Info -MSG "Running PSM Configure AppLocker script"
