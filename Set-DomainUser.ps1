@@ -1456,6 +1456,65 @@ Function Set-PSMServerObject {
 
 #Running Set-DomainUser script
 
+$OperationsToPerform = @{
+    GetInstallerUserCredentials       = $true
+    GetPSMConnectUserCredentials      = $true
+    GetPSMAdminConnectUserCredentials = $true
+    PsmUserSearch                     = $true
+    UserTests                         = $true
+    GetPrivilegeCloudUrl              = $true
+    DomainNetbiosNameDetection        = $true
+    DomainDNSNameDetection            = $true
+    PsmConfiguration                  = $true
+    SecurityPolicyConfiguration       = $true
+    RemoteDesktopUsersGroupAddition   = $true
+    RemoteConfiguration               = $true
+    ServerObjectConfiguration         = $true
+    Hardening                         = $true
+    ConfigureAppLocker                = $true
+}
+
+switch ($PSBoundParameters) {
+    { $_.psmConnectCredentials } {
+        $OperationsToPerform.GetPSMConnectUserCredentials = $false
+    }
+    { $_.psmAdminCredentials } {
+        $OperationsToPerform.GetPSMAdminConnectUserCredentials = $false
+    }
+    { $_.SkipPSMUserTests } {
+        $OperationsToPerform.UserTests = $false
+    }
+    { $_.PrivilegeCloudUrl } {
+        $OperationsToPerform.GetPrivilegeCloudUrl = $false
+    }
+    { $_.DomainNetbiosName } {
+        $OperationsToPerform.DomainNetbiosNameDetection = $false
+    }
+    { $_.DomainDNSName } {
+        $OperationsToPerform.DomainDNSNameDetection = $false
+    }
+    { $_.LocalConfigurationOnly } {
+        $OperationsToPerform.RemoteConfiguration = $false
+        $OperationsToPerform.ServerObjectConfiguration = $false
+        $OperationsToPerform.UserTests = $false
+    }
+    { $_.DoNotHarden } {
+        $OperationsToPerform.Hardening = $false
+    }
+    { $_.SkipSecurityPolicyConfiguration } {
+        $OperationsToPerform.SecurityPolicyConfiguration = $false
+    }
+    { $_.SkipAddingUsersToRduGroup } {
+        $OperationsToPerform.RemoteDesktopUsersGroupAddition = $false
+    }
+    { $_.SkipAddingUsersToRduGroup -and $_.SkipPSMUserTests } {
+        $OperationsToPerform.PsmUserSearch = $false
+    }
+    { $_.DoNotConfigureAppLocker } {
+        $OperationsToPerform.ConfigureAppLocker = $false
+    }
+}
+
 $global:InVerbose = $PSBoundParameters.Verbose.IsPresent
 $ScriptLocation = Split-Path -Parent $MyInvocation.MyCommand.Path
 $global:LOG_FILE_PATH = "$ScriptLocation\_Set-DomainUser.log"
