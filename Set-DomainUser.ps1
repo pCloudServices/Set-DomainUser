@@ -1387,7 +1387,7 @@ function Get-UserProperty {
         $Result = $UserObject.InvokeGet($Property)
     }
     catch {
-        $Result = "An error occurred while retrieving this property. It may not be set."
+        $Result = "Unset"
     }
     return $Result
 }
@@ -1441,8 +1441,8 @@ Function Set-PSMServerObject {
             -f $PSMServerId, $Safe, $PSMConnectAccountName, $PSMAdminConnectAccountName)
     try {
         $VaultOperationsTesterProcess = Start-Process -FilePath $VaultOperationsExe `
-        -WorkingDirectory "$VaultOperationsFolder" -NoNewWindow -PassThru -Wait -RedirectStandardOutput $stdoutFile `
-        -ArgumentList $VaultUser, $VaultPass, $VaultAddress, $Operation, $ConfigString
+            -WorkingDirectory "$VaultOperationsFolder" -NoNewWindow -PassThru -Wait -RedirectStandardOutput $stdoutFile `
+            -ArgumentList $VaultUser, $VaultPass, $VaultAddress, $Operation, $ConfigString
     }
     catch {
         return $false
@@ -1677,6 +1677,7 @@ if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
                 # If the setting that we are checking applies to the user we're checking, or all users
                 If ($SettingCurrentValue -notin $SettingExpectedValue) {
                     $UserConfigurationErrors += [PSCustomObject]@{
+                        Username    = $Username
                         User        = $UserType
                         SettingName = $SettingDisplayName
                         Current     = $SettingCurrentValue
@@ -1692,12 +1693,10 @@ if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
         $UsersWithConfigurationErrors | ForEach-Object {
             $User = $_
             Write-LogMessage -Type Error -MSG ("Configuration errors for {0}:" -f $User)
-            $UserConfigurationErrors | Where-Object User -eq $user | ForEach-Object {
-                Write-LogMessage -type Error -MSG ("Setting:        " + $_.SettingName)
-                Write-LogMessage -type Error -MSG ("Expected value: " + ($_.Expected -join " or "))
-                Write-LogMessage -type Error -MSG ("Current value:  " + $_.Current)
-                Write-LogMessage -type Error -MSG (" ")
-            }
+            $UserConfigurationErrors | Where-Object User -eq $user | Select-Object Username, SettingName, Expected, Current | Format-Table
+        }
+        If ("Unset" -in $UserConfigurationErrors.Current) {
+            Write-LogMessage -type Error -MSG "Errors occurred while retrieving some user properties, which usually means they do not exist. These will show as `"Unset`" above."
         }
         Write-LogMessage -type Error -MSG "Please resolve the issues above or rerun this script with -SkipPSMUserTests to ignore these errors."
         exit 1
