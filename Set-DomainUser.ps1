@@ -1519,7 +1519,7 @@ $global:InVerbose = $PSBoundParameters.Verbose.IsPresent
 $ScriptLocation = Split-Path -Parent $MyInvocation.MyCommand.Path
 $global:LOG_FILE_PATH = "$ScriptLocation\_Set-DomainUser.log"
 
-if ($null -eq $psmConnectCredentials) {
+if ($OperationsToPerform.GetPSMConnectUserCredentials) {
     $psmConnectCredentials = Get-Credential -Message "Please enter PSMConnect domain user credentials"
     if (!($psmConnectCredentials)) {
         Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
@@ -1527,7 +1527,7 @@ if ($null -eq $psmConnectCredentials) {
     }
 }
 
-if ($null -eq $psmAdminCredentials) {
+if ($OperationsToPerform.GetPSMAdminConnectUserCredentials) {
     $psmAdminCredentials = Get-Credential -Message "Please enter PSMAdminConnect domain user credentials"
     if (!($psmAdminCredentials)) {
         Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
@@ -1549,7 +1549,6 @@ else {
 
 
 $BackupSubDirectory = (Get-Date).ToString('yyyMMdd-HHmmss')
-$DomainNameAutodetected = $false
 
 $TasksTop = @(
     "Modify local/group policies to allow PSM users to use Remote Desktop"
@@ -1583,7 +1582,7 @@ If (!(Test-CredentialFormat -Credential $psmAdminCredentials)) {
     exit 1
 }
 
-if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
+if ($OperationsToPerform.UserTests) {
     If (!(Test-PasswordCharactersValid -Credential $psmConnectCredentials)) {
         Write-LogMessage -Type Error -MSG "Password provided for PSMConnect user contained invalid characters."
         Write-LogMessage -Type Error -MSG 'Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
@@ -1600,7 +1599,7 @@ if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
 
 
 # Get-Variables
-if (!($PrivilegeCloudUrl)) {
+if ($OperationsToPerform.GetPrivilegeCloudUrl) {
     Write-LogMessage -Type Verbose -MSG "Getting PVWA address"
     $PrivilegeCloudUrl = Get-PvwaAddress -psmRootInstallLocation $psmRootInstallLocation
 }
@@ -1610,11 +1609,11 @@ If ($false -eq $PrivilegeCloudUrl) {
 }
 
 Write-LogMessage -Type Verbose -MSG "Getting domain details"
-if (!($DomainDNSName)) {
+if ($OperationsToPerform.DomainDNSNameDetection) {
     $DomainNameAutodetected = $true
     $DomainDNSName = Get-DomainDnsName
 }
-if (!($DomainNetbiosName)) {
+if ($OperationsToPerform.DomainNetbiosNameDetection) {
     $DomainNameAutodetected = $true
     $DomainNetbiosName = Get-DomainNetbiosName
 }
@@ -1635,7 +1634,7 @@ If ($DomainNameAutodetected) {
     }
 }
 
-if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
+if ($OperationsToPerform.UserTests) {
     # Gather the information we'll be comparing
     $PSMComponentsPath = $psmRootInstallLocation + "Components"
     $PSMInitSessionPath = $PSMComponentsPath + "\PSMInitSession.exe"
@@ -1783,12 +1782,10 @@ if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
 }
 
 # Reverse logic on script invocation setting because double negatives suck
-$DoHardening = !$DoNotHarden
-$DoConfigureAppLocker = !$DoNotConfigureAppLocker
 $PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
 
 ## Remote Configuration Block
-If ($LocalConfigurationOnly -ne $true) {
+If ($OperationsToPerform.GetInstallerUserCredentials) {
     if ($null -eq $InstallUser) {
         if ($UM) {
             $TinaUserType = "installer user"
@@ -1802,7 +1799,8 @@ If ($LocalConfigurationOnly -ne $true) {
             exit 1
         }
     }
-
+}
+If ($OperationsToPerform.RemoteConfiguration) {
     Write-LogMessage -type Info -MSG "Starting backend configuration"
 
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -1921,8 +1919,9 @@ If ($LocalConfigurationOnly -ne $true) {
         Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
         exit 1
     }
+}
     
-    If ($true -ne $SkipPSMObjectUpdate) {
+If ($OperationsToPerform.ServerObjectConfiguration) {
         Write-LogMessage -type Verbose -MSG "Configuring backend PSM server objects"
         $VaultAddress = Get-VaultAddress -psmRootInstallLocation $psmRootInstallLocation
         $PossibleVaultOperationsTesterLocations = @(
@@ -1989,11 +1988,11 @@ If ($LocalConfigurationOnly -ne $true) {
             exit 1
         }
     }
-}
 
 ## End Remote Configuration Block
 
 ## Local Configuration Block
+If ($OperationsToPerform.PsmConfiguration) {
 Write-LogMessage -Type Info -MSG "Performing local configuration and restarting service"
 
 Write-LogMessage -Type Verbose -MSG "Stopping CyberArk Privileged Session Manager Service"
@@ -2050,12 +2049,12 @@ If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
         }
     }
 }
-
+}
 ## End Local Configuration Block
 
 ## Post-Configuration Block
 
-If ($DoHardening) {
+If ($OperationsToPerform.Hardening) {
     Write-LogMessage -Type Info -MSG "Running PSM Hardening script"
     Write-LogMessage -Type Info -MSG "---"
     Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation
@@ -2066,7 +2065,7 @@ else {
     Write-LogMessage -Type Warning -MSG "Skipping Hardening due to -DoNotHarden parameter"
     $TasksTop += "Run script to perform server hardening (PSMHardening.ps1)"
 }
-If ($DoConfigureAppLocker) {
+If ($OperationsToPerform.ConfigureAppLocker) {
     Write-LogMessage -Type Info -MSG "Running PSM Configure AppLocker script"
     Write-LogMessage -Type Info -MSG "---"
     Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation
