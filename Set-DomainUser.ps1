@@ -327,8 +327,7 @@ Function Get-PvwaAddress {
         return $Address
     }
     catch {
-        Write-LogMessage -Type Error -MSG "Unable to detect PVWA address automatically. Please rerun script and provide it using the -PrivilegeCloudUrl parameter."
-        exit 1
+        return $false
     }
 }
 
@@ -1546,6 +1545,11 @@ if (!($PrivilegeCloudUrl)) {
     Write-LogMessage -Type Verbose -MSG "Getting PVWA address"
     $PrivilegeCloudUrl = Get-PvwaAddress -psmRootInstallLocation $psmRootInstallLocation
 }
+If ($false -eq $PrivilegeCloudUrl) {
+    Write-LogMessage -Type Error -MSG "Unable to detect PVWA address automatically. Please rerun script and provide it using the -PrivilegeCloudUrl parameter."
+    exit 1
+}
+
 Write-LogMessage -Type Verbose -MSG "Getting domain details"
 if (!($DomainDNSName)) {
     $DomainNameAutodetected = $true
