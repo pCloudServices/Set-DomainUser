@@ -37,6 +37,10 @@ Do not onboard accounts in Privilege Cloud. Use on subsequent servers after firs
 Do not check the configuration of the PSM domain users for errors
 .PARAMETER SkipPSMObjectUpdate
 Do not update the PSM server object in backend
+.PARAMETER SkipSecurityPolicyConfiguration
+Do not update Local Security Policy to allow PSM users to log on with Remote Desktop
+.PARAMETER SkipAddingUsersToRduGroup
+Do not add PSM users to the Remote Desktop Users group
 #>
 
 # Version: 1.5
@@ -130,7 +134,17 @@ param(
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Do not update PSM Server Object configuration in backend")]
-    [switch]$SkipPSMObjectUpdate
+    [switch]$SkipPSMObjectUpdate,
+
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Do not update Local Security Policy to allow PSM users to log on with Remote Desktop")]
+    [switch]$SkipSecurityPolicyConfiguration,
+
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Do not add PSM users to the Remote Desktop Users group")]
+    [switch]$SkipAddingUsersToRduGroup
 )
 
 #Functions
@@ -2018,6 +2032,10 @@ If ($OperationsToPerform.SecurityPolicyConfiguration) {
     }
     $TasksTop += "Ensure domain GPOs allow PSM users to log on to PSM servers with Remote Desktop"
 }
+else {
+    $TasksTop += "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+    $TasksTop += "Ensure domain GPOs allow PSM users to log on to PSM servers with Remote Desktop"
+}
 
 If ($OperationsToPerform.RemoteDesktopUsersGroupAddition) {
     try {
@@ -2034,6 +2052,9 @@ If ($OperationsToPerform.RemoteDesktopUsersGroupAddition) {
         Write-LogMessage -type Error -MSG "Failed to add PSM users to Remote Desktop Users group. Please add these users manually."
         $TasksTop += "Add PSM users to Remote Desktop Users group"
     }
+}
+else {
+    $TasksTop += "Add PSM users to Remote Desktop Users group"
 }
 
 

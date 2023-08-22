@@ -38,5 +38,7 @@ Optional parameters:
 	LocalConfigurationOnly 			- Do not create platforms or onboard accounts in Privilege Cloud. This may be used when running the script on additional servers after the first.
 	SkipPSMUserTests 				- By default the script will attempt to check the domain users for configuration errors. This option skips these tests.
 	SkipPSMObjectUpdate				- By default the script will configure the PSM server object with the updated PSM user details. This option skips this configuration.
+	SkipSecurityPolicyConfiguration - Do not update Local Security Policy to allow PSM users to log on with Remote Desktop
+	SkipAddingUsersToRduGroup       - Do not add PSM users to the Remote Desktop Users group
 	Verbose 						- Show detailed progress messages to assist with troubleshooting
 	
