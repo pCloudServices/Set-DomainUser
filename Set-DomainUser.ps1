@@ -2022,6 +2022,22 @@ If ($OperationsToPerform.SecurityPolicyConfiguration) {
     }
 }
 
+If ($OperationsToPerform.RemoteDesktopUsersGroupAddition) {
+    try {
+        $Members = (Get-LocalGroupMember -Group "Remote Desktop Users").Name
+        If ($PsmConnectUser -notin $Members) {
+            Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PsmConnectUser
+        }
+        If ($PsmAdminConnectUser -notin $Members) {
+            Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PsmAdminConnectUser
+        }
+    }
+    catch {
+        Write-Host $_.Exception
+        Write-LogMessage -type Error -MSG "Failed to add PSM users to Remote Desktop Users group. Please add these users manually."
+        $TasksTop += "Add PSM users to Remote Desktop Users group"
+    }
+}
 
 
 # End group membership and security policy changes
