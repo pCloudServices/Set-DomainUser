@@ -1996,7 +1996,7 @@ Write-LogMessage -Type Info -MSG "Performing local configuration and restarting 
 Write-LogMessage -Type Verbose -MSG "Stopping CyberArk Privileged Session Manager Service"
 Stop-Service $REGKEY_PSMSERVICE
 Write-LogMessage -Type Verbose -MSG "Backing up PSM configuration files and scripts"
-Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupSubDirectory $BackupSubDirectory
+    Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupPath $BackupPath
 Write-LogMessage -Type Verbose -MSG "Updating PSM configuration files and scripts"
 Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $DomainDNSName -PSMAdminConnectAccountName $PSMAdminConnectAccountName -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
 #TODO: Update Basic_ini
