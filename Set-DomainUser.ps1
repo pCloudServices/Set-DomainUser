@@ -2020,6 +2020,7 @@ If ($OperationsToPerform.SecurityPolicyConfiguration) {
         Write-LogMessage -type Error -MSG "Failed to configure local security policy to allow PSM users to log on with Remote Desktop. Please perform this configuration manually."
         $TasksTop += "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
     }
+    $TasksTop += "Ensure domain GPOs allow PSM users to log on to PSM servers with Remote Desktop"
 }
 
 If ($OperationsToPerform.RemoteDesktopUsersGroupAddition) {
