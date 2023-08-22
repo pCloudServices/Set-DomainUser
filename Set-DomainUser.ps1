@@ -39,7 +39,7 @@ Do not check the configuration of the PSM domain users for errors
 Do not update the PSM server object in backend
 #>
 
-# Version: 1.4.1
+# Version: 1.5
 
 [CmdletBinding()]
 param(
@@ -1918,74 +1918,74 @@ If ($OperationsToPerform.RemoteConfiguration) {
         exit 1
     }
 }
-    
+
 If ($OperationsToPerform.ServerObjectConfiguration) {
-        Write-LogMessage -type Verbose -MSG "Configuring backend PSM server objects"
-        $VaultAddress = Get-VaultAddress -psmRootInstallLocation $psmRootInstallLocation
-        $PossibleVaultOperationsTesterLocations = @(
-            "$ScriptLocation\VaultOperationsTester\VaultOperationsTester.exe",
-            "$ScriptLocation\..\VaultOperationsTester\VaultOperationsTester.exe",
-            "$ScriptLocation\..\..\VaultOperationsTester\VaultOperationsTester.exe"
-        )
-        foreach ($Possibility in $PossibleVaultOperationsTesterLocations) {
-            If (Test-Path -PathType Leaf -Path $Possibility) {
-                $VaultOperationsTesterExe = Get-Item $Possibility
-                break
-            }
+    Write-LogMessage -type Verbose -MSG "Configuring backend PSM server objects"
+    $VaultAddress = Get-VaultAddress -psmRootInstallLocation $psmRootInstallLocation
+    $PossibleVaultOperationsTesterLocations = @(
+        "$ScriptLocation\VaultOperationsTester\VaultOperationsTester.exe",
+        "$ScriptLocation\..\VaultOperationsTester\VaultOperationsTester.exe",
+        "$ScriptLocation\..\..\VaultOperationsTester\VaultOperationsTester.exe"
+    )
+    foreach ($Possibility in $PossibleVaultOperationsTesterLocations) {
+        If (Test-Path -PathType Leaf -Path $Possibility) {
+            $VaultOperationsTesterExe = Get-Item $Possibility
+            break
         }
+    }
 
-        If ($null -eq $VaultOperationsTesterExe) {
-            Write-LogMessage -type Error -MSG "VaultOperationsTester.exe not found. Please ensure it's present in one of the following locations:"
-            Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation\..\..).FullName) + "\VaultOperationsTester"))
-            Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation\..).FullName) + "\VaultOperationsTester"))
-            Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation).FullName) + "\VaultOperationsTester"))
-            Write-LogMessage -type Error -MSG ("  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually.")
+    If ($null -eq $VaultOperationsTesterExe) {
+        Write-LogMessage -type Error -MSG "VaultOperationsTester.exe not found. Please ensure it's present in one of the following locations:"
+        Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation\..\..).FullName) + "\VaultOperationsTester"))
+        Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation\..).FullName) + "\VaultOperationsTester"))
+        Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation).FullName) + "\VaultOperationsTester"))
+        Write-LogMessage -type Error -MSG ("  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually.")
+        exit 1
+    }
+
+    If ("Valid" -ne (Get-AuthenticodeSignature $VaultOperationsTesterExe).Status) {
+        Write-LogMessage -type Error -MSG "VaultOperationsTester.exe signature validation failed. Please replace with a correctly signed version"
+        Write-LogMessage -type Error -MSG ("  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually.")
+        exit 1
+    }
+
+    $VaultOperationsTesterDir = (Get-Item $VaultOperationsTesterExe).Directory
+    # Check that VaultOperationsTester is available
+    # Check for and install C++ Redistributable
+    if ($false -eq (Test-Path -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\12.0\VC\Runtimes\x86" -PathType Container)) {
+        $CppRedis = "$VaultOperationsTesterDir\vcredist_x86.exe"
+        If ($false -eq (Test-Path -PathType Leaf -Path $CppRedis)) {
+            Write-LogMessage -type Error -MSG "File not found: $CppRedis"
+            Write-LogMessage -type Error -MSG "Visual Studio 2013 x86 Runtime not installed and redistributable not found. Please resolve the issue, install manually"
+            Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
             exit 1
         }
-
-        If ("Valid" -ne (Get-AuthenticodeSignature $VaultOperationsTesterExe).Status) {
-            Write-LogMessage -type Error -MSG "VaultOperationsTester.exe signature validation failed. Please replace with a correctly signed version"
-            Write-LogMessage -type Error -MSG ("  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually.")
-            exit 1
-        }
-
-        $VaultOperationsTesterDir = (Get-Item $VaultOperationsTesterExe).Directory
-        # Check that VaultOperationsTester is available
-        # Check for and install C++ Redistributable
-        if ($false -eq (Test-Path -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\12.0\VC\Runtimes\x86" -PathType Container)) {
-            $CppRedis = "$VaultOperationsTesterDir\vcredist_x86.exe"
-            If ($false -eq (Test-Path -PathType Leaf -Path $CppRedis)) {
-                Write-LogMessage -type Error -MSG "File not found: $CppRedis"
-                Write-LogMessage -type Error -MSG "Visual Studio 2013 x86 Runtime not installed and redistributable not found. Please resolve the issue, install manually"
-                Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
-                exit 1
-            }
-            Write-LogMessage -type Info -MSG "Installing Visual Studio 2013 (VC++ 12.0) x86 Runtime from $CppRedis..."
-            try {
-                $null = Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
-            }
-            catch {
-                Write-LogMessage -type Error -MSG "Failed to install Visual Studio 2013 x86 Redistributable. Resolve the error"
-                Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
-                exit 1
-            }
-        }
-        # after C++ redistributable install
+        Write-LogMessage -type Info -MSG "Installing Visual Studio 2013 (VC++ 12.0) x86 Runtime from $CppRedis..."
         try {
-            $null = Set-PSMServerObject -VaultAddress $VaultAddress `
-                -VaultCredentials $InstallUser `
-                -PSMServerId $PSMServerId `
-                -VaultOperationsFolder $VaultOperationsTesterDir `
-                -PSMSafe $Safe `
-                -PSMConnectAccountName $PSMConnectAccountName `
-                -PSMAdminConnectAccountName $PSMAdminConnectAccountName
+            $null = Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
         }
         catch {
-            Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
+            Write-LogMessage -type Error -MSG "Failed to install Visual Studio 2013 x86 Redistributable. Resolve the error"
             Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
             exit 1
         }
     }
+    # after C++ redistributable install
+    try {
+        $null = Set-PSMServerObject -VaultAddress $VaultAddress `
+            -VaultCredentials $InstallUser `
+            -PSMServerId $PSMServerId `
+            -VaultOperationsFolder $VaultOperationsTesterDir `
+            -PSMSafe $Safe `
+            -PSMConnectAccountName $PSMConnectAccountName `
+            -PSMAdminConnectAccountName $PSMAdminConnectAccountName
+    }
+    catch {
+        Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
+        Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+        exit 1
+    }
+}
 
 ## End Remote Configuration Block
 
@@ -2045,62 +2045,62 @@ If ($OperationsToPerform.RemoteDesktopUsersGroupAddition) {
 
 ## Local Configuration Block
 If ($OperationsToPerform.PsmConfiguration) {
-Write-LogMessage -Type Info -MSG "Performing local configuration and restarting service"
+    Write-LogMessage -Type Info -MSG "Performing local configuration and restarting service"
 
-Write-LogMessage -Type Verbose -MSG "Stopping CyberArk Privileged Session Manager Service"
-Stop-Service $REGKEY_PSMSERVICE
-Write-LogMessage -Type Verbose -MSG "Backing up PSM configuration files and scripts"
+    Write-LogMessage -Type Verbose -MSG "Stopping CyberArk Privileged Session Manager Service"
+    Stop-Service $REGKEY_PSMSERVICE
+    Write-LogMessage -Type Verbose -MSG "Backing up PSM configuration files and scripts"
     Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupPath $BackupPath
-Write-LogMessage -Type Verbose -MSG "Updating PSM configuration files and scripts"
-Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $DomainDNSName -PSMAdminConnectAccountName $PSMAdminConnectAccountName -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
-#TODO: Update Basic_ini
-Write-LogMessage -Type Verbose -MSG "Adding PSMAdminConnect user to Terminal Services configuration"
-# Adding PSMAdminConnect user to Terminal Services configuration
-$AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $DomainNetbiosName -Credentials $psmAdminCredentials
-If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
-    Write-LogMessage -Type Verbose -MSG "Successfully added PSMAdminConnect user to Terminal Services configuration"
-}
-else {
-    # Failed to add user (1st command)
-    if ($IgnoreShadowPermissionErrors) {
-        Write-LogMessage -Type Warning -MSG $AddAdminUserToTSResult.Error
-        Write-LogMessage -Type Warning -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration."
-        Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
-        $TasksTop += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
+    Write-LogMessage -Type Verbose -MSG "Updating PSM configuration files and scripts"
+    Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $DomainDNSName -PSMAdminConnectAccountName $PSMAdminConnectAccountName -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
+    #TODO: Update Basic_ini
+    Write-LogMessage -Type Verbose -MSG "Adding PSMAdminConnect user to Terminal Services configuration"
+    # Adding PSMAdminConnect user to Terminal Services configuration
+    $AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $DomainNetbiosName -Credentials $psmAdminCredentials
+    If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
+        Write-LogMessage -Type Verbose -MSG "Successfully added PSMAdminConnect user to Terminal Services configuration"
     }
     else {
-        Write-LogMessage -Type Error -MSG $AddAdminUserToTSResult.Error
-        Write-LogMessage -Type Error -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration."
-        Write-LogMessage -Type Error -MSG "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
-        Write-LogMessage -Type Error -MSG "Exiting."
-        exit 1
-    }
-}
-If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
-    # Grant shadow permission only if first command was succesful
-    Write-LogMessage -Type Verbose -MSG "Granting PSMAdminConnect user permission to shadow sessions"
-    $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $DomainNetbiosName -Credentials $psmAdminCredentials
-    If ($AddAdminUserTSShadowPermissionResult.ReturnValue -eq 0) {
-        Write-LogMessage -Type Verbose -MSG "Successfully granted PSMAdminConnect permission to shadow sessions"
-    }
-    else {
-        # Failed to grant permission (2nd command)
+        # Failed to add user (1st command)
         if ($IgnoreShadowPermissionErrors) {
-            Write-LogMessage -Type Warning -MSG $AddAdminUserTSShadowPermissionResult.Error
-            Write-LogMessage -Type Warning -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
+            Write-LogMessage -Type Warning -MSG $AddAdminUserToTSResult.Error
+            Write-LogMessage -Type Warning -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration."
             Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
-            $TasksTop += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
+            $TasksTop += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
         }
         else {
-            Write-LogMessage -Type Error -MSG $AddAdminUserTSShadowPermissionResult.Error
-            Write-LogMessage -Type Error -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
-            Write-LogMessage -Type Error -MSG "Please see the following article for information on resolving this error"
-            Write-LogMessage -Type Error -MSG "https://cyberark-customers.force.com/s/article/PSM-Unable-to-run-WMIC-command"
+            Write-LogMessage -Type Error -MSG $AddAdminUserToTSResult.Error
+            Write-LogMessage -Type Error -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration."
             Write-LogMessage -Type Error -MSG "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
+            Write-LogMessage -Type Error -MSG "Exiting."
             exit 1
         }
     }
-}
+    If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
+        # Grant shadow permission only if first command was succesful
+        Write-LogMessage -Type Verbose -MSG "Granting PSMAdminConnect user permission to shadow sessions"
+        $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $DomainNetbiosName -Credentials $psmAdminCredentials
+        If ($AddAdminUserTSShadowPermissionResult.ReturnValue -eq 0) {
+            Write-LogMessage -Type Verbose -MSG "Successfully granted PSMAdminConnect permission to shadow sessions"
+        }
+        else {
+            # Failed to grant permission (2nd command)
+            if ($IgnoreShadowPermissionErrors) {
+                Write-LogMessage -Type Warning -MSG $AddAdminUserTSShadowPermissionResult.Error
+                Write-LogMessage -Type Warning -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
+                Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
+                $TasksTop += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
+            }
+            else {
+                Write-LogMessage -Type Error -MSG $AddAdminUserTSShadowPermissionResult.Error
+                Write-LogMessage -Type Error -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
+                Write-LogMessage -Type Error -MSG "Please see the following article for information on resolving this error"
+                Write-LogMessage -Type Error -MSG "https://cyberark-customers.force.com/s/article/PSM-Unable-to-run-WMIC-command"
+                Write-LogMessage -Type Error -MSG "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
+                exit 1
+            }
+        }
+    }
 }
 ## End Local Configuration Block
 
