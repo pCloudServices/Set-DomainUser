@@ -1989,6 +1989,43 @@ If ($OperationsToPerform.ServerObjectConfiguration) {
 
 ## End Remote Configuration Block
 
+# Group membership and security policy changes
+
+$PsmConnectUser = ("{0}\{1}" -f $DomainNetbiosName, $psmConnectCredentials.UserName)
+$PsmAdminConnectUser = ("{0}\{1}" -f $DomainNetbiosName, $psmAdminCredentials.UserName)
+
+If ($OperationsToPerform.SecurityPolicyConfiguration) {
+    If (!(Test-Path -Path $BackupPath -PathType Container)) {
+        $null = New-Item -ItemType Directory -Path $BackupPath
+    }
+    try {
+        $SecEditExe = Get-Command secedit.exe
+        $null = Start-Process -Wait -FilePath $SecEditExe -PassThru -ArgumentList @("/export", "/cfg", "`"$BackupPath\secpol.cfg`"") -NoNewWindow -RedirectStandardOutput null
+        $Content = Get-Content "$BackupPath\secpol.cfg"
+        $null = $Content | Where-Object { $_ -match "^SeRemoteInteractiveLogonRight = (.*)" }
+        $SecPolCurrentUsersString = $Matches[1]
+        $SecPolUsersArray = ($SecPolCurrentUsersString -split ",")
+        $SecPolUsersArray += @($PsmConnectUser, $PsmAdminConnectUser)
+        $SecPolNewUsersString = $SecPolUsersArray -join ","
+        $null = New-Item -Path "$BackupPath\newsecpol.cfg" -ItemType File -Force
+        Add-Content -Path "$BackupPath\newsecpol.cfg" -Value '[Version]'
+        Add-Content -Path "$BackupPath\newsecpol.cfg" -Value 'signature="$CHICAGO$"'
+        Add-Content -Path "$BackupPath\newsecpol.cfg" -Value 'Revision=1'
+        Add-Content -Path "$BackupPath\newsecpol.cfg" -Value '[Privilege Rights]'
+        Add-Content -Path "$BackupPath\newsecpol.cfg" -Value ("SeRemoteInteractiveLogonRight = {0}" -f $SecPolNewUsersString)
+        $null = Start-Process -Wait -FilePath $SecEditExe -PassThru -ArgumentList @("/configure", "/db", "$env:windir\security\database\secedit.sdb", "/cfg", "`"$BackupPath\newsecpol.cfg`"") -NoNewWindow -RedirectStandardOutput null
+    }
+    catch {
+        Write-Host $_.Exception
+        Write-LogMessage -type Error -MSG "Failed to configure local security policy to allow PSM users to log on with Remote Desktop. Please perform this configuration manually."
+        $TasksTop += "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+    }
+}
+
+
+
+# End group membership and security policy changes
+
 ## Local Configuration Block
 If ($OperationsToPerform.PsmConfiguration) {
 Write-LogMessage -Type Info -MSG "Performing local configuration and restarting service"
