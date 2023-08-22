@@ -528,18 +528,17 @@ Function Backup-PSMConfig {
     Copies PSM config items to -backup.ps1
     .PARAMETER psmRootInstallLocation
     PSM root installation folder
-    .PARAMETER BackupSubDirectory
+    .PARAMETER BackupPath
     Append this string to the end of backup file names
     #>
     param (
         [Parameter(Mandatory = $true)]
         $psmRootInstallLocation,
         [Parameter(Mandatory = $true)]
-        [string]$BackupSubDirectory
+        [string]$BackupPath
     )
-    $BackupPath = "$psmRootInstallLocation\Backup\Set-DomainUser\$BackupSubDirectory"
     try {
-        If (!(Test-Path -Path $psmRootInstallLocation\Backup\$BackupSubDirectory -PathType Container)) {
+        If (!(Test-Path -Path $BackupPath -PathType Container)) {
             $null = New-Item -ItemType Directory -Path $BackupPath
         }
         $PSMHardeningBackupFileName = ("{0}\PSMHardening.ps1" -f $BackupPath)
@@ -1549,10 +1548,9 @@ else {
 
 
 $BackupSubDirectory = (Get-Date).ToString('yyyMMdd-HHmmss')
+$BackupPath = "$psmRootInstallLocation\Backup\Set-DomainUser\$BackupSubDirectory"
 
-$TasksTop = @(
-    "Modify local/group policies to allow PSM users to use Remote Desktop"
-)
+$TasksTop = @()
 
 Write-LogMessage -Type Info -MSG "Gathering information"
 
