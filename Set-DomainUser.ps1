@@ -1459,7 +1459,6 @@ $OperationsToPerform = @{
     GetInstallerUserCredentials       = $true
     GetPSMConnectUserCredentials      = $true
     GetPSMAdminConnectUserCredentials = $true
-    PsmUserSearch                     = $true
     UserTests                         = $true
     GetPrivilegeCloudUrl              = $true
     DomainNetbiosNameDetection        = $true
@@ -1505,9 +1504,6 @@ switch ($PSBoundParameters) {
     }
     { $_.SkipAddingUsersToRduGroup } {
         $OperationsToPerform.RemoteDesktopUsersGroupAddition = $false
-    }
-    { $_.SkipAddingUsersToRduGroup -and $_.SkipPSMUserTests } {
-        $OperationsToPerform.PsmUserSearch = $false
     }
     { $_.DoNotConfigureAppLocker } {
         $OperationsToPerform.ConfigureAppLocker = $false
