@@ -1440,18 +1440,31 @@ Function Set-PSMServerObject {
     $ConfigString = ("//PSMServer[@ID='{0}']/ConnectionDetails/Server Safe={1},Object={2},AdminObject={3}" `
             -f $PSMServerId, $Safe, $PSMConnectAccountName, $PSMAdminConnectAccountName)
     try {
-        $VaultOperationsTesterProcess = Start-Process -FilePath $VaultOperationsExe `
+        $VaultOperationsTesterProcess = $VaultOperationsTesterProcess = Start-Process -FilePath $VaultOperationsExe `
         -WorkingDirectory "$VaultOperationsFolder" -NoNewWindow -PassThru -Wait -RedirectStandardOutput $stdoutFile `
         -ArgumentList $VaultUser, $VaultPass, $VaultAddress, $Operation, $ConfigString
     }
     catch {
-        return $false
+        return @{
+            ErrorCode = "Unknown"
+            Result    = $false
     }
+    }
+
     if ($VaultOperationsTesterProcess.ExitCode -ne 0) {
-        return $false
+        $ErrorLine = Get-Content $VaultOperationsFolder\Log\stdout.log | Select-String "^Extra details:"
+        $ErrorString = ($ErrorLine -split ":")[1].Trim()
+        $null = $ErrorString -Match "([A-Z0-9]*) (.*)"
+        return @{
+            Result       = $false
+            ErrorCode    = $Matches[1]
+            ErrorDetails = $Matches[2]
+        }
     }
     else {
-        return $true
+        return @{
+            Result = $true 
+        }
     }
 }
 
@@ -1924,6 +1937,13 @@ If ($LocalConfigurationOnly -ne $true) {
         catch {
             Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
             Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+            exit 1
+        }
+        If ($true -ne $VotProcess.Result) {
+            Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
+            Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+            Write-LogMessage -type Error -MSG ("Error Code:    {0}" -f $VotProcess.ErrorCode)
+            Write-LogMessage -type Error -MSG ("Error Details: {0}" -f $VotProcess.ErrorDetails)
             exit 1
         }
     }
