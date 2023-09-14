@@ -352,6 +352,60 @@ Function Get-PvwaAddress {
     }
 }
 
+Function Get-ProxyDetails {
+    try {
+        [xml]$xml = Get-Content "$env:windir\microsoft.net\Framework\v4.0.30319\config\machine.config"
+        $ProxyString = $xml.configuration."system.net".defaultProxy.proxy.proxyaddress
+        If ($ProxyString) {
+            If ($ProxyString -match "http://[.\-a-zA-Z0-9]:[0-9]{1,5}") {
+                $Proxy = ($xml.configuration."system.net".defaultProxy.proxy.proxyaddress) -replace "http://"
+                $ProxyObject = @{
+                    Address = ($Proxy -split ":")[0]
+                    Port    = ($Proxy -split ":")[1]
+                } 
+            }
+            else {
+                Write-LogMessage -type Warning -MSG "Proxy setting detected in .NET configuration is invalid or not a supported type. Will be ignored."
+                return $false
+            }
+            return $ProxyObject
+        }
+        else {
+            return $false
+        }
+    }
+    catch {
+        return $false
+    }
+}
+
+Function Get-ProxyDetails {
+    try {
+        [xml]$xml = Get-Content "$env:windir\microsoft.net\Framework\v4.0.30319\config\machine.config"
+        $ProxyString = $xml.configuration."system.net".defaultProxy.proxy.proxyaddress
+        If ($ProxyString) {
+            If ($ProxyString -match "http://[.\-a-zA-Z0-9]:[0-9]{1,5}") {
+                $Proxy = ($xml.configuration."system.net".defaultProxy.proxy.proxyaddress) -replace "http://"
+                $ProxyObject = @{
+                    Address = ($Proxy -split ":")[0]
+                    Port    = ($Proxy -split ":")[1]
+                } 
+            }
+            else {
+                Write-LogMessage -type Warning -MSG "Proxy setting detected in .NET configuration is invalid or not a supported type. Will be ignored."
+                return $false
+            }
+            return $ProxyObject
+        }
+        else {
+            return $false
+        }
+    }
+    catch {
+        return $false
+    }
+}
+
 Function Get-VaultAddress {
     <#
     .SYNOPSIS
@@ -1433,7 +1487,10 @@ Function Set-PSMServerObject {
         $PSMConnectAccountName,
         [Parameter(Mandatory = $True)]
         [String]
-        $PSMAdminConnectAccountName
+        $PSMAdminConnectAccountName,
+        [Parameter(Mandatory = $False)]
+        [PSCustomObject]
+        $ProxyDetails
     )
 
     $VaultOperationsExe = "$VaultOperationsFolder\VaultOperationsTester.exe"
@@ -1451,6 +1508,15 @@ Function Set-PSMServerObject {
 
     #create log file
     New-Item -Path $stdoutFile -Force | Out-Null
+
+    # Create vault.ini
+    New-Item -Path "$VaultOperationsFolder\Vault.ini" -Force
+    Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('VAULT = "PSM Vault"')
+    If ($ProxyDetails) {
+        Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('PROXYADDRESS = {0}' -f $ProxyDetails.Address)
+        Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('PROXYPORT = {0}' -f $ProxyDetails.Port)
+        Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('PROXYTYPE = https')
+    }
 
     #Get Credentials
     $VaultUser = $VaultCredentials.UserName
@@ -2007,15 +2073,19 @@ If ($OperationsToPerform.ServerObjectConfiguration) {
             exit 1
         }
     }
+    # Get proxy details from .NET config
+    $ProxyDetails = Get-ProxyDetails
+        
     # after C++ redistributable install
     try {
-        $null = Set-PSMServerObject -VaultAddress $VaultAddress `
+        $VotProcess = Set-PSMServerObject -VaultAddress $VaultAddress `
             -VaultCredentials $InstallUser `
             -PSMServerId $PSMServerId `
             -VaultOperationsFolder $VaultOperationsTesterDir `
             -PSMSafe $Safe `
             -PSMConnectAccountName $PSMConnectAccountName `
-            -PSMAdminConnectAccountName $PSMAdminConnectAccountName
+            -PSMAdminConnectAccountName $PSMAdminConnectAccountName `
+            -ProxyDetails $ProxyDetails
     }
     catch {
         Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
