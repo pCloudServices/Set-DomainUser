@@ -41,6 +41,8 @@ Do not update the PSM server object in backend
 Do not update Local Security Policy to allow PSM users to log on with Remote Desktop
 .PARAMETER SkipAddingUsersToRduGroup
 Do not add PSM users to the Remote Desktop Users group
+.PARAMETER NotFirstRun
+This script is being run on additional servers following the first. Skip platform and safe creation and account onboarding.
 #>
 
 # Version: 1.5
@@ -144,7 +146,12 @@ param(
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Do not add PSM users to the Remote Desktop Users group")]
-    [switch]$SkipAddingUsersToRduGroup
+    [switch]$SkipAddingUsersToRduGroup,
+
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Safe and platform configuration and account onboarding should be skipped as the script is being run on subsequent PSM servers.")]
+    [switch]$NotFirstRun
 )
 
 #Functions
@@ -1492,6 +1499,10 @@ switch ($PSBoundParameters) {
     }
     { $_.psmAdminCredentials } {
         $OperationsToPerform.GetPSMAdminConnectUserCredentials = $false
+    }
+    { $_.NotFirstRun } {
+        $OperationsToPerform.UserTests = $false
+        $OperationsToPerform.RemoteConfiguration = $false
     }
     { $_.SkipPSMUserTests } {
         $OperationsToPerform.UserTests = $false

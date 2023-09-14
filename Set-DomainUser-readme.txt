@@ -24,6 +24,7 @@ Mandatory parameters (Set-DomainUser will prompt for these if not provided on th
 
 Optional parameters:
 
+	NotFirstRun						- Skip the parts of the configuration that are only required at first run, e.g. user onboarding
 	PrivilegeCloudUrl 				- Please enter the full PVWA Address e.g.: https://tenantname.privilegecloud.cyberark.cloud. Set-DomainUser will attempt to detect this automatically.
 	VaultAddress					- FQDN or IP address of the vault. Should be detected automatically, only use this option if auto-detection fails.
 	DomainDNSName 					- Please enter the DNS name of the domain of the created accounts e.g.: "lab.net". Set-DomainUser will attempt to detect this automatically.
