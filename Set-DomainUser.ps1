@@ -2206,10 +2206,15 @@ If ($OperationsToPerform.SecurityPolicyConfiguration) {
     If (!(Test-Path -Path $BackupPath -PathType Container)) {
         $null = New-Item -ItemType Directory -Path $BackupPath
     }
-    try {
-        $SecEditExe = Get-Command secedit.exe
-        $null = Start-Process -Wait -FilePath $SecEditExe -PassThru -ArgumentList @("/export", "/cfg", "`"$BackupPath\secpol.cfg`"") -NoNewWindow -RedirectStandardOutput null
-        $Content = Get-Content "$BackupPath\secpol.cfg"
+    $CurrentSecurityPolicyFile = "$BackupPath\CurrentSecurityPolicy.cfg"
+    $GetSecPolResult = Get-CurrentSecurityPolicy -OutFile $CurrentSecurityPolicyFile -LogFile $BackupPath\SeceditExport.log
+    If ($false -eq $GetSecPolResult) {
+        Write-LogMessage -type Warning -MSG "Security policy export failed, so the current policy will not be modified."
+        Write-LogMessage -type Warning -MSG "Please edit local security policy manually to allow PSM users to log on with Remote Desktop."
+        $TasksTop += "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+    }
+    If ($GetSecPolResult) {
+        $Content = Get-Content $CurrentSecurityPolicyFile
         $null = $Content | Where-Object { $_ -match "^SeRemoteInteractiveLogonRight = (.*)" }
         $SecPolCurrentUsersString = $Matches[1]
         $SecPolUsersArray = ($SecPolCurrentUsersString -split ",")
@@ -2221,23 +2226,18 @@ If ($OperationsToPerform.SecurityPolicyConfiguration) {
         Add-Content -Path "$BackupPath\newsecpol.cfg" -Value 'Revision=1'
         Add-Content -Path "$BackupPath\newsecpol.cfg" -Value '[Privilege Rights]'
         Add-Content -Path "$BackupPath\newsecpol.cfg" -Value ("SeRemoteInteractiveLogonRight = {0}" -f $SecPolNewUsersString)
-        $process = Start-Process -Wait -FilePath $SecEditExe -PassThru -ArgumentList @("/configure", "/db", "$BackupPath\SecurityPolicy.sdb", "/cfg", "`"$BackupPath\newsecpol.cfg`"", "/log `"$BackupPath\secedit.log`"") -NoNewWindow -RedirectStandardOutput null
-        If ($process.ExitCode -eq 0) {
-            return $true
-        }
-        return $false
+        $SetSecPolResult = Set-CurrentSecurityPolicy -DatabaseFile $BackupPath\SecurityPolicy.sdb -ConfigFile $BackupPath\newsecpol.cfg -LogFile $BackupPath\SecPolImport.log
     }
-    catch {
-        Write-Host $_.Exception
-        Write-LogMessage -type Error -MSG "Failed to configure local security policy to allow PSM users to log on with Remote Desktop. Please perform this configuration manually."
+    If ($false -eq $SetSecPolResult) {
+        Write-LogMessage -type Error -MSG "Failed to configure local security policy."
+        Write-LogMessage -type Warning -MSG "Please edit local security policy manually to allow PSM users to log on with Remote Desktop."
         $TasksTop += "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
     }
-    $TasksTop += "Ensure domain GPOs allow PSM users to log on to PSM servers with Remote Desktop"
 }
 else {
     $TasksTop += "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
-    $TasksTop += "Ensure domain GPOs allow PSM users to log on to PSM servers with Remote Desktop"
 }
+$TasksTop += "Ensure domain GPOs allow PSM users to log on to PSM servers with Remote Desktop"
 
 If ($OperationsToPerform.RemoteDesktopUsersGroupAddition) {
     try {
