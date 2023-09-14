@@ -1621,6 +1621,7 @@ $OperationsToPerform = @{
     ServerObjectConfiguration         = $true
     Hardening                         = $true
     ConfigureAppLocker                = $true
+    DetectProxy                       = $true
 }
 
 switch ($PSBoundParameters) {
@@ -1666,6 +1667,14 @@ switch ($PSBoundParameters) {
     { $_.DoNotConfigureAppLocker } {
         $OperationsToPerform.ConfigureAppLocker = $false
     }
+    { $_.Proxy } {
+        $OperationsToPerform.DetectProxy = $false
+    }
+}
+
+# If not doing any remote work, skip proxy detection
+If (!($OperationsToPerform.RemoteConfiguration -or $OperationsToPerform.ServerObjectConfiguration)) {
+    $OperationsToPerform.DetectProxy = $false
 }
 
 $global:InVerbose = $PSBoundParameters.Verbose.IsPresent
@@ -1699,7 +1708,6 @@ If (Check-UM -psmRootInstallLocation $psmRootInstallLocation) {
 else {
     $UM = $false
 }
-
 
 $BackupSubDirectory = (Get-Date).ToString('yyyMMdd-HHmmss')
 $BackupPath = "$psmRootInstallLocation\Backup\Set-DomainUser\$BackupSubDirectory"
@@ -1787,7 +1795,7 @@ If ($DomainNameAutodetected) {
     }
 }
 
-If (!($Proxy)) {
+If ($OperationsToPerform.DetectProxy) {
     # Get proxy details from user profile
     $Proxy = Get-ProxyDetails
 
@@ -1809,47 +1817,19 @@ If (!($Proxy)) {
     }
 }
 
-$WebRequestSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$Global:WebRequestSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 
 If ($Proxy) {
-    $ProxyObject = New-Object System.Net.WebProxy
-    $ProxyObject.Address = "http://$Proxy"
-    $WebRequestSession.Proxy = $ProxyObject
-}
-
-$Global:WebRequestSession = $WebRequestSession
-
-If (!($Proxy)) {
-    # Get proxy details from user profile
-    $Proxy = Get-ProxyDetails
-
-    If ($Proxy) {
-        $ProxyInfo = ("--------------------------------------------------------`nDetected the following proxy details:`n  Proxy Address:     {0}`nIs this correct?" -f $Proxy)
-
-        $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
-        $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the proxy details are correct"))
-        $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct proxy details can be provided"))
-
-        $ProxyPromptSelection = $Host.UI.PromptForChoice("", $ProxyInfo, $PromptOptions, 1)
-        If ($ProxyPromptSelection -eq 0) {
-            Write-LogMessage -Type Info "Proxy details confirmed"
-        }
-        Else {
-            Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct proxy details on the command line."
-            exit 1
-        }
+    try {
+        $ProxyObject = New-Object System.Net.WebProxy
+        $ProxyObject.Address = "http://$Proxy"
+        $Global:WebRequestSession.Proxy = $ProxyObject
+    }
+    catch {
+        Write-LogMessage -type Error -MSG "Failed to configure proxy. Please ensure it is provided in address:port format."
+        exit 1
     }
 }
-
-$WebRequestSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-
-If ($Proxy) {
-    $ProxyObject = New-Object System.Net.WebProxy
-    $ProxyObject.Address = "http://$Proxy"
-    $WebRequestSession.Proxy = $ProxyObject
-}
-
-$Global:WebRequestSession = $WebRequestSession
 
 if ($OperationsToPerform.UserTests) {
     # Gather the information we'll be comparing
