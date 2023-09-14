@@ -2037,7 +2037,11 @@ If ($OperationsToPerform.SecurityPolicyConfiguration) {
         Add-Content -Path "$BackupPath\newsecpol.cfg" -Value 'Revision=1'
         Add-Content -Path "$BackupPath\newsecpol.cfg" -Value '[Privilege Rights]'
         Add-Content -Path "$BackupPath\newsecpol.cfg" -Value ("SeRemoteInteractiveLogonRight = {0}" -f $SecPolNewUsersString)
-        $null = Start-Process -Wait -FilePath $SecEditExe -PassThru -ArgumentList @("/configure", "/db", "$env:windir\security\database\secedit.sdb", "/cfg", "`"$BackupPath\newsecpol.cfg`"") -NoNewWindow -RedirectStandardOutput null
+        $process = Start-Process -Wait -FilePath $SecEditExe -PassThru -ArgumentList @("/configure", "/db", "$BackupPath\SecurityPolicy.sdb", "/cfg", "`"$BackupPath\newsecpol.cfg`"", "/log `"$BackupPath\secedit.log`"") -NoNewWindow -RedirectStandardOutput null
+        If ($process.ExitCode -eq 0) {
+            return $true
+        }
+        return $false
     }
     catch {
         Write-Host $_.Exception
