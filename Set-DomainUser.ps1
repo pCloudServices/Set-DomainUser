@@ -761,7 +761,7 @@ Function New-VaultAdminObject {
     $json = $body | ConvertTo-Json
     try {
         $result = Invoke-RestMethod -Method POST -Uri $url -Body $json -Headers @{ "Authorization" = $pvwaToken } `
-         -ContentType "application/json" -ErrorVariable ResultError -WebSession $Global:WebRequestSession
+            -ContentType "application/json" -ErrorVariable ResultError -WebSession $Global:WebRequestSession
         return $result
     }
     catch {
@@ -1638,37 +1638,39 @@ If ($DomainNameAutodetected) {
     }
 }
 
-If (!($Proxy)) {
-    # Get proxy details from user profile
-    $Proxy = Get-ProxyDetails
-
-    If ($Proxy) {
-        $ProxyInfo = ("--------------------------------------------------------`nDetected the following proxy details:`n  Proxy Address:     {0}`nIs this correct?" -f $Proxy)
-            
-        $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
-        $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the proxy details are correct"))
-        $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct proxy details can be provided"))
-            
-        $ProxyPromptSelection = $Host.UI.PromptForChoice("", $ProxyInfo, $PromptOptions, 1)
-        If ($ProxyPromptSelection -eq 0) {
-            Write-LogMessage -Type Info "Proxy details confirmed"
-        }
-        Else {
-            Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct proxy details on the command line."
-            exit 1
+If ($true -ne $LocalConfigurationOnly) {
+    If (!($Proxy)) {
+        # Get proxy details from user profile
+        $Proxy = Get-ProxyDetails
+    
+        If ($Proxy) {
+            $ProxyInfo = ("--------------------------------------------------------`nDetected the following proxy details:`n  Proxy Address:     {0}`nIs this correct?" -f $Proxy)
+                
+            $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
+            $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the proxy details are correct"))
+            $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct proxy details can be provided"))
+                
+            $ProxyPromptSelection = $Host.UI.PromptForChoice("", $ProxyInfo, $PromptOptions, 1)
+            If ($ProxyPromptSelection -eq 0) {
+                Write-LogMessage -Type Info "Proxy details confirmed"
+            }
+            Else {
+                Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct proxy details on the command line."
+                exit 1
+            }
         }
     }
+    
+    $WebRequestSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+    
+    If ($Proxy) {
+        $ProxyObject = New-Object System.Net.WebProxy
+        $ProxyObject.Address = "http://$Proxy"
+        $WebRequestSession.Proxy = $ProxyObject
+    }
+    
+    $Global:WebRequestSession = $WebRequestSession
 }
-
-$WebRequestSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-
-If ($Proxy) {
-    $ProxyObject = New-Object System.Net.WebProxy
-    $ProxyObject.Address = "http://$Proxy"
-    $WebRequestSession.Proxy = $ProxyObject
-}
-
-$Global:WebRequestSession = $WebRequestSession
 
 if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
     # Gather the information we'll be comparing
