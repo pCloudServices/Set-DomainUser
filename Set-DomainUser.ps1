@@ -780,7 +780,7 @@ Function New-VaultAdminObject {
     $json = $body | ConvertTo-Json
     try {
         $result = Invoke-RestMethod -Method POST -Uri $url -Body $json -Headers @{ "Authorization" = $pvwaToken } `
-         -ContentType "application/json" -ErrorVariable ResultError -WebSession $Global:WebRequestSession
+            -ContentType "application/json" -ErrorVariable ResultError -WebSession $Global:WebRequestSession
         return $result
     }
     catch {
@@ -1483,7 +1483,7 @@ Function Set-PSMServerObject {
     # Create vault.ini
     New-Item -Path "$VaultOperationsFolder\Vault.ini" -Force
     Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('VAULT = "Vault"')
-    
+
     If ($Proxy) {
         $ProxyAddress = $Proxy.Split(":")[0]
         $ProxyPort = $Proxy.Split(":")[1]
@@ -1534,7 +1534,7 @@ Function Set-PSMServerObject {
     }
     else {
         return @{
-            Result = $true 
+            Result = $true
         }
     }
 }
@@ -1705,7 +1705,7 @@ if ($OperationsToPerform.DomainNetbiosNameDetection) {
     $DomainNetbiosName = Get-DomainNetbiosName
 }
 If ($DomainNameAutodetected) {
-    
+
     $DomainInfo = ("--------------------------------------------------------`nDetected the following domain names:`n  DNS name:     {0}`n  NETBIOS name: {1}`nIs this correct?" -f $DomainDNSName, $DomainNetbiosName)
 
     $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
@@ -1728,11 +1728,11 @@ If (!($Proxy)) {
 
     If ($Proxy) {
         $ProxyInfo = ("--------------------------------------------------------`nDetected the following proxy details:`n  Proxy Address:     {0}`nIs this correct?" -f $Proxy)
-            
+
         $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
         $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the proxy details are correct"))
         $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct proxy details can be provided"))
-            
+
         $ProxyPromptSelection = $Host.UI.PromptForChoice("", $ProxyInfo, $PromptOptions, 1)
         If ($ProxyPromptSelection -eq 0) {
             Write-LogMessage -Type Info "Proxy details confirmed"
@@ -1760,11 +1760,11 @@ If (!($Proxy)) {
 
     If ($Proxy) {
         $ProxyInfo = ("--------------------------------------------------------`nDetected the following proxy details:`n  Proxy Address:     {0}`nIs this correct?" -f $Proxy)
-            
+
         $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
         $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the proxy details are correct"))
         $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct proxy details can be provided"))
-            
+
         $ProxyPromptSelection = $Host.UI.PromptForChoice("", $ProxyInfo, $PromptOptions, 1)
         If ($ProxyPromptSelection -eq 0) {
             Write-LogMessage -Type Info "Proxy details confirmed"
@@ -2103,51 +2103,50 @@ If ($OperationsToPerform.ServerObjectConfiguration) {
         exit 1
     }
 
-        $VaultOperationsTesterDir = (Get-Item $VaultOperationsTesterExe).Directory
-        # Check that VaultOperationsTester is available
-        # Check for and install C++ Redistributable
-        if ($false -eq (Test-Path -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\12.0\VC\Runtimes\x86" -PathType Container)) {
-            $CppRedis = "$VaultOperationsTesterDir\vcredist_x86.exe"
-            If ($false -eq (Test-Path -PathType Leaf -Path $CppRedis)) {
-                Write-LogMessage -type Error -MSG "File not found: $CppRedis"
-                Write-LogMessage -type Error -MSG "Visual Studio 2013 x86 Runtime not installed and redistributable not found. Please resolve the issue, install manually"
-                Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
-                exit 1
-            }
-            Write-LogMessage -type Info -MSG "Installing Visual Studio 2013 (VC++ 12.0) x86 Runtime from $CppRedis..."
-            try {
-                $null = Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
-            }
-            catch {
-                Write-LogMessage -type Error -MSG "Failed to install Visual Studio 2013 x86 Redistributable. Resolve the error"
-                Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
-                exit 1
-            }
+    $VaultOperationsTesterDir = (Get-Item $VaultOperationsTesterExe).Directory
+    # Check that VaultOperationsTester is available
+    # Check for and install C++ Redistributable
+    if ($false -eq (Test-Path -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\12.0\VC\Runtimes\x86" -PathType Container)) {
+        $CppRedis = "$VaultOperationsTesterDir\vcredist_x86.exe"
+        If ($false -eq (Test-Path -PathType Leaf -Path $CppRedis)) {
+            Write-LogMessage -type Error -MSG "File not found: $CppRedis"
+            Write-LogMessage -type Error -MSG "Visual Studio 2013 x86 Runtime not installed and redistributable not found. Please resolve the issue, install manually"
+            Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+            exit 1
         }
-
-        # after C++ redistributable install
+        Write-LogMessage -type Info -MSG "Installing Visual Studio 2013 (VC++ 12.0) x86 Runtime from $CppRedis..."
         try {
-            $VotProcess = Set-PSMServerObject -VaultAddress $VaultAddress `
-                -VaultCredentials $InstallUser `
-                -PSMServerId $PSMServerId `
-                -VaultOperationsFolder $VaultOperationsTesterDir `
-                -PSMSafe $Safe `
-                -PSMConnectAccountName $PSMConnectAccountName `
-                -PSMAdminConnectAccountName $PSMAdminConnectAccountName `
-                -Proxy $Proxy
+            $null = Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
         }
         catch {
-            Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
+            Write-LogMessage -type Error -MSG "Failed to install Visual Studio 2013 x86 Redistributable. Resolve the error"
             Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
             exit 1
         }
-        If ($true -ne $VotProcess.Result) {
-            Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
-            Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
-            Write-LogMessage -type Error -MSG ("Error Code:    {0}" -f $VotProcess.ErrorCode)
-            Write-LogMessage -type Error -MSG ("Error Details: {0}" -f $VotProcess.ErrorDetails)
-            exit 1
-        }
+    }
+
+    # after C++ redistributable install
+    try {
+        $VotProcess = Set-PSMServerObject -VaultAddress $VaultAddress `
+            -VaultCredentials $InstallUser `
+            -PSMServerId $PSMServerId `
+            -VaultOperationsFolder $VaultOperationsTesterDir `
+            -PSMSafe $Safe `
+            -PSMConnectAccountName $PSMConnectAccountName `
+            -PSMAdminConnectAccountName $PSMAdminConnectAccountName `
+            -Proxy $Proxy
+    }
+    catch {
+        Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
+        Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+        exit 1
+    }
+    If ($true -ne $VotProcess.Result) {
+        Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
+        Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+        Write-LogMessage -type Error -MSG ("Error Code:    {0}" -f $VotProcess.ErrorCode)
+        Write-LogMessage -type Error -MSG ("Error Details: {0}" -f $VotProcess.ErrorDetails)
+        exit 1
     }
 }
 
