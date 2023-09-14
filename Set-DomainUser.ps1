@@ -357,6 +357,71 @@ Function Get-PvwaAddress {
     }
 }
 
+Function Get-CurrentSecurityPolicy {
+    <#
+    .SYNOPSIS
+    Backs up PSMConfig ps1 scripts
+    .DESCRIPTION
+    Copies PSM config items to -backup.ps1
+    .PARAMETER psmRootInstallLocation
+    PSM root installation folder
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]
+        $OutFile,
+        [Parameter(Mandatory = $true)]
+        [string]
+        $LogFile
+    )
+    try {
+        $SecEditExe = Get-Command secedit.exe
+        $process = Start-Process -Wait -FilePath $SecEditExe -PassThru -NoNewWindow -RedirectStandardOutput null `
+            -ArgumentList @("/export", "/cfg", "`"$OutFile`"", "/log", "`"$LogFile`"")
+        If ($process.ExitCode -eq 0) {
+            return $True
+        }
+        return $False
+    }
+    catch {
+        return $False
+    }
+}
+
+Function Set-CurrentSecurityPolicy {
+    <#
+    .SYNOPSIS
+    Backs up PSMConfig ps1 scripts
+    .DESCRIPTION
+    Copies PSM config items to -backup.ps1
+    .PARAMETER psmRootInstallLocation
+    PSM root installation folder
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]
+        $DatabaseFile,
+        [Parameter(Mandatory = $true)]
+        [string]
+        $ConfigFile,
+        [Parameter(Mandatory = $true)]
+        [string]
+        $LogFile
+    )
+    try {
+        $SecEditExe = Get-Command secedit.exe
+        $process = Start-Process -Wait -FilePath $SecEditExe -PassThru  -NoNewWindow -RedirectStandardOutput null `
+            -ArgumentList @("/configure", "/db", "`"$DatabaseFile`"", "/cfg", "`"$ConfigFile`"", "/log", "`"$LogFile`"")
+        If ($process.ExitCode -eq 0) {
+            return $True
+        }
+        return $False
+    }
+    catch {
+        return $False
+    }
+}
+
 Function Get-ProxyDetails {
     Write-LogMessage -type Verbose -MSG "Detecting proxy from user profile"
     try {
