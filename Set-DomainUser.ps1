@@ -1524,6 +1524,9 @@ switch ($PSBoundParameters) {
     { $_.DoNotHarden } {
         $OperationsToPerform.Hardening = $false
     }
+    { $_.SkipPSMObjectUpdate } {
+        $OperationsToPerform.ServerObjectConfiguration = $false
+    }
     { $_.SkipSecurityPolicyConfiguration } {
         $OperationsToPerform.SecurityPolicyConfiguration = $false
     }
