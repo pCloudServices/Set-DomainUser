@@ -1480,14 +1480,14 @@ Function Set-PSMServerObject {
             -f $PSMServerId, $Safe, $PSMConnectAccountName, $PSMAdminConnectAccountName)
     try {
         $VaultOperationsTesterProcess = $VaultOperationsTesterProcess = Start-Process -FilePath $VaultOperationsExe `
-        -WorkingDirectory "$VaultOperationsFolder" -NoNewWindow -PassThru -Wait -RedirectStandardOutput $stdoutFile `
-        -ArgumentList $VaultUser, $VaultPass, $VaultAddress, $Operation, $ConfigString
+            -WorkingDirectory "$VaultOperationsFolder" -NoNewWindow -PassThru -Wait -RedirectStandardOutput $stdoutFile `
+            -ArgumentList $VaultUser, $VaultPass, $VaultAddress, $Operation, $ConfigString
     }
     catch {
         return @{
             ErrorCode = "Unknown"
             Result    = $false
-    }
+        }
     }
 
     if ($VaultOperationsTesterProcess.ExitCode -ne 0) {
