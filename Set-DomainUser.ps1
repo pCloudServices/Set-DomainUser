@@ -1465,7 +1465,7 @@ Function Set-PSMServerObject {
 
     # Create vault.ini
     New-Item -Path "$VaultOperationsFolder\Vault.ini" -Force
-    Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('VAULT = "PSM Vault"')
+    Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('VAULT = "Vault"')
     If ($ProxyDetails) {
         Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('PROXYADDRESS = {0}' -f $ProxyDetails.Address)
         Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('PROXYPORT = {0}' -f $ProxyDetails.Port)
@@ -1491,7 +1491,7 @@ Function Set-PSMServerObject {
     }
 
     if ($VaultOperationsTesterProcess.ExitCode -ne 0) {
-        $ErrorLine = Get-Content $VaultOperationsFolder\Log\stdout.log | Select-String "^Extra details:"
+        $ErrorLine = Get-Content $stdoutFile | Select-String "^Extra details:"
         $ErrorString = ($ErrorLine -split ":")[1].Trim()
         $null = $ErrorString -Match "([A-Z0-9]*) (.*)"
         return @{
