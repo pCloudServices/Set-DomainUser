@@ -384,7 +384,7 @@ Function Get-ProxyDetails {
         [xml]$xml = Get-Content "$env:windir\microsoft.net\Framework\v4.0.30319\config\machine.config"
         $ProxyString = $xml.configuration."system.net".defaultProxy.proxy.proxyaddress
         If ($ProxyString) {
-            If ($ProxyString -match "http://[.\-a-zA-Z0-9]:[0-9]{1,5}") {
+            If ($ProxyString -match "http://[.\-a-zA-Z0-9]*:[0-9]{1,5}") {
                 $Proxy = ($xml.configuration."system.net".defaultProxy.proxy.proxyaddress) -replace "http://"
                 $ProxyObject = @{
                     Address = ($Proxy -split ":")[0]
