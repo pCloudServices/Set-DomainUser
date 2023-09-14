@@ -151,7 +151,12 @@ param(
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Safe and platform configuration and account onboarding should be skipped as the script is being run on subsequent PSM servers.")]
-    [switch]$NotFirstRun
+    [switch]$NotFirstRun,
+
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Proxy Server in address:port format")]
+    [string]$Proxy
 )
 
 #Functions
@@ -353,55 +358,20 @@ Function Get-PvwaAddress {
 }
 
 Function Get-ProxyDetails {
+    Write-LogMessage -type Verbose -MSG "Detecting proxy from user profile"
     try {
-        [xml]$xml = Get-Content "$env:windir\microsoft.net\Framework\v4.0.30319\config\machine.config"
-        $ProxyString = $xml.configuration."system.net".defaultProxy.proxy.proxyaddress
-        If ($ProxyString) {
-            If ($ProxyString -match "http://[.\-a-zA-Z0-9]*:[0-9]{1,5}") {
-                $Proxy = ($xml.configuration."system.net".defaultProxy.proxy.proxyaddress) -replace "http://"
-                $ProxyObject = @{
-                    Address = ($Proxy -split ":")[0]
-                    Port    = ($Proxy -split ":")[1]
-                } 
-            }
-            else {
-                Write-LogMessage -type Warning -MSG "Proxy setting detected in .NET configuration is invalid or not a supported type. Will be ignored."
-                return $false
-            }
-            return $ProxyObject
-        }
-        else {
-            return $false
-        }
-    }
-    catch {
-        return $false
-    }
-}
+        $ProxyString = (Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings').proxyServer
 
-Function Get-ProxyDetails {
-    try {
-        [xml]$xml = Get-Content "$env:windir\microsoft.net\Framework\v4.0.30319\config\machine.config"
-        $ProxyString = $xml.configuration."system.net".defaultProxy.proxy.proxyaddress
         If ($ProxyString) {
-            If ($ProxyString -match "http://[.\-a-zA-Z0-9]*:[0-9]{1,5}") {
-                $Proxy = ($xml.configuration."system.net".defaultProxy.proxy.proxyaddress) -replace "http://"
-                $ProxyObject = @{
-                    Address = ($Proxy -split ":")[0]
-                    Port    = ($Proxy -split ":")[1]
-                } 
-            }
-            else {
-                Write-LogMessage -type Warning -MSG "Proxy setting detected in .NET configuration is invalid or not a supported type. Will be ignored."
-                return $false
-            }
-            return $ProxyObject
+            return $ProxyString
         }
         else {
+            Write-LogMessage -type Verbose -MSG "No proxy detected"
             return $false
         }
     }
     catch {
+        Write-LogMessage -type Verbose -MSG "Error detecting proxy. Proceeding with no proxy."
         return $false
     }
 }
@@ -548,7 +518,7 @@ Function New-ConnectionToRestAPI {
     }
     $json = $body | ConvertTo-Json
     Try {
-        $Result = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -ContentType 'application/json'
+        $Result = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -ContentType 'application/json' -WebSession $WebRequestSession
         return @{
             ErrorCode = "Success"
             Response  = $Result
@@ -583,7 +553,7 @@ Function Test-PvwaToken {
         Authorization = $Token
     }
     try {
-        $testToken = Invoke-RestMethod -Method 'Get' -Uri $url -Headers $Headers -ContentType 'application/json'
+        $testToken = Invoke-RestMethod -Method 'Get' -Uri $url -Headers $Headers -ContentType 'application/json' -WebSession $Global:WebRequestSession
         if ($testToken) {
             return @{
                 ErrorCode = "Success"
@@ -809,7 +779,8 @@ Function New-VaultAdminObject {
     $url = $pvwaAddress + "/PasswordVault/api/Accounts"
     $json = $body | ConvertTo-Json
     try {
-        $result = Invoke-RestMethod -Method POST -Uri $url -Body $json -Headers @{ "Authorization" = $pvwaToken } -ContentType "application/json" -ErrorVariable ResultError
+        $result = Invoke-RestMethod -Method POST -Uri $url -Body $json -Headers @{ "Authorization" = $pvwaToken } `
+         -ContentType "application/json" -ErrorVariable ResultError -WebSession $Global:WebRequestSession
         return $result
     }
     catch {
@@ -916,7 +887,7 @@ Function Duplicate-Platform {
             Description = $NewPlatformDescription
         }
         $json = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
+        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
     }
     catch {
         Write-LogMessage -Type Error -MSG "Error duplicating platform"
@@ -949,7 +920,7 @@ Function Get-PlatformStatus {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Platforms/targets?search=" + $PlatformId
-        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError
+        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError -WebSession $Global:WebRequestSession
         # This query returns a list of platforms where the name contains the search string. Find and return just the one with an exactly matching name.
         $TargetPlatform = $Getresult.Platforms | Where-Object Name -eq $PlatformId
         if ($TargetPlatform) {
@@ -990,7 +961,7 @@ Function Get-PlatformStatusById {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Platforms/targets"
-        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError
+        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError -WebSession $Global:WebRequestSession
         # This query returns a list of platforms where the name contains the search string. Find and return just the one with an exactly matching name.
         $TargetPlatform = $Getresult.Platforms | Where-Object PlatformID -eq $PlatformId
         if ($TargetPlatform) {
@@ -1031,7 +1002,7 @@ Function Get-SafeStatus {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/safes?search=$SafeName"
-        $SafeRequest = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue
+        $SafeRequest = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -WebSession $Global:WebRequestSession
         # This query returns a list of safes where the name contains the search string. Find and return just the one with an exactly matching name.
         $Safe = $SafeRequest.Value | Where-Object safeName -eq $SafeName
         if ($Safe) {
@@ -1071,7 +1042,7 @@ Function Activate-Platform {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Platforms/Targets/$PlatformNumId/activate"
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
+        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
     }
     catch {
         Write-LogMessage -Type Error -MSG "Error activating platform"
@@ -1110,7 +1081,7 @@ Function Create-PSMSafe {
             description = $description
         }
         $json = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
+        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
         #Permissions for the needed accounts
         #PSMMaster full permissions
         New-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PSMMaster"
@@ -1233,7 +1204,7 @@ Function Set-SafePermissions {
             permissions = $safePermissions
         }
         $json = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Method 'Put' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
+        $null = Invoke-RestMethod -Method 'Put' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
     }
     catch {
         Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
@@ -1273,7 +1244,7 @@ Function Get-SafePermissions {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Safes/$safe/members/$safeMember/"
-        $result = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
+        $result = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
         if ($result) {
             return $result.permissions
         }
@@ -1351,7 +1322,7 @@ Function New-SafePermissions {
             permissions = $safePermissions
         }
         $json = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
+        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
     }
     catch {
         Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
@@ -1490,7 +1461,7 @@ Function Set-PSMServerObject {
         $PSMAdminConnectAccountName,
         [Parameter(Mandatory = $False)]
         [PSCustomObject]
-        $ProxyDetails
+        $Proxy
     )
 
     $VaultOperationsExe = "$VaultOperationsFolder\VaultOperationsTester.exe"
@@ -1512,9 +1483,12 @@ Function Set-PSMServerObject {
     # Create vault.ini
     New-Item -Path "$VaultOperationsFolder\Vault.ini" -Force
     Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('VAULT = "Vault"')
-    If ($ProxyDetails) {
-        Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('PROXYADDRESS = {0}' -f $ProxyDetails.Address)
-        Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('PROXYPORT = {0}' -f $ProxyDetails.Port)
+    
+    If ($Proxy) {
+        $ProxyAddress = $Proxy.Split(":")[0]
+        $ProxyPort = $Proxy.Split(":")[1]
+        Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('PROXYADDRESS = {0}' -f $ProxyAddress)
+        Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('PROXYPORT = {0}' -f $ProxyPort)
         Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('PROXYTYPE = https')
     }
 
@@ -1540,10 +1514,22 @@ Function Set-PSMServerObject {
         $ErrorLine = Get-Content $stdoutFile | Select-String "^Extra details:"
         $ErrorString = ($ErrorLine -split ":")[1].Trim()
         $null = $ErrorString -Match "([A-Z0-9]*) (.*)"
+        If ($Matches[1]) {
+            $ErrorCode = $Matches[1]
+        }
+        else {
+            $ErrorCode = "Unknown"
+        }
+        If ($Matches[1]) {
+            $ErrorDetails = $Matches[2]
+        }
+        else {
+            $ErrorDetails = "Unknown"
+        }
         return @{
             Result       = $false
-            ErrorCode    = $Matches[1]
-            ErrorDetails = $Matches[2]
+            ErrorCode    = $ErrorCode
+            ErrorDetails = $ErrorDetails
         }
     }
     else {
@@ -1719,7 +1705,8 @@ if ($OperationsToPerform.DomainNetbiosNameDetection) {
     $DomainNetbiosName = Get-DomainNetbiosName
 }
 If ($DomainNameAutodetected) {
-    $DomainInfo = ("Detected the following domain names:`n  DNS name:     {0}`n  NETBIOS name: {1}`nIs this correct?" -f $DomainDNSName, $DomainNetbiosName)
+    
+    $DomainInfo = ("--------------------------------------------------------`nDetected the following domain names:`n  DNS name:     {0}`n  NETBIOS name: {1}`nIs this correct?" -f $DomainDNSName, $DomainNetbiosName)
 
     $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
     $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the domain details are correct"))
@@ -1734,6 +1721,70 @@ If ($DomainNameAutodetected) {
         exit 1
     }
 }
+
+If (!($Proxy)) {
+    # Get proxy details from user profile
+    $Proxy = Get-ProxyDetails
+
+    If ($Proxy) {
+        $ProxyInfo = ("--------------------------------------------------------`nDetected the following proxy details:`n  Proxy Address:     {0}`nIs this correct?" -f $Proxy)
+            
+        $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
+        $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the proxy details are correct"))
+        $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct proxy details can be provided"))
+            
+        $ProxyPromptSelection = $Host.UI.PromptForChoice("", $ProxyInfo, $PromptOptions, 1)
+        If ($ProxyPromptSelection -eq 0) {
+            Write-LogMessage -Type Info "Proxy details confirmed"
+        }
+        Else {
+            Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct proxy details on the command line."
+            exit 1
+        }
+    }
+}
+
+$WebRequestSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+
+If ($Proxy) {
+    $ProxyObject = New-Object System.Net.WebProxy
+    $ProxyObject.Address = "http://$Proxy"
+    $WebRequestSession.Proxy = $ProxyObject
+}
+
+$Global:WebRequestSession = $WebRequestSession
+
+If (!($Proxy)) {
+    # Get proxy details from user profile
+    $Proxy = Get-ProxyDetails
+
+    If ($Proxy) {
+        $ProxyInfo = ("--------------------------------------------------------`nDetected the following proxy details:`n  Proxy Address:     {0}`nIs this correct?" -f $Proxy)
+            
+        $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
+        $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the proxy details are correct"))
+        $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct proxy details can be provided"))
+            
+        $ProxyPromptSelection = $Host.UI.PromptForChoice("", $ProxyInfo, $PromptOptions, 1)
+        If ($ProxyPromptSelection -eq 0) {
+            Write-LogMessage -Type Info "Proxy details confirmed"
+        }
+        Else {
+            Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct proxy details on the command line."
+            exit 1
+        }
+    }
+}
+
+$WebRequestSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+
+If ($Proxy) {
+    $ProxyObject = New-Object System.Net.WebProxy
+    $ProxyObject.Address = "http://$Proxy"
+    $WebRequestSession.Proxy = $ProxyObject
+}
+
+$Global:WebRequestSession = $WebRequestSession
 
 if ($OperationsToPerform.UserTests) {
     # Gather the information we'll be comparing
@@ -2052,52 +2103,51 @@ If ($OperationsToPerform.ServerObjectConfiguration) {
         exit 1
     }
 
-    $VaultOperationsTesterDir = (Get-Item $VaultOperationsTesterExe).Directory
-    # Check that VaultOperationsTester is available
-    # Check for and install C++ Redistributable
-    if ($false -eq (Test-Path -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\12.0\VC\Runtimes\x86" -PathType Container)) {
-        $CppRedis = "$VaultOperationsTesterDir\vcredist_x86.exe"
-        If ($false -eq (Test-Path -PathType Leaf -Path $CppRedis)) {
-            Write-LogMessage -type Error -MSG "File not found: $CppRedis"
-            Write-LogMessage -type Error -MSG "Visual Studio 2013 x86 Runtime not installed and redistributable not found. Please resolve the issue, install manually"
-            Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
-            exit 1
+        $VaultOperationsTesterDir = (Get-Item $VaultOperationsTesterExe).Directory
+        # Check that VaultOperationsTester is available
+        # Check for and install C++ Redistributable
+        if ($false -eq (Test-Path -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\12.0\VC\Runtimes\x86" -PathType Container)) {
+            $CppRedis = "$VaultOperationsTesterDir\vcredist_x86.exe"
+            If ($false -eq (Test-Path -PathType Leaf -Path $CppRedis)) {
+                Write-LogMessage -type Error -MSG "File not found: $CppRedis"
+                Write-LogMessage -type Error -MSG "Visual Studio 2013 x86 Runtime not installed and redistributable not found. Please resolve the issue, install manually"
+                Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+                exit 1
+            }
+            Write-LogMessage -type Info -MSG "Installing Visual Studio 2013 (VC++ 12.0) x86 Runtime from $CppRedis..."
+            try {
+                $null = Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
+            }
+            catch {
+                Write-LogMessage -type Error -MSG "Failed to install Visual Studio 2013 x86 Redistributable. Resolve the error"
+                Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+                exit 1
+            }
         }
-        Write-LogMessage -type Info -MSG "Installing Visual Studio 2013 (VC++ 12.0) x86 Runtime from $CppRedis..."
+
+        # after C++ redistributable install
         try {
-            $null = Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
+            $VotProcess = Set-PSMServerObject -VaultAddress $VaultAddress `
+                -VaultCredentials $InstallUser `
+                -PSMServerId $PSMServerId `
+                -VaultOperationsFolder $VaultOperationsTesterDir `
+                -PSMSafe $Safe `
+                -PSMConnectAccountName $PSMConnectAccountName `
+                -PSMAdminConnectAccountName $PSMAdminConnectAccountName `
+                -Proxy $Proxy
         }
         catch {
-            Write-LogMessage -type Error -MSG "Failed to install Visual Studio 2013 x86 Redistributable. Resolve the error"
+            Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
             Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
             exit 1
         }
-    }
-    # Get proxy details from .NET config
-    $ProxyDetails = Get-ProxyDetails
-        
-    # after C++ redistributable install
-    try {
-        $VotProcess = Set-PSMServerObject -VaultAddress $VaultAddress `
-            -VaultCredentials $InstallUser `
-            -PSMServerId $PSMServerId `
-            -VaultOperationsFolder $VaultOperationsTesterDir `
-            -PSMSafe $Safe `
-            -PSMConnectAccountName $PSMConnectAccountName `
-            -PSMAdminConnectAccountName $PSMAdminConnectAccountName `
-            -ProxyDetails $ProxyDetails
-    }
-    catch {
-        Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
-        Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
-        exit 1
-    }
-    If ($true -ne $VotProcess.Result) {
-        Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
-        Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
-        Write-LogMessage -type Error -MSG ("Error Code:    {0}" -f $VotProcess.ErrorCode)
-        Write-LogMessage -type Error -MSG ("Error Details: {0}" -f $VotProcess.ErrorDetails)
-        exit 1
+        If ($true -ne $VotProcess.Result) {
+            Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
+            Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+            Write-LogMessage -type Error -MSG ("Error Code:    {0}" -f $VotProcess.ErrorCode)
+            Write-LogMessage -type Error -MSG ("Error Details: {0}" -f $VotProcess.ErrorDetails)
+            exit 1
+        }
     }
 }
 
