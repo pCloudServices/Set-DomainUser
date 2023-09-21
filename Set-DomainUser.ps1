@@ -37,9 +37,15 @@ Do not onboard accounts in Privilege Cloud. Use on subsequent servers after firs
 Do not check the configuration of the PSM domain users for errors
 .PARAMETER SkipPSMObjectUpdate
 Do not update the PSM server object in backend
+.PARAMETER SkipSecurityPolicyConfiguration
+Do not update Local Security Policy to allow PSM users to log on with Remote Desktop
+.PARAMETER SkipAddingUsersToRduGroup
+Do not add PSM users to the Remote Desktop Users group
+.PARAMETER NotFirstRun
+This script is being run on additional servers following the first. Skip platform and safe creation and account onboarding.
 #>
 
-# Version: 1.4.0
+# Version: 1.5
 
 [CmdletBinding()]
 param(
@@ -130,7 +136,27 @@ param(
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Do not update PSM Server Object configuration in backend")]
-    [switch]$SkipPSMObjectUpdate
+    [switch]$SkipPSMObjectUpdate,
+
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Do not update Local Security Policy to allow PSM users to log on with Remote Desktop")]
+    [switch]$SkipSecurityPolicyConfiguration,
+
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Do not add PSM users to the Remote Desktop Users group")]
+    [switch]$SkipAddingUsersToRduGroup,
+
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Safe and platform configuration and account onboarding should be skipped as the script is being run on subsequent PSM servers.")]
+    [switch]$NotFirstRun,
+
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Proxy Server in address:port format")]
+    [string]$Proxy
 )
 
 #Functions
@@ -327,8 +353,103 @@ Function Get-PvwaAddress {
         return $Address
     }
     catch {
-        Write-LogMessage -Type Error -MSG "Unable to detect PVWA address automatically. Please rerun script and provide it using the -PrivilegeCloudUrl parameter."
-        exit 1
+        return $false
+    }
+}
+
+Function Get-CurrentSecurityPolicy {
+    <#
+    .SYNOPSIS
+    Backs up PSMConfig ps1 scripts
+    .DESCRIPTION
+    Copies PSM config items to -backup.ps1
+    .PARAMETER psmRootInstallLocation
+    PSM root installation folder
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]
+        $OutFile,
+        [Parameter(Mandatory = $true)]
+        [string]
+        $LogFile
+    )
+
+    $LogFileSplit = ($LogFile -split "\.")
+    $LogFileLength = $LogFileSplit.Count
+    $LogFileBase = ($LogFileSplit)[0..($LogFileLength - 2)]
+    $StdOutLogFile = (($LogFileBase -join ".") + ".stdout.log")
+
+    try {
+        $SecEditExe = Get-Command secedit.exe
+        $process = Start-Process -Wait -FilePath $SecEditExe -PassThru -NoNewWindow -RedirectStandardOutput $StdOutLogFile `
+            -ArgumentList @("/export", "/cfg", "`"$OutFile`"", "/log", "`"$LogFile`"")
+        If ($process.ExitCode -eq 0) {
+            return $True
+        }
+        return $False
+    }
+    catch {
+        return $False
+    }
+}
+
+Function Set-CurrentSecurityPolicy {
+    <#
+    .SYNOPSIS
+    Backs up PSMConfig ps1 scripts
+    .DESCRIPTION
+    Copies PSM config items to -backup.ps1
+    .PARAMETER psmRootInstallLocation
+    PSM root installation folder
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]
+        $DatabaseFile,
+        [Parameter(Mandatory = $true)]
+        [string]
+        $ConfigFile,
+        [Parameter(Mandatory = $true)]
+        [string]
+        $LogFile
+    )
+
+    $LogFileSplit = ($LogFile -split "\.")
+    $LogFileLength = $LogFileSplit.Count
+    $LogFileBase = ($LogFileSplit)[0..($LogFileLength - 2)]
+    $StdOutLogFile = (($LogFileBase -join ".") + ".stdout.log")
+
+    try {
+        $SecEditExe = Get-Command secedit.exe
+        $process = Start-Process -Wait -FilePath $SecEditExe -PassThru  -NoNewWindow -RedirectStandardOutput $StdOutLogFile `
+            -ArgumentList @("/configure", "/db", "`"$DatabaseFile`"", "/cfg", "`"$ConfigFile`"", "/log", "`"$LogFile`"")
+        If ($process.ExitCode -eq 0) {
+            return $True
+        }
+        return $False
+    }
+    catch {
+        return $False
+    }
+}
+
+Function Get-ProxyDetails {
+    Write-LogMessage -type Verbose -MSG "Detecting proxy from user profile"
+    try {
+        $ProxyString = (Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings').proxyServer
+
+        If ($ProxyString) {
+            return $ProxyString
+        }
+        else {
+            Write-LogMessage -type Verbose -MSG "No proxy detected"
+            return $false
+        }
+    }
+    catch {
+        Write-LogMessage -type Verbose -MSG "Error detecting proxy. Proceeding with no proxy."
+        return $false
     }
 }
 
@@ -474,7 +595,7 @@ Function New-ConnectionToRestAPI {
     }
     $json = $body | ConvertTo-Json
     Try {
-        $Result = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -ContentType 'application/json'
+        $Result = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -ContentType 'application/json' -WebSession $WebRequestSession
         return @{
             ErrorCode = "Success"
             Response  = $Result
@@ -509,7 +630,7 @@ Function Test-PvwaToken {
         Authorization = $Token
     }
     try {
-        $testToken = Invoke-RestMethod -Method 'Get' -Uri $url -Headers $Headers -ContentType 'application/json'
+        $testToken = Invoke-RestMethod -Method 'Get' -Uri $url -Headers $Headers -ContentType 'application/json' -WebSession $Global:WebRequestSession
         if ($testToken) {
             return @{
                 ErrorCode = "Success"
@@ -529,18 +650,17 @@ Function Backup-PSMConfig {
     Copies PSM config items to -backup.ps1
     .PARAMETER psmRootInstallLocation
     PSM root installation folder
-    .PARAMETER BackupSubDirectory
+    .PARAMETER BackupPath
     Append this string to the end of backup file names
     #>
     param (
         [Parameter(Mandatory = $true)]
         $psmRootInstallLocation,
         [Parameter(Mandatory = $true)]
-        [string]$BackupSubDirectory
+        [string]$BackupPath
     )
-    $BackupPath = "$psmRootInstallLocation\Backup\Set-DomainUser\$BackupSubDirectory"
     try {
-        If (!(Test-Path -Path $psmRootInstallLocation\Backup\$BackupSubDirectory -PathType Container)) {
+        If (!(Test-Path -Path $BackupPath -PathType Container)) {
             $null = New-Item -ItemType Directory -Path $BackupPath
         }
         $PSMHardeningBackupFileName = ("{0}\PSMHardening.ps1" -f $BackupPath)
@@ -736,7 +856,8 @@ Function New-VaultAdminObject {
     $url = $pvwaAddress + "/PasswordVault/api/Accounts"
     $json = $body | ConvertTo-Json
     try {
-        $result = Invoke-RestMethod -Method POST -Uri $url -Body $json -Headers @{ "Authorization" = $pvwaToken } -ContentType "application/json" -ErrorVariable ResultError
+        $result = Invoke-RestMethod -Method POST -Uri $url -Body $json -Headers @{ "Authorization" = $pvwaToken } `
+            -ContentType "application/json" -ErrorVariable ResultError -WebSession $Global:WebRequestSession
         return $result
     }
     catch {
@@ -843,7 +964,7 @@ Function Duplicate-Platform {
             Description = $NewPlatformDescription
         }
         $json = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
+        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
     }
     catch {
         Write-LogMessage -Type Error -MSG "Error duplicating platform"
@@ -876,7 +997,7 @@ Function Get-PlatformStatus {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Platforms/targets?search=" + $PlatformId
-        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError
+        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError -WebSession $Global:WebRequestSession
         # This query returns a list of platforms where the name contains the search string. Find and return just the one with an exactly matching name.
         $TargetPlatform = $Getresult.Platforms | Where-Object Name -eq $PlatformId
         if ($TargetPlatform) {
@@ -917,7 +1038,7 @@ Function Get-PlatformStatusById {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Platforms/targets"
-        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError
+        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError -WebSession $Global:WebRequestSession
         # This query returns a list of platforms where the name contains the search string. Find and return just the one with an exactly matching name.
         $TargetPlatform = $Getresult.Platforms | Where-Object PlatformID -eq $PlatformId
         if ($TargetPlatform) {
@@ -958,7 +1079,7 @@ Function Get-SafeStatus {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/safes?search=$SafeName"
-        $SafeRequest = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue
+        $SafeRequest = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -WebSession $Global:WebRequestSession
         # This query returns a list of safes where the name contains the search string. Find and return just the one with an exactly matching name.
         $Safe = $SafeRequest.Value | Where-Object safeName -eq $SafeName
         if ($Safe) {
@@ -998,7 +1119,7 @@ Function Activate-Platform {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Platforms/Targets/$PlatformNumId/activate"
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
+        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
     }
     catch {
         Write-LogMessage -Type Error -MSG "Error activating platform"
@@ -1037,7 +1158,7 @@ Function Create-PSMSafe {
             description = $description
         }
         $json = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
+        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
         #Permissions for the needed accounts
         #PSMMaster full permissions
         New-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PSMMaster"
@@ -1160,7 +1281,7 @@ Function Set-SafePermissions {
             permissions = $safePermissions
         }
         $json = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Method 'Put' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
+        $null = Invoke-RestMethod -Method 'Put' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
     }
     catch {
         Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
@@ -1200,7 +1321,7 @@ Function Get-SafePermissions {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Safes/$safe/members/$safeMember/"
-        $result = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
+        $result = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
         if ($result) {
             return $result.permissions
         }
@@ -1278,7 +1399,7 @@ Function New-SafePermissions {
             permissions = $safePermissions
         }
         $json = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
+        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
     }
     catch {
         Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
@@ -1387,7 +1508,7 @@ function Get-UserProperty {
         $Result = $UserObject.InvokeGet($Property)
     }
     catch {
-        $Result = "An error occurred while retrieving this property. It may not be set."
+        $Result = "Unset"
     }
     return $Result
 }
@@ -1414,7 +1535,10 @@ Function Set-PSMServerObject {
         $PSMConnectAccountName,
         [Parameter(Mandatory = $True)]
         [String]
-        $PSMAdminConnectAccountName
+        $PSMAdminConnectAccountName,
+        [Parameter(Mandatory = $False)]
+        [PSCustomObject]
+        $Proxy
     )
 
     $VaultOperationsExe = "$VaultOperationsFolder\VaultOperationsTester.exe"
@@ -1433,6 +1557,18 @@ Function Set-PSMServerObject {
     #create log file
     New-Item -Path $stdoutFile -Force | Out-Null
 
+    # Create vault.ini
+    New-Item -Path "$VaultOperationsFolder\Vault.ini" -Force
+    Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('VAULT = "Vault"')
+
+    If ($Proxy) {
+        $ProxyAddress = $Proxy.Split(":")[0]
+        $ProxyPort = $Proxy.Split(":")[1]
+        Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('PROXYADDRESS = {0}' -f $ProxyAddress)
+        Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('PROXYPORT = {0}' -f $ProxyPort)
+        Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('PROXYTYPE = https')
+    }
+
     #Get Credentials
     $VaultUser = $VaultCredentials.UserName
     $VaultPass = $VaultCredentials.GetNetworkCredential().Password
@@ -1440,28 +1576,124 @@ Function Set-PSMServerObject {
     $ConfigString = ("//PSMServer[@ID='{0}']/ConnectionDetails/Server Safe={1},Object={2},AdminObject={3}" `
             -f $PSMServerId, $Safe, $PSMConnectAccountName, $PSMAdminConnectAccountName)
     try {
-        $VaultOperationsTesterProcess = Start-Process -FilePath $VaultOperationsExe `
-        -WorkingDirectory "$VaultOperationsFolder" -NoNewWindow -PassThru -Wait -RedirectStandardOutput $stdoutFile `
-        -ArgumentList $VaultUser, $VaultPass, $VaultAddress, $Operation, $ConfigString
+        $VaultOperationsTesterProcess = $VaultOperationsTesterProcess = Start-Process -FilePath $VaultOperationsExe `
+            -WorkingDirectory "$VaultOperationsFolder" -NoNewWindow -PassThru -Wait -RedirectStandardOutput $stdoutFile `
+            -ArgumentList $VaultUser, $VaultPass, $VaultAddress, $Operation, $ConfigString
     }
     catch {
-        return $false
+        return @{
+            ErrorCode = "Unknown"
+            Result    = $false
+        }
     }
+
     if ($VaultOperationsTesterProcess.ExitCode -ne 0) {
-        return $false
+        $ErrorLine = Get-Content $stdoutFile | Select-String "^Extra details:"
+        $ErrorString = ($ErrorLine -split ":")[1].Trim()
+        $null = $ErrorString -Match "([A-Z0-9]*) (.*)"
+        If ($Matches[1]) {
+            $ErrorCode = $Matches[1]
+        }
+        else {
+            $ErrorCode = "Unknown"
+        }
+        If ($Matches[1]) {
+            $ErrorDetails = $Matches[2]
+        }
+        else {
+            $ErrorDetails = "Unknown"
+        }
+        return @{
+            Result       = $false
+            ErrorCode    = $ErrorCode
+            ErrorDetails = $ErrorDetails
+        }
     }
     else {
-        return $true
+        return @{
+            Result = $true
+        }
     }
 }
 
 #Running Set-DomainUser script
 
+$OperationsToPerform = @{
+    GetInstallerUserCredentials       = $true
+    GetPSMConnectUserCredentials      = $true
+    GetPSMAdminConnectUserCredentials = $true
+    UserTests                         = $true
+    GetPrivilegeCloudUrl              = $true
+    DomainNetbiosNameDetection        = $true
+    DomainDNSNameDetection            = $true
+    PsmConfiguration                  = $true
+    SecurityPolicyConfiguration       = $true
+    RemoteDesktopUsersGroupAddition   = $true
+    RemoteConfiguration               = $true
+    ServerObjectConfiguration         = $true
+    Hardening                         = $true
+    ConfigureAppLocker                = $true
+    DetectProxy                       = $true
+}
+
+switch ($PSBoundParameters) {
+    { $_.psmConnectCredentials } {
+        $OperationsToPerform.GetPSMConnectUserCredentials = $false
+    }
+    { $_.psmAdminCredentials } {
+        $OperationsToPerform.GetPSMAdminConnectUserCredentials = $false
+    }
+    { $_.NotFirstRun } {
+        $OperationsToPerform.UserTests = $false
+        $OperationsToPerform.RemoteConfiguration = $false
+    }
+    { $_.SkipPSMUserTests } {
+        $OperationsToPerform.UserTests = $false
+    }
+    { $_.PrivilegeCloudUrl } {
+        $OperationsToPerform.GetPrivilegeCloudUrl = $false
+    }
+    { $_.DomainNetbiosName } {
+        $OperationsToPerform.DomainNetbiosNameDetection = $false
+    }
+    { $_.DomainDNSName } {
+        $OperationsToPerform.DomainDNSNameDetection = $false
+    }
+    { $_.LocalConfigurationOnly } {
+        $OperationsToPerform.RemoteConfiguration = $false
+        $OperationsToPerform.ServerObjectConfiguration = $false
+        $OperationsToPerform.UserTests = $false
+    }
+    { $_.DoNotHarden } {
+        $OperationsToPerform.Hardening = $false
+    }
+    { $_.SkipPSMObjectUpdate } {
+        $OperationsToPerform.ServerObjectConfiguration = $false
+    }
+    { $_.SkipSecurityPolicyConfiguration } {
+        $OperationsToPerform.SecurityPolicyConfiguration = $false
+    }
+    { $_.SkipAddingUsersToRduGroup } {
+        $OperationsToPerform.RemoteDesktopUsersGroupAddition = $false
+    }
+    { $_.DoNotConfigureAppLocker } {
+        $OperationsToPerform.ConfigureAppLocker = $false
+    }
+    { $_.Proxy } {
+        $OperationsToPerform.DetectProxy = $false
+    }
+}
+
+# If not doing any remote work, skip proxy detection
+If (!($OperationsToPerform.RemoteConfiguration -or $OperationsToPerform.ServerObjectConfiguration)) {
+    $OperationsToPerform.DetectProxy = $false
+}
+
 $global:InVerbose = $PSBoundParameters.Verbose.IsPresent
 $ScriptLocation = Split-Path -Parent $MyInvocation.MyCommand.Path
 $global:LOG_FILE_PATH = "$ScriptLocation\_Set-DomainUser.log"
 
-if ($null -eq $psmConnectCredentials) {
+if ($OperationsToPerform.GetPSMConnectUserCredentials) {
     $psmConnectCredentials = Get-Credential -Message "Please enter PSMConnect domain user credentials"
     if (!($psmConnectCredentials)) {
         Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
@@ -1469,7 +1701,7 @@ if ($null -eq $psmConnectCredentials) {
     }
 }
 
-if ($null -eq $psmAdminCredentials) {
+if ($OperationsToPerform.GetPSMAdminConnectUserCredentials) {
     $psmAdminCredentials = Get-Credential -Message "Please enter PSMAdminConnect domain user credentials"
     if (!($psmAdminCredentials)) {
         Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
@@ -1489,13 +1721,10 @@ else {
     $UM = $false
 }
 
-
 $BackupSubDirectory = (Get-Date).ToString('yyyMMdd-HHmmss')
-$DomainNameAutodetected = $false
+$BackupPath = "$psmRootInstallLocation\Backup\Set-DomainUser\$BackupSubDirectory"
 
-$TasksTop = @(
-    "Modify local/group policies to allow PSM users to use Remote Desktop"
-)
+$TasksTop = @()
 
 Write-LogMessage -Type Info -MSG "Gathering information"
 
@@ -1525,7 +1754,7 @@ If (!(Test-CredentialFormat -Credential $psmAdminCredentials)) {
     exit 1
 }
 
-if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
+if ($OperationsToPerform.UserTests) {
     If (!(Test-PasswordCharactersValid -Credential $psmConnectCredentials)) {
         Write-LogMessage -Type Error -MSG "Password provided for PSMConnect user contained invalid characters."
         Write-LogMessage -Type Error -MSG 'Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
@@ -1542,21 +1771,27 @@ if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
 
 
 # Get-Variables
-if (!($PrivilegeCloudUrl)) {
+if ($OperationsToPerform.GetPrivilegeCloudUrl) {
     Write-LogMessage -Type Verbose -MSG "Getting PVWA address"
     $PrivilegeCloudUrl = Get-PvwaAddress -psmRootInstallLocation $psmRootInstallLocation
 }
+If ($false -eq $PrivilegeCloudUrl) {
+    Write-LogMessage -Type Error -MSG "Unable to detect PVWA address automatically. Please rerun script and provide it using the -PrivilegeCloudUrl parameter."
+    exit 1
+}
+
 Write-LogMessage -Type Verbose -MSG "Getting domain details"
-if (!($DomainDNSName)) {
+if ($OperationsToPerform.DomainDNSNameDetection) {
     $DomainNameAutodetected = $true
     $DomainDNSName = Get-DomainDnsName
 }
-if (!($DomainNetbiosName)) {
+if ($OperationsToPerform.DomainNetbiosNameDetection) {
     $DomainNameAutodetected = $true
     $DomainNetbiosName = Get-DomainNetbiosName
 }
 If ($DomainNameAutodetected) {
-    $DomainInfo = ("Detected the following domain names:`n  DNS name:     {0}`n  NETBIOS name: {1}`nIs this correct?" -f $DomainDNSName, $DomainNetbiosName)
+
+    $DomainInfo = ("--------------------------------------------------------`nDetected the following domain names:`n  DNS name:     {0}`n  NETBIOS name: {1}`nIs this correct?" -f $DomainDNSName, $DomainNetbiosName)
 
     $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
     $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the domain details are correct"))
@@ -1572,7 +1807,43 @@ If ($DomainNameAutodetected) {
     }
 }
 
-if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
+If ($OperationsToPerform.DetectProxy) {
+    # Get proxy details from user profile
+    $Proxy = Get-ProxyDetails
+
+    If ($Proxy) {
+        $ProxyInfo = ("--------------------------------------------------------`nDetected the following proxy details:`n  Proxy Address:     {0}`nIs this correct?" -f $Proxy)
+
+        $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
+        $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the proxy details are correct"))
+        $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct proxy details can be provided"))
+
+        $ProxyPromptSelection = $Host.UI.PromptForChoice("", $ProxyInfo, $PromptOptions, 1)
+        If ($ProxyPromptSelection -eq 0) {
+            Write-LogMessage -Type Info "Proxy details confirmed"
+        }
+        Else {
+            Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct proxy details on the command line."
+            exit 1
+        }
+    }
+}
+
+$Global:WebRequestSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+
+If ($Proxy) {
+    try {
+        $ProxyObject = New-Object System.Net.WebProxy
+        $ProxyObject.Address = "http://$Proxy"
+        $Global:WebRequestSession.Proxy = $ProxyObject
+    }
+    catch {
+        Write-LogMessage -type Error -MSG "Failed to configure proxy. Please ensure it is provided in address:port format."
+        exit 1
+    }
+}
+
+if ($OperationsToPerform.UserTests) {
     # Gather the information we'll be comparing
     $PSMComponentsPath = $psmRootInstallLocation + "Components"
     $PSMInitSessionPath = $PSMComponentsPath + "\PSMInitSession.exe"
@@ -1677,6 +1948,7 @@ if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
                 # If the setting that we are checking applies to the user we're checking, or all users
                 If ($SettingCurrentValue -notin $SettingExpectedValue) {
                     $UserConfigurationErrors += [PSCustomObject]@{
+                        Username    = $Username
                         User        = $UserType
                         SettingName = $SettingDisplayName
                         Current     = $SettingCurrentValue
@@ -1692,12 +1964,10 @@ if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
         $UsersWithConfigurationErrors | ForEach-Object {
             $User = $_
             Write-LogMessage -Type Error -MSG ("Configuration errors for {0}:" -f $User)
-            $UserConfigurationErrors | Where-Object User -eq $user | ForEach-Object {
-                Write-LogMessage -type Error -MSG ("Setting:        " + $_.SettingName)
-                Write-LogMessage -type Error -MSG ("Expected value: " + ($_.Expected -join " or "))
-                Write-LogMessage -type Error -MSG ("Current value:  " + $_.Current)
-                Write-LogMessage -type Error -MSG (" ")
-            }
+            $UserConfigurationErrors | Where-Object User -eq $user | Select-Object Username, SettingName, Expected, Current | Format-Table
+        }
+        If ("Unset" -in $UserConfigurationErrors.Current) {
+            Write-LogMessage -type Error -MSG "Errors occurred while retrieving some user properties, which usually means they do not exist. These will show as `"Unset`" above."
         }
         Write-LogMessage -type Error -MSG "Please resolve the issues above or rerun this script with -SkipPSMUserTests to ignore these errors."
         exit 1
@@ -1721,12 +1991,10 @@ if ( !($SkipPSMUserTests -or $LocalConfigurationOnly) ) {
 }
 
 # Reverse logic on script invocation setting because double negatives suck
-$DoHardening = !$DoNotHarden
-$DoConfigureAppLocker = !$DoNotConfigureAppLocker
 $PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
 
 ## Remote Configuration Block
-If ($LocalConfigurationOnly -ne $true) {
+If ($OperationsToPerform.GetInstallerUserCredentials) {
     if ($null -eq $InstallUser) {
         if ($UM) {
             $TinaUserType = "installer user"
@@ -1740,7 +2008,8 @@ If ($LocalConfigurationOnly -ne $true) {
             exit 1
         }
     }
-
+}
+If ($OperationsToPerform.RemoteConfiguration) {
     Write-LogMessage -type Info -MSG "Starting backend configuration"
 
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -1859,141 +2128,216 @@ If ($LocalConfigurationOnly -ne $true) {
         Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
         exit 1
     }
-    
-    If ($true -ne $SkipPSMObjectUpdate) {
-        Write-LogMessage -type Verbose -MSG "Configuring backend PSM server objects"
-        $VaultAddress = Get-VaultAddress -psmRootInstallLocation $psmRootInstallLocation
-        $PossibleVaultOperationsTesterLocations = @(
-            "$ScriptLocation\VaultOperationsTester\VaultOperationsTester.exe",
-            "$ScriptLocation\..\VaultOperationsTester\VaultOperationsTester.exe",
-            "$ScriptLocation\..\..\VaultOperationsTester\VaultOperationsTester.exe"
-        )
-        foreach ($Possibility in $PossibleVaultOperationsTesterLocations) {
-            If (Test-Path -PathType Leaf -Path $Possibility) {
-                $VaultOperationsTesterExe = Get-Item $Possibility
-                break
-            }
-        }
+}
 
-        If ($null -eq $VaultOperationsTesterExe) {
-            Write-LogMessage -type Error -MSG "VaultOperationsTester.exe not found. Please ensure it's present in one of the following locations:"
-            Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation\..\..).FullName) + "\VaultOperationsTester"))
-            Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation\..).FullName) + "\VaultOperationsTester"))
-            Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation).FullName) + "\VaultOperationsTester"))
-            Write-LogMessage -type Error -MSG ("  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually.")
-            exit 1
+If ($OperationsToPerform.ServerObjectConfiguration) {
+    Write-LogMessage -type Verbose -MSG "Configuring backend PSM server objects"
+    $VaultAddress = Get-VaultAddress -psmRootInstallLocation $psmRootInstallLocation
+    $PossibleVaultOperationsTesterLocations = @(
+        "$ScriptLocation\VaultOperationsTester\VaultOperationsTester.exe",
+        "$ScriptLocation\..\VaultOperationsTester\VaultOperationsTester.exe",
+        "$ScriptLocation\..\..\VaultOperationsTester\VaultOperationsTester.exe"
+    )
+    foreach ($Possibility in $PossibleVaultOperationsTesterLocations) {
+        If (Test-Path -PathType Leaf -Path $Possibility) {
+            $VaultOperationsTesterExe = Get-Item $Possibility
+            break
         }
+    }
 
-        If ("Valid" -ne (Get-AuthenticodeSignature $VaultOperationsTesterExe).Status) {
-            Write-LogMessage -type Error -MSG "VaultOperationsTester.exe signature validation failed. Please replace with a correctly signed version"
-            Write-LogMessage -type Error -MSG ("  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually.")
-            exit 1
-        }
+    If ($null -eq $VaultOperationsTesterExe) {
+        Write-LogMessage -type Error -MSG "VaultOperationsTester.exe not found. Please ensure it's present in one of the following locations:"
+        Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation\..\..).FullName) + "\VaultOperationsTester"))
+        Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation\..).FullName) + "\VaultOperationsTester"))
+        Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation).FullName) + "\VaultOperationsTester"))
+        Write-LogMessage -type Error -MSG ("  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually.")
+        exit 1
+    }
 
-        $VaultOperationsTesterDir = (Get-Item $VaultOperationsTesterExe).Directory
-        # Check that VaultOperationsTester is available
-        # Check for and install C++ Redistributable
-        if ($false -eq (Test-Path -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\12.0\VC\Runtimes\x86" -PathType Container)) {
-            $CppRedis = "$VaultOperationsTesterDir\vcredist_x86.exe"
-            If ($false -eq (Test-Path -PathType Leaf -Path $CppRedis)) {
-                Write-LogMessage -type Error -MSG "File not found: $CppRedis"
-                Write-LogMessage -type Error -MSG "Visual Studio 2013 x86 Runtime not installed and redistributable not found. Please resolve the issue, install manually"
-                Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
-                exit 1
-            }
-            Write-LogMessage -type Info -MSG "Installing Visual Studio 2013 (VC++ 12.0) x86 Runtime from $CppRedis..."
-            try {
-                $null = Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
-            }
-            catch {
-                Write-LogMessage -type Error -MSG "Failed to install Visual Studio 2013 x86 Redistributable. Resolve the error"
-                Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
-                exit 1
-            }
-        }
-        # after C++ redistributable install
-        try {
-            $null = Set-PSMServerObject -VaultAddress $VaultAddress `
-                -VaultCredentials $InstallUser `
-                -PSMServerId $PSMServerId `
-                -VaultOperationsFolder $VaultOperationsTesterDir `
-                -PSMSafe $Safe `
-                -PSMConnectAccountName $PSMConnectAccountName `
-                -PSMAdminConnectAccountName $PSMAdminConnectAccountName
-        }
-        catch {
-            Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
+    If ("Valid" -ne (Get-AuthenticodeSignature $VaultOperationsTesterExe).Status) {
+        Write-LogMessage -type Error -MSG "VaultOperationsTester.exe signature validation failed. Please replace with a correctly signed version"
+        Write-LogMessage -type Error -MSG ("  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually.")
+        exit 1
+    }
+
+    $VaultOperationsTesterDir = (Get-Item $VaultOperationsTesterExe).Directory
+    # Check that VaultOperationsTester is available
+    # Check for and install C++ Redistributable
+    if ($false -eq (Test-Path -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\12.0\VC\Runtimes\x86" -PathType Container)) {
+        $CppRedis = "$VaultOperationsTesterDir\vcredist_x86.exe"
+        If ($false -eq (Test-Path -PathType Leaf -Path $CppRedis)) {
+            Write-LogMessage -type Error -MSG "File not found: $CppRedis"
+            Write-LogMessage -type Error -MSG "Visual Studio 2013 x86 Runtime not installed and redistributable not found. Please resolve the issue, install manually"
             Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
             exit 1
         }
+        Write-LogMessage -type Info -MSG "Installing Visual Studio 2013 (VC++ 12.0) x86 Runtime from $CppRedis..."
+        try {
+            $null = Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
+        }
+        catch {
+            Write-LogMessage -type Error -MSG "Failed to install Visual Studio 2013 x86 Redistributable. Resolve the error"
+            Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+            exit 1
+        }
+    }
+
+    # after C++ redistributable install
+    try {
+        $VotProcess = Set-PSMServerObject -VaultAddress $VaultAddress `
+            -VaultCredentials $InstallUser `
+            -PSMServerId $PSMServerId `
+            -VaultOperationsFolder $VaultOperationsTesterDir `
+            -PSMSafe $Safe `
+            -PSMConnectAccountName $PSMConnectAccountName `
+            -PSMAdminConnectAccountName $PSMAdminConnectAccountName `
+            -Proxy $Proxy
+    }
+    catch {
+        Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
+        Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+        exit 1
+    }
+    If ($true -ne $VotProcess.Result) {
+        Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
+        Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+        Write-LogMessage -type Error -MSG ("Error Code:    {0}" -f $VotProcess.ErrorCode)
+        Write-LogMessage -type Error -MSG ("Error Details: {0}" -f $VotProcess.ErrorDetails)
+        exit 1
     }
 }
 
 ## End Remote Configuration Block
 
-## Local Configuration Block
-Write-LogMessage -Type Info -MSG "Performing local configuration and restarting service"
+# Group membership and security policy changes
 
-Write-LogMessage -Type Verbose -MSG "Stopping CyberArk Privileged Session Manager Service"
-Stop-Service $REGKEY_PSMSERVICE
-Write-LogMessage -Type Verbose -MSG "Backing up PSM configuration files and scripts"
-Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupSubDirectory $BackupSubDirectory
-Write-LogMessage -Type Verbose -MSG "Updating PSM configuration files and scripts"
-Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $DomainDNSName -PSMAdminConnectAccountName $PSMAdminConnectAccountName -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
-#TODO: Update Basic_ini
-Write-LogMessage -Type Verbose -MSG "Adding PSMAdminConnect user to Terminal Services configuration"
-# Adding PSMAdminConnect user to Terminal Services configuration
-$AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $DomainNetbiosName -Credentials $psmAdminCredentials
-If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
-    Write-LogMessage -Type Verbose -MSG "Successfully added PSMAdminConnect user to Terminal Services configuration"
+$PsmConnectUser = ("{0}\{1}" -f $DomainNetbiosName, $psmConnectCredentials.UserName)
+$PsmAdminConnectUser = ("{0}\{1}" -f $DomainNetbiosName, $psmAdminCredentials.UserName)
+
+If ($OperationsToPerform.SecurityPolicyConfiguration) {
+    If (!(Test-Path -Path $BackupPath -PathType Container)) {
+        $null = New-Item -ItemType Directory -Path $BackupPath
+    }
+    $CurrentSecurityPolicyFile = "$BackupPath\CurrentSecurityPolicy.cfg"
+    $GetSecPolResult = Get-CurrentSecurityPolicy -OutFile $CurrentSecurityPolicyFile -LogFile $BackupPath\SeceditExport.log
+    If ($false -eq $GetSecPolResult) {
+        Write-LogMessage -type Warning -MSG "Security policy export failed, so the current policy will not be modified."
+        Write-LogMessage -type Warning -MSG "Please edit local security policy manually to allow PSM users to log on with Remote Desktop."
+        $TasksTop += "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+    }
+    If ($GetSecPolResult) {
+        $Content = Get-Content $CurrentSecurityPolicyFile
+        $null = $Content | Where-Object { $_ -match "^SeRemoteInteractiveLogonRight = (.*)" }
+        $SecPolCurrentUsersString = $Matches[1]
+        $SecPolUsersArray = ($SecPolCurrentUsersString -split ",")
+        $SecPolUsersArray += @($PsmConnectUser, $PsmAdminConnectUser)
+        $SecPolNewUsersString = $SecPolUsersArray -join ","
+        $null = New-Item -Path "$BackupPath\newsecpol.cfg" -ItemType File -Force
+        Add-Content -Path "$BackupPath\newsecpol.cfg" -Value '[Version]'
+        Add-Content -Path "$BackupPath\newsecpol.cfg" -Value 'signature="$CHICAGO$"'
+        Add-Content -Path "$BackupPath\newsecpol.cfg" -Value 'Revision=1'
+        Add-Content -Path "$BackupPath\newsecpol.cfg" -Value '[Privilege Rights]'
+        Add-Content -Path "$BackupPath\newsecpol.cfg" -Value ("SeRemoteInteractiveLogonRight = {0}" -f $SecPolNewUsersString)
+        $SetSecPolResult = Set-CurrentSecurityPolicy -DatabaseFile $BackupPath\SecurityPolicy.sdb -ConfigFile $BackupPath\newsecpol.cfg -LogFile $BackupPath\SecPolImport.log
+    }
+    If ($false -eq $SetSecPolResult) {
+        Write-LogMessage -type Error -MSG "Failed to configure local security policy."
+        Write-LogMessage -type Warning -MSG "Please edit local security policy manually to allow PSM users to log on with Remote Desktop."
+        $TasksTop += "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+    }
 }
 else {
-    # Failed to add user (1st command)
-    if ($IgnoreShadowPermissionErrors) {
-        Write-LogMessage -Type Warning -MSG $AddAdminUserToTSResult.Error
-        Write-LogMessage -Type Warning -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration."
-        Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
-        $TasksTop += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
+    $TasksTop += "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+}
+$TasksTop += "Ensure domain GPOs allow PSM users to log on to PSM servers with Remote Desktop"
+
+If ($OperationsToPerform.RemoteDesktopUsersGroupAddition) {
+    try {
+        $Members = (Get-LocalGroupMember -Group "Remote Desktop Users").Name
+        If ($PsmConnectUser -notin $Members) {
+            Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PsmConnectUser
+        }
+        If ($PsmAdminConnectUser -notin $Members) {
+            Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PsmAdminConnectUser
+        }
     }
-    else {
-        Write-LogMessage -Type Error -MSG $AddAdminUserToTSResult.Error
-        Write-LogMessage -Type Error -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration."
-        Write-LogMessage -Type Error -MSG "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
-        Write-LogMessage -Type Error -MSG "Exiting."
-        exit 1
+    catch {
+        Write-Host $_.Exception
+        Write-LogMessage -type Error -MSG "Failed to add PSM users to Remote Desktop Users group. Please add these users manually."
+        $TasksTop += "Add PSM users to Remote Desktop Users group"
     }
 }
-If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
-    # Grant shadow permission only if first command was succesful
-    Write-LogMessage -Type Verbose -MSG "Granting PSMAdminConnect user permission to shadow sessions"
-    $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $DomainNetbiosName -Credentials $psmAdminCredentials
-    If ($AddAdminUserTSShadowPermissionResult.ReturnValue -eq 0) {
-        Write-LogMessage -Type Verbose -MSG "Successfully granted PSMAdminConnect permission to shadow sessions"
+else {
+    $TasksTop += "Add PSM users to Remote Desktop Users group"
+}
+
+
+# End group membership and security policy changes
+
+## Local Configuration Block
+If ($OperationsToPerform.PsmConfiguration) {
+    Write-LogMessage -Type Info -MSG "Performing local configuration and restarting service"
+
+    Write-LogMessage -Type Verbose -MSG "Stopping CyberArk Privileged Session Manager Service"
+    Stop-Service $REGKEY_PSMSERVICE
+    Write-LogMessage -Type Verbose -MSG "Backing up PSM configuration files and scripts"
+    Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupPath $BackupPath
+    Write-LogMessage -Type Verbose -MSG "Updating PSM configuration files and scripts"
+    Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $DomainDNSName -PSMAdminConnectAccountName $PSMAdminConnectAccountName -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
+    #TODO: Update Basic_ini
+    Write-LogMessage -Type Verbose -MSG "Adding PSMAdminConnect user to Terminal Services configuration"
+    # Adding PSMAdminConnect user to Terminal Services configuration
+    $AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $DomainNetbiosName -Credentials $psmAdminCredentials
+    If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
+        Write-LogMessage -Type Verbose -MSG "Successfully added PSMAdminConnect user to Terminal Services configuration"
     }
     else {
-        # Failed to grant permission (2nd command)
+        # Failed to add user (1st command)
         if ($IgnoreShadowPermissionErrors) {
-            Write-LogMessage -Type Warning -MSG $AddAdminUserTSShadowPermissionResult.Error
-            Write-LogMessage -Type Warning -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
+            Write-LogMessage -Type Warning -MSG $AddAdminUserToTSResult.Error
+            Write-LogMessage -Type Warning -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration."
             Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
-            $TasksTop += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
+            $TasksTop += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
         }
         else {
-            Write-LogMessage -Type Error -MSG $AddAdminUserTSShadowPermissionResult.Error
-            Write-LogMessage -Type Error -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
-            Write-LogMessage -Type Error -MSG "Please see the following article for information on resolving this error"
-            Write-LogMessage -Type Error -MSG "https://cyberark-customers.force.com/s/article/PSM-Unable-to-run-WMIC-command"
+            Write-LogMessage -Type Error -MSG $AddAdminUserToTSResult.Error
+            Write-LogMessage -Type Error -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration."
             Write-LogMessage -Type Error -MSG "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
+            Write-LogMessage -Type Error -MSG "Exiting."
             exit 1
         }
     }
+    If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
+        # Grant shadow permission only if first command was succesful
+        Write-LogMessage -Type Verbose -MSG "Granting PSMAdminConnect user permission to shadow sessions"
+        $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $DomainNetbiosName -Credentials $psmAdminCredentials
+        If ($AddAdminUserTSShadowPermissionResult.ReturnValue -eq 0) {
+            Write-LogMessage -Type Verbose -MSG "Successfully granted PSMAdminConnect permission to shadow sessions"
+        }
+        else {
+            # Failed to grant permission (2nd command)
+            if ($IgnoreShadowPermissionErrors) {
+                Write-LogMessage -Type Warning -MSG $AddAdminUserTSShadowPermissionResult.Error
+                Write-LogMessage -Type Warning -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
+                Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
+                $TasksTop += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
+            }
+            else {
+                Write-LogMessage -Type Error -MSG $AddAdminUserTSShadowPermissionResult.Error
+                Write-LogMessage -Type Error -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
+                Write-LogMessage -Type Error -MSG "Please see the following article for information on resolving this error"
+                Write-LogMessage -Type Error -MSG "https://cyberark-customers.force.com/s/article/PSM-Unable-to-run-WMIC-command"
+                Write-LogMessage -Type Error -MSG "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
+                exit 1
+            }
+        }
+    }
 }
-
 ## End Local Configuration Block
 
 ## Post-Configuration Block
 
-If ($DoHardening) {
+If ($OperationsToPerform.Hardening) {
     Write-LogMessage -Type Info -MSG "Running PSM Hardening script"
     Write-LogMessage -Type Info -MSG "---"
     Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation
@@ -2002,9 +2346,9 @@ If ($DoHardening) {
 }
 else {
     Write-LogMessage -Type Warning -MSG "Skipping Hardening due to -DoNotHarden parameter"
-    $TasksTop += "Run script for perform server hardening (PSMHardening.ps1)"
+    $TasksTop += "Run script to perform server hardening (PSMHardening.ps1)"
 }
-If ($DoConfigureAppLocker) {
+If ($OperationsToPerform.ConfigureAppLocker) {
     Write-LogMessage -Type Info -MSG "Running PSM Configure AppLocker script"
     Write-LogMessage -Type Info -MSG "---"
     Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation
@@ -2040,231 +2384,3 @@ foreach ($Task in $TasksBottom) {
     Write-LogMessage -Type Info " - $Task"
 }
 ## End Post-Configuration Block
-# SIG # Begin signature block
-# MIIqRQYJKoZIhvcNAQcCoIIqNjCCKjICAQExDzANBglghkgBZQMEAgEFADB5Bgor
-# BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCD0mwSpEYocyvVP
-# aYyH87KxNtzgpiU8WlgCCn80zjnCZaCCGFcwggROMIIDNqADAgECAg0B7l8Wnf+X
-# NStkZdZqMA0GCSqGSIb3DQEBCwUAMFcxCzAJBgNVBAYTAkJFMRkwFwYDVQQKExBH
-# bG9iYWxTaWduIG52LXNhMRAwDgYDVQQLEwdSb290IENBMRswGQYDVQQDExJHbG9i
-# YWxTaWduIFJvb3QgQ0EwHhcNMTgwOTE5MDAwMDAwWhcNMjgwMTI4MTIwMDAwWjBM
-# MSAwHgYDVQQLExdHbG9iYWxTaWduIFJvb3QgQ0EgLSBSMzETMBEGA1UEChMKR2xv
-# YmFsU2lnbjETMBEGA1UEAxMKR2xvYmFsU2lnbjCCASIwDQYJKoZIhvcNAQEBBQAD
-# ggEPADCCAQoCggEBAMwldpB5BngiFvXAg7aEyiie/QV2EcWtiHL8RgJDx7KKnQRf
-# JMsuS+FggkbhUqsMgUdwbN1k0ev1LKMPgj0MK66X17YUhhB5uzsTgHeMCOFJ0mpi
-# Lx9e+pZo34knlTifBtc+ycsmWQ1z3rDI6SYOgxXG71uL0gRgykmmKPZpO/bLyCiR
-# 5Z2KYVc3rHQU3HTgOu5yLy6c+9C7v/U9AOEGM+iCK65TpjoWc4zdQQ4gOsC0p6Hp
-# sk+QLjJg6VfLuQSSaGjlOCZgdbKfd/+RFO+uIEn8rUAVSNECMWEZXriX7613t2Sa
-# er9fwRPvm2L7DWzgVGkWqQPabumDk3F2xmmFghcCAwEAAaOCASIwggEeMA4GA1Ud
-# DwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBSP8Et/qC5FJK5N
-# UPpjmove4t0bvDAfBgNVHSMEGDAWgBRge2YaRQ2XyolQL30EzTSo//z9SzA9Bggr
-# BgEFBQcBAQQxMC8wLQYIKwYBBQUHMAGGIWh0dHA6Ly9vY3NwLmdsb2JhbHNpZ24u
-# Y29tL3Jvb3RyMTAzBgNVHR8ELDAqMCigJqAkhiJodHRwOi8vY3JsLmdsb2JhbHNp
-# Z24uY29tL3Jvb3QuY3JsMEcGA1UdIARAMD4wPAYEVR0gADA0MDIGCCsGAQUFBwIB
-# FiZodHRwczovL3d3dy5nbG9iYWxzaWduLmNvbS9yZXBvc2l0b3J5LzANBgkqhkiG
-# 9w0BAQsFAAOCAQEAI3Dpz+K+9VmulEJvxEMzqs0/OrlkF/JiBktI8UCIBheh/qvR
-# XzzGM/Lzjt0fHT7MGmCZggusx/x+mocqpX0PplfurDtqhdbevUBj+K2myIiwEvz2
-# Qd8PCZceOOpTn74F9D7q059QEna+CYvCC0h9Hi5R9o1T06sfQBuKju19+095VnBf
-# DNOOG7OncA03K5eVq9rgEmscQM7Fx37twmJY7HftcyLCivWGQ4it6hNu/dj+Qi+5
-# fV6tGO+UkMo9J6smlJl1x8vTe/fKTNOvUSGSW4R9K58VP3TLUeiegw4WbxvnRs4j
-# vfnkoovSOWuqeRyRLOJhJC2OKkhwkMQexejgcDCCBaIwggSKoAMCAQICEHgDGEJF
-# cIpBz28BuO60qVQwDQYJKoZIhvcNAQEMBQAwTDEgMB4GA1UECxMXR2xvYmFsU2ln
-# biBSb290IENBIC0gUjMxEzARBgNVBAoTCkdsb2JhbFNpZ24xEzARBgNVBAMTCkds
-# b2JhbFNpZ24wHhcNMjAwNzI4MDAwMDAwWhcNMjkwMzE4MDAwMDAwWjBTMQswCQYD
-# VQQGEwJCRTEZMBcGA1UEChMQR2xvYmFsU2lnbiBudi1zYTEpMCcGA1UEAxMgR2xv
-# YmFsU2lnbiBDb2RlIFNpZ25pbmcgUm9vdCBSNDUwggIiMA0GCSqGSIb3DQEBAQUA
-# A4ICDwAwggIKAoICAQC2LcUw3Xroq5A9A3KwOkuZFmGy5f+lZx03HOV+7JODqoT1
-# o0ObmEWKuGNXXZsAiAQl6fhokkuC2EvJSgPzqH9qj4phJ72hRND99T8iwqNPkY2z
-# BbIogpFd+1mIBQuXBsKY+CynMyTuUDpBzPCgsHsdTdKoWDiW6d/5G5G7ixAs0sdD
-# HaIJdKGAr3vmMwoMWWuOvPSrWpd7f65V+4TwgP6ETNfiur3EdaFvvWEQdESymAfi
-# dKv/aNxsJj7pH+XgBIetMNMMjQN8VbgWcFwkeCAl62dniKu6TjSYa3AR3jjK1L6h
-# wJzh3x4CAdg74WdDhLbP/HS3L4Sjv7oJNz1nbLFFXBlhq0GD9awd63cNRkdzzr+9
-# lZXtnSuIEP76WOinV+Gzz6ha6QclmxLEnoByPZPcjJTfO0TmJoD80sMD8IwM0kXW
-# LuePmJ7mBO5Cbmd+QhZxYucE+WDGZKG2nIEhTivGbWiUhsaZdHNnMXqR8tSMeW58
-# prt+Rm9NxYUSK8+aIkQIqIU3zgdhVwYXEiTAxDFzoZg1V0d+EDpF2S2kUZCYqaAH
-# N8RlGqocaxZ396eX7D8ZMJlvMfvqQLLn0sT6ydDwUHZ0WfqNbRcyvvjpfgP054d1
-# mtRKkSyFAxMCK0KA8olqNs/ITKDOnvjLja0Wp9Pe1ZsYp8aSOvGCY/EuDiRk3wID
-# AQABo4IBdzCCAXMwDgYDVR0PAQH/BAQDAgGGMBMGA1UdJQQMMAoGCCsGAQUFBwMD
-# MA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFB8Av0aACvx4ObeltEPZVlC7zpY7
-# MB8GA1UdIwQYMBaAFI/wS3+oLkUkrk1Q+mOai97i3Ru8MHoGCCsGAQUFBwEBBG4w
-# bDAtBggrBgEFBQcwAYYhaHR0cDovL29jc3AuZ2xvYmFsc2lnbi5jb20vcm9vdHIz
-# MDsGCCsGAQUFBzAChi9odHRwOi8vc2VjdXJlLmdsb2JhbHNpZ24uY29tL2NhY2Vy
-# dC9yb290LXIzLmNydDA2BgNVHR8ELzAtMCugKaAnhiVodHRwOi8vY3JsLmdsb2Jh
-# bHNpZ24uY29tL3Jvb3QtcjMuY3JsMEcGA1UdIARAMD4wPAYEVR0gADA0MDIGCCsG
-# AQUFBwIBFiZodHRwczovL3d3dy5nbG9iYWxzaWduLmNvbS9yZXBvc2l0b3J5LzAN
-# BgkqhkiG9w0BAQwFAAOCAQEArPfMFYsweagdCyiIGQnXHH/+hr17WjNuDWcOe2LZ
-# 4RhcsL0TXR0jrjlQdjeqRP1fASNZhlZMzK28ZBMUMKQgqOA/6Jxy3H7z2Awjuqgt
-# qjz27J+HMQdl9TmnUYJ14fIvl/bR4WWWg2T+oR1R+7Ukm/XSd2m8hSxc+lh30a6n
-# sQvi1ne7qbQ0SqlvPfTzDZVd5vl6RbAlFzEu2/cPaOaDH6n35dSdmIzTYUsvwyh+
-# et6TDrR9oAptksS0Zj99p1jurPfswwgBqzj8ChypxZeyiMgJAhn2XJoa8U1sMNSz
-# BqsAYEgNeKvPF62Sk2Igd3VsvcgytNxN69nfwZCWKb3BfzCCBugwggTQoAMCAQIC
-# EHe9DgW3WQu2HUdhUx4/de0wDQYJKoZIhvcNAQELBQAwUzELMAkGA1UEBhMCQkUx
-# GTAXBgNVBAoTEEdsb2JhbFNpZ24gbnYtc2ExKTAnBgNVBAMTIEdsb2JhbFNpZ24g
-# Q29kZSBTaWduaW5nIFJvb3QgUjQ1MB4XDTIwMDcyODAwMDAwMFoXDTMwMDcyODAw
-# MDAwMFowXDELMAkGA1UEBhMCQkUxGTAXBgNVBAoTEEdsb2JhbFNpZ24gbnYtc2Ex
-# MjAwBgNVBAMTKUdsb2JhbFNpZ24gR0NDIFI0NSBFViBDb2RlU2lnbmluZyBDQSAy
-# MDIwMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAyyDvlx65ATJDoFup
-# iiP9IF6uOBKLyizU/0HYGlXUGVO3/aMX53o5XMD3zhGj+aXtAfq1upPvr5Pc+OKz
-# GUyDsEpEUAR4hBBqpNaWkI6B+HyrL7WjVzPSWHuUDm0PpZEmKrODT3KxintkktDw
-# tFVflgsR5Zq1LLIRzyUbfVErmB9Jo1/4E541uAMC2qQTL4VK78QvcA7B1MwzEuy9
-# QJXTEcrmzbMFnMhT61LXeExRAZKC3hPzB450uoSAn9KkFQ7or+v3ifbfcfDRvqey
-# QTMgdcyx1e0dBxnE6yZ38qttF5NJqbfmw5CcxrjszMl7ml7FxSSTY29+EIthz5hV
-# oySiiDby+Z++ky6yBp8mwAwBVhLhsoqfDh7cmIsuz9riiTSmHyagqK54beyhiBU8
-# wurut9itYaWvcDaieY7cDXPA8eQsq5TsWAY5NkjWO1roIs50Dq8s8RXa0bSV6KzV
-# SW3lr92ba2MgXY5+O7JD2GI6lOXNtJizNxkkEnJzqwSwCdyF5tQiBO9AKh0ubcdp
-# 0263AWwN4JenFuYmi4j3A0SGX2JnTLWnN6hV3AM2jG7PbTYm8Q6PsD1xwOEyp4Lk
-# tjICMjB8tZPIIf08iOZpY/judcmLwqvvujr96V6/thHxvvA9yjI+bn3eD36blcQS
-# h+cauE7uLMHfoWXoJIPJKsL9uVMCAwEAAaOCAa0wggGpMA4GA1UdDwEB/wQEAwIB
-# hjATBgNVHSUEDDAKBggrBgEFBQcDAzASBgNVHRMBAf8ECDAGAQH/AgEAMB0GA1Ud
-# DgQWBBQlndD8WQmGY8Xs87ETO1ccA5I2ETAfBgNVHSMEGDAWgBQfAL9GgAr8eDm3
-# pbRD2VZQu86WOzCBkwYIKwYBBQUHAQEEgYYwgYMwOQYIKwYBBQUHMAGGLWh0dHA6
-# Ly9vY3NwLmdsb2JhbHNpZ24uY29tL2NvZGVzaWduaW5ncm9vdHI0NTBGBggrBgEF
-# BQcwAoY6aHR0cDovL3NlY3VyZS5nbG9iYWxzaWduLmNvbS9jYWNlcnQvY29kZXNp
-# Z25pbmdyb290cjQ1LmNydDBBBgNVHR8EOjA4MDagNKAyhjBodHRwOi8vY3JsLmds
-# b2JhbHNpZ24uY29tL2NvZGVzaWduaW5ncm9vdHI0NS5jcmwwVQYDVR0gBE4wTDBB
-# BgkrBgEEAaAyAQIwNDAyBggrBgEFBQcCARYmaHR0cHM6Ly93d3cuZ2xvYmFsc2ln
-# bi5jb20vcmVwb3NpdG9yeS8wBwYFZ4EMAQMwDQYJKoZIhvcNAQELBQADggIBACV1
-# oAnJObq3oTmJLxifq9brHUvolHwNB2ibHJ3vcbYXamsCT7M/hkWHzGWbTONYBgIi
-# ZtVhAsVjj9Si8bZeJQt3lunNcUAziCns7vOibbxNtT4GS8lzM8oIFC09TOiwunWm
-# dC2kWDpsE0n4pRUKFJaFsWpoNCVCr5ZW9BD6JH3xK3LBFuFr6+apmMc+WvTQGJ39
-# dJeGd0YqPSN9KHOKru8rG5q/bFOnFJ48h3HAXo7I+9MqkjPqV01eB17KwRisgS0a
-# Ifpuz5dhe99xejrKY/fVMEQ3Mv67Q4XcuvymyjMZK3dt28sF8H5fdS6itr81qjZj
-# yc5k2b38vCzzSVYAyBIrxie7N69X78TPHinE9OItziphz1ft9QpA4vUY1h7pkC/K
-# 04dfk4pIGhEd5TeFny5mYppegU6VrFVXQ9xTiyV+PGEPigu69T+m1473BFZeIbuf
-# 12pxgL+W3nID2NgiK/MnFk846FFADK6S7749ffeAxkw2V4SVp4QVSDAOUicIjY6i
-# vSLHGcmmyg6oejbbarphXxEklaTijmjuGalJmV7QtDS91vlAxxCXMVI5NSkRhyTT
-# xPupY8t3SNX6Yvwk4AR6TtDkbt7OnjhQJvQhcWXXCSXUyQcAerjH83foxdTiVdDT
-# HvZ/UuJJjbkRcgyIRCYzZgFE3+QzDiHeYolIB9r1MIIHbzCCBVegAwIBAgIMcE3E
-# /BY6leBdVXwMMA0GCSqGSIb3DQEBCwUAMFwxCzAJBgNVBAYTAkJFMRkwFwYDVQQK
-# ExBHbG9iYWxTaWduIG52LXNhMTIwMAYDVQQDEylHbG9iYWxTaWduIEdDQyBSNDUg
-# RVYgQ29kZVNpZ25pbmcgQ0EgMjAyMDAeFw0yMjAyMTUxMzM4MzVaFw0yNTAyMTUx
-# MzM4MzVaMIHUMR0wGwYDVQQPDBRQcml2YXRlIE9yZ2FuaXphdGlvbjESMBAGA1UE
-# BRMJNTEyMjkxNjQyMRMwEQYLKwYBBAGCNzwCAQMTAklMMQswCQYDVQQGEwJJTDEQ
-# MA4GA1UECBMHQ2VudHJhbDEUMBIGA1UEBxMLUGV0YWggVGlrdmExEzARBgNVBAkT
-# CjkgSGFwc2Fnb3QxHzAdBgNVBAoTFkN5YmVyQXJrIFNvZnR3YXJlIEx0ZC4xHzAd
-# BgNVBAMTFkN5YmVyQXJrIFNvZnR3YXJlIEx0ZC4wggIiMA0GCSqGSIb3DQEBAQUA
-# A4ICDwAwggIKAoICAQDys9frIBUzrj7+oxAS21ansV0C+r1R+DEGtb5HQ225eEqe
-# NXTnOYgvrOIBLROU2tCq7nKma5qA5bNgoO0hxYQOboC5Ir5B5mmtbr1zRdhF0h/x
-# f/E1RrBcsZ7ksbqeCza4ca1yH2W3YYsxFYgucq+JLqXoXToc4CjD5ogNw0Y66R13
-# Km94WuowRs/tgox6SQHpzb/CF0fMNCJbpXQrzZen1dR7Gtt2cWkpZct9DCTONwbX
-# GZKIdBSmRIfjDYDMHNyz42J2iifkUQgVcZLZvUJwIDz4+jkODv/++fa2GKte06po
-# L5+M/WlQbua+tlAyDeVMdAD8tMvvxHdTPM1vgj11zzK5qVxgrXnmFFTe9knf9S2S
-# 0C8M8L97Cha2F5sbvs24pTxgjqXaUyDuMwVnX/9usgIPREaqGY8wr0ysHd6VK4wt
-# o7nroiF2uWnOaPgFEMJ8+4fRB/CSt6OyKQYQyjSUSt8dKMvc1qITQ8+gLg1budzp
-# aHhVrh7dUUVn3N2ehOwIomqTizXczEFuN0siQJx+ScxLECWg4X2HoiHNY7KVJE4D
-# L9Nl8YvmTNCrHNwiF1ctYcdZ1vPgMPerFhzqDUbdnCAU9Z/tVspBTcWwDGCIm+Yo
-# 9V458g3iJhNXi2iKVFHwpf8hoDU0ys30SID/9mE3cc41L+zoDGOMclNHb0Y5CQID
-# AQABo4IBtjCCAbIwDgYDVR0PAQH/BAQDAgeAMIGfBggrBgEFBQcBAQSBkjCBjzBM
-# BggrBgEFBQcwAoZAaHR0cDovL3NlY3VyZS5nbG9iYWxzaWduLmNvbS9jYWNlcnQv
-# Z3NnY2NyNDVldmNvZGVzaWduY2EyMDIwLmNydDA/BggrBgEFBQcwAYYzaHR0cDov
-# L29jc3AuZ2xvYmFsc2lnbi5jb20vZ3NnY2NyNDVldmNvZGVzaWduY2EyMDIwMFUG
-# A1UdIAROMEwwQQYJKwYBBAGgMgECMDQwMgYIKwYBBQUHAgEWJmh0dHBzOi8vd3d3
-# Lmdsb2JhbHNpZ24uY29tL3JlcG9zaXRvcnkvMAcGBWeBDAEDMAkGA1UdEwQCMAAw
-# RwYDVR0fBEAwPjA8oDqgOIY2aHR0cDovL2NybC5nbG9iYWxzaWduLmNvbS9nc2dj
-# Y3I0NWV2Y29kZXNpZ25jYTIwMjAuY3JsMBMGA1UdJQQMMAoGCCsGAQUFBwMDMB8G
-# A1UdIwQYMBaAFCWd0PxZCYZjxezzsRM7VxwDkjYRMB0GA1UdDgQWBBTRWDsgBgAr
-# Xx8j10jVgqJYDQPVsTANBgkqhkiG9w0BAQsFAAOCAgEAU50DXmYXBEgzng8gv8EN
-# mr1FT0g75g6UCgBhMkduJNj1mq8DWKxLoS11gomB0/8zJmhbtFmZxjkgNe9cWPvR
-# NZa992pb9Bwwwe1KqGJFvgv3Yu1HiVL6FYzZ+m0QKmX0EofbwsFl6Z0pLSOvIESr
-# ICa4SgUk0OTDHNBUo+Sy9qm+ZJjA+IEK3M/IdNGjkecsFekr8tQEm7x6kCArPoug
-# mOetMgXhTxGjCu1QLQjp/i6P6wpgTSJXf9PPCxMmynsxBKGggs+vX/vl9CNT/s+X
-# Z9sz764AUEKwdAdi9qv0ouyUU9fiD5wN204fPm8h3xBhmeEJ25WDNQa8QuZddHUV
-# hXugk2eHd5hdzmCbu9I0qVkHyXsuzqHyJwFXbNBuiMOIfQk4P/+mHraq+cynx6/2
-# a+G8tdEIjFxpTsJgjSA1W+D0s+LmPX+2zCoFz1cB8dQb1lhXFgKC/KcSacnlO4SH
-# oZ6wZE9s0guXjXwwWfgQ9BSrEHnVIyKEhzKq7r7eo6VyjwOzLXLSALQdzH66cNk+
-# w3yT6uG543Ydes+QAnZuwQl3tp0/LjbcUpsDttEI5zp1Y4UfU4YA18QbRGPD1F9y
-# wjzg6QqlDtFeV2kohxa5pgyV9jOyX4/x0mu74qADxWHsZNVvlRLMUZ4zI4y3KvX8
-# vZsjJFVKIsvyCgyXgNMM5Z4xghFEMIIRQAIBATBsMFwxCzAJBgNVBAYTAkJFMRkw
-# FwYDVQQKExBHbG9iYWxTaWduIG52LXNhMTIwMAYDVQQDEylHbG9iYWxTaWduIEdD
-# QyBSNDUgRVYgQ29kZVNpZ25pbmcgQ0EgMjAyMAIMcE3E/BY6leBdVXwMMA0GCWCG
-# SAFlAwQCAQUAoHwwEAYKKwYBBAGCNwIBDDECMAAwGQYJKoZIhvcNAQkDMQwGCisG
-# AQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwGCisGAQQBgjcCARUwLwYJKoZIhvcN
-# AQkEMSIEIKdSu3VAccc9/6rP/b52qZT3DamKXPkpJs/JW9/jCMk/MA0GCSqGSIb3
-# DQEBAQUABIICAC/yZ5grVxd1eiOc49mnDid7zbZlvaI2gfj+V7/TetHCeTMz5N/h
-# bijI9dcU12xyiDHXzHQUY/bLonP8wvwt72FD3pmE5aevGx2Oh67Ree6NO72UL9xc
-# j3o9siwsw31JWSdcLa0fIuOQ4WI80WoRufs3D4qhldEB7JddMc67AXyUWpCvDXZp
-# tq7D1inoCaB/YPuQy9XYXOcpGrab29z0hPNub2Lrz9yeL1PJKVp/p45QnxWLkWQU
-# Uo3CK5AM7WIJ/yvAX59I5uifrtTMxZv1tuEPNQ4Vz6nhS8e4OCyA1cPg9wbVFHAw
-# +T+pi3Ifd6rN0otVq1/3Wm6j3dT32k/wCinKmV9SKx8ISCYd88Uo30/k/pXMOGDv
-# 2/SlTxKw1rtlUPA36NwxNF7jo4T8uSkDhPKhv80h+S541wVzuPEwBUv+O+0NvkWR
-# 2BNKDSoMuDB0zHnP2hFtNduU0juemkMdPn3o72uW2iyfPetzHppooQ7zMrHKUnAU
-# ZRXaEaKIZyhgcTotIh+A5XYhXQxYIHLoc7uBlH7HBBphbXA+T9L3EDg+h6HYFLdS
-# YS3er/lXdE5uSRlK3krt9ARruJ7XxwiJz+sAJIQPGJbJ+En3I061ktnoEC60g1Kv
-# dgcMG/wMDn40OhZDbqlVOrZiI9HDIvyOzuQjiHetwg+HBmNaEjCvGkGzoYIOKzCC
-# DicGCisGAQQBgjcDAwExgg4XMIIOEwYJKoZIhvcNAQcCoIIOBDCCDgACAQMxDTAL
-# BglghkgBZQMEAgEwgf4GCyqGSIb3DQEJEAEEoIHuBIHrMIHoAgEBBgtghkgBhvhF
-# AQcXAzAhMAkGBSsOAwIaBQAEFJ1T6NGh5ZfQURmtL68Up1x/Zd5RAhQiEe2ujU2S
-# u2Ax1RkOZ6ar2EQgZxgPMjAyMzA4MTYwOTU5MDZaMAMCAR6ggYakgYMwgYAxCzAJ
-# BgNVBAYTAlVTMR0wGwYDVQQKExRTeW1hbnRlYyBDb3Jwb3JhdGlvbjEfMB0GA1UE
-# CxMWU3ltYW50ZWMgVHJ1c3QgTmV0d29yazExMC8GA1UEAxMoU3ltYW50ZWMgU0hB
-# MjU2IFRpbWVTdGFtcGluZyBTaWduZXIgLSBHM6CCCoswggU4MIIEIKADAgECAhB7
-# BbHUSWhRRPfJidKcGZ0SMA0GCSqGSIb3DQEBCwUAMIG9MQswCQYDVQQGEwJVUzEX
-# MBUGA1UEChMOVmVyaVNpZ24sIEluYy4xHzAdBgNVBAsTFlZlcmlTaWduIFRydXN0
-# IE5ldHdvcmsxOjA4BgNVBAsTMShjKSAyMDA4IFZlcmlTaWduLCBJbmMuIC0gRm9y
-# IGF1dGhvcml6ZWQgdXNlIG9ubHkxODA2BgNVBAMTL1ZlcmlTaWduIFVuaXZlcnNh
-# bCBSb290IENlcnRpZmljYXRpb24gQXV0aG9yaXR5MB4XDTE2MDExMjAwMDAwMFoX
-# DTMxMDExMTIzNTk1OVowdzELMAkGA1UEBhMCVVMxHTAbBgNVBAoTFFN5bWFudGVj
-# IENvcnBvcmF0aW9uMR8wHQYDVQQLExZTeW1hbnRlYyBUcnVzdCBOZXR3b3JrMSgw
-# JgYDVQQDEx9TeW1hbnRlYyBTSEEyNTYgVGltZVN0YW1waW5nIENBMIIBIjANBgkq
-# hkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu1mdWVVPnYxyXRqBoutV87ABrTxxrDKP
-# BWuGmicAMpdqTclkFEspu8LZKbku7GOz4c8/C1aQ+GIbfuumB+Lef15tQDjUkQbn
-# QXx5HMvLrRu/2JWR8/DubPitljkuf8EnuHg5xYSl7e2vh47Ojcdt6tKYtTofHjmd
-# w/SaqPSE4cTRfHHGBim0P+SDDSbDewg+TfkKtzNJ/8o71PWym0vhiJka9cDpMxTW
-# 38eA25Hu/rySV3J39M2ozP4J9ZM3vpWIasXc9LFL1M7oCZFftYR5NYp4rBkyjyPB
-# MkEbWQ6pPrHM+dYr77fY5NUdbRE6kvaTyZzjSO67Uw7UNpeGeMWhNwIDAQABo4IB
-# dzCCAXMwDgYDVR0PAQH/BAQDAgEGMBIGA1UdEwEB/wQIMAYBAf8CAQAwZgYDVR0g
-# BF8wXTBbBgtghkgBhvhFAQcXAzBMMCMGCCsGAQUFBwIBFhdodHRwczovL2Quc3lt
-# Y2IuY29tL2NwczAlBggrBgEFBQcCAjAZGhdodHRwczovL2Quc3ltY2IuY29tL3Jw
-# YTAuBggrBgEFBQcBAQQiMCAwHgYIKwYBBQUHMAGGEmh0dHA6Ly9zLnN5bWNkLmNv
-# bTA2BgNVHR8ELzAtMCugKaAnhiVodHRwOi8vcy5zeW1jYi5jb20vdW5pdmVyc2Fs
-# LXJvb3QuY3JsMBMGA1UdJQQMMAoGCCsGAQUFBwMIMCgGA1UdEQQhMB+kHTAbMRkw
-# FwYDVQQDExBUaW1lU3RhbXAtMjA0OC0zMB0GA1UdDgQWBBSvY9bKo06FcuCnvEHz
-# KaI4f4B1YjAfBgNVHSMEGDAWgBS2d/ppSEefUxLVwuoHMnYH0ZcHGTANBgkqhkiG
-# 9w0BAQsFAAOCAQEAdeqwLdU0GVwyRf4O4dRPpnjBb9fq3dxP86HIgYj3p48V5kAp
-# reZd9KLZVmSEcTAq3R5hF2YgVgaYGY1dcfL4l7wJ/RyRR8ni6I0D+8yQL9YKbE4z
-# 7Na0k8hMkGNIOUAhxN3WbomYPLWYl+ipBrcJyY9TV0GQL+EeTU7cyhB4bEJu8LbF
-# +GFcUvVO9muN90p6vvPN/QPX2fYDqA/jU/cKdezGdS6qZoUEmbf4Blfhxg726K/a
-# 7JsYH6q54zoAv86KlMsB257HOLsPUqvR45QDYApNoP4nbRQy/D+XQOG/mYnb5DkU
-# vdrk08PqK1qzlVhVBH3HmuwjA42FKtL/rqlhgTCCBUswggQzoAMCAQICEHvU5a+6
-# zAc/oQEjBCJBTRIwDQYJKoZIhvcNAQELBQAwdzELMAkGA1UEBhMCVVMxHTAbBgNV
-# BAoTFFN5bWFudGVjIENvcnBvcmF0aW9uMR8wHQYDVQQLExZTeW1hbnRlYyBUcnVz
-# dCBOZXR3b3JrMSgwJgYDVQQDEx9TeW1hbnRlYyBTSEEyNTYgVGltZVN0YW1waW5n
-# IENBMB4XDTE3MTIyMzAwMDAwMFoXDTI5MDMyMjIzNTk1OVowgYAxCzAJBgNVBAYT
-# AlVTMR0wGwYDVQQKExRTeW1hbnRlYyBDb3Jwb3JhdGlvbjEfMB0GA1UECxMWU3lt
-# YW50ZWMgVHJ1c3QgTmV0d29yazExMC8GA1UEAxMoU3ltYW50ZWMgU0hBMjU2IFRp
-# bWVTdGFtcGluZyBTaWduZXIgLSBHMzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC
-# AQoCggEBAK8Oiqr43L9pe1QXcUcJvY08gfh0FXdnkJz93k4Cnkt29uU2PmXVJCBt
-# MPndHYPpPydKM05tForkjUCNIqq+pwsb0ge2PLUaJCj4G3JRPcgJiCYIOvn6QyN1
-# R3AMs19bjwgdckhXZU2vAjxA9/TdMjiTP+UspvNZI8uA3hNN+RDJqgoYbFVhV9Hx
-# AizEtavybCPSnw0PGWythWJp/U6FwYpSMatb2Ml0UuNXbCK/VX9vygarP0q3InZl
-# 7Ow28paVgSYs/buYqgE4068lQJsJU/ApV4VYXuqFSEEhh+XetNMmsntAU1h5jlIx
-# Bk2UA0XEzjwD7LcA8joixbRv5e+wipsCAwEAAaOCAccwggHDMAwGA1UdEwEB/wQC
-# MAAwZgYDVR0gBF8wXTBbBgtghkgBhvhFAQcXAzBMMCMGCCsGAQUFBwIBFhdodHRw
-# czovL2Quc3ltY2IuY29tL2NwczAlBggrBgEFBQcCAjAZGhdodHRwczovL2Quc3lt
-# Y2IuY29tL3JwYTBABgNVHR8EOTA3MDWgM6Axhi9odHRwOi8vdHMtY3JsLndzLnN5
-# bWFudGVjLmNvbS9zaGEyNTYtdHNzLWNhLmNybDAWBgNVHSUBAf8EDDAKBggrBgEF
-# BQcDCDAOBgNVHQ8BAf8EBAMCB4AwdwYIKwYBBQUHAQEEazBpMCoGCCsGAQUFBzAB
-# hh5odHRwOi8vdHMtb2NzcC53cy5zeW1hbnRlYy5jb20wOwYIKwYBBQUHMAKGL2h0
-# dHA6Ly90cy1haWEud3Muc3ltYW50ZWMuY29tL3NoYTI1Ni10c3MtY2EuY2VyMCgG
-# A1UdEQQhMB+kHTAbMRkwFwYDVQQDExBUaW1lU3RhbXAtMjA0OC02MB0GA1UdDgQW
-# BBSlEwGpn4XMG24WHl87Map5NgB7HTAfBgNVHSMEGDAWgBSvY9bKo06FcuCnvEHz
-# KaI4f4B1YjANBgkqhkiG9w0BAQsFAAOCAQEARp6v8LiiX6KZSM+oJ0shzbK5pnJw
-# Yy/jVSl7OUZO535lBliLvFeKkg0I2BC6NiT6Cnv7O9Niv0qUFeaC24pUbf8o/mfP
-# cT/mMwnZolkQ9B5K/mXM3tRr41IpdQBKK6XMy5voqU33tBdZkkHDtz+G5vbAf0Q8
-# RlwXWuOkO9VpJtUhfeGAZ35irLdOLhWa5Zwjr1sR6nGpQfkNeTipoQ3PtLHaPpp6
-# xyLFdM3fRwmGxPyRJbIblumFCOjd6nRgbmClVnoNyERY3Ob5SBSe5b/eAL13sZgU
-# chQk38cRLB8AP8NLFMZnHMweBqOQX1xUiz7jM1uCD8W3hgJOcZ/pZkU/djGCAlow
-# ggJWAgEBMIGLMHcxCzAJBgNVBAYTAlVTMR0wGwYDVQQKExRTeW1hbnRlYyBDb3Jw
-# b3JhdGlvbjEfMB0GA1UECxMWU3ltYW50ZWMgVHJ1c3QgTmV0d29yazEoMCYGA1UE
-# AxMfU3ltYW50ZWMgU0hBMjU2IFRpbWVTdGFtcGluZyBDQQIQe9Tlr7rMBz+hASME
-# IkFNEjALBglghkgBZQMEAgGggaQwGgYJKoZIhvcNAQkDMQ0GCyqGSIb3DQEJEAEE
-# MBwGCSqGSIb3DQEJBTEPFw0yMzA4MTYwOTU5MDZaMC8GCSqGSIb3DQEJBDEiBCAD
-# lR2HKCJlLudk+x/V2tZsBGAAhKddEwcmxZdfuQOt9jA3BgsqhkiG9w0BCRACLzEo
-# MCYwJDAiBCDEdM52AH0COU4NpeTefBTGgPniggE8/vZT7123H99h+DALBgkqhkiG
-# 9w0BAQEEggEAFIo9sIkCXJyenLO8UckEbvaXU47zsn3n+FImPykegEAOOSbsME7E
-# LZoTtBmZS3ZlDm0FbBFeStdU8ODxfwSdyfko9y/GJysr9CyS8+NnPOjRo26jndWd
-# M3pwNUASkI3N/WDAMLDIY0G48yfuw58jSojzzg6sQtYEJ4/p/KiiL9pL7GW1m+8/
-# jbz9AdRY8fZo2d/YKBD5oWeTWfYV8sXegWmIDBHUKlZ50Hy0+6dlqD1AWwvaHVUp
-# V97ucOu11dwT1suxEJyPapxD03HmqYVxxO9/RX3AQ2qCQaNj1FRbacj8wxVbQyj/
-# p+OJWg1fCqVsoGYbMK7NjJkH86iwVNLMLA==
-# SIG # End signature block

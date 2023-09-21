@@ -24,6 +24,7 @@ Mandatory parameters (Set-DomainUser will prompt for these if not provided on th
 
 Optional parameters:
 
+	NotFirstRun						- Skip the parts of the configuration that are only required at first run, e.g. user onboarding
 	PrivilegeCloudUrl 				- Please enter the full PVWA Address e.g.: https://tenantname.privilegecloud.cyberark.cloud. Set-DomainUser will attempt to detect this automatically.
 	VaultAddress					- FQDN or IP address of the vault. Should be detected automatically, only use this option if auto-detection fails.
 	DomainDNSName 					- Please enter the DNS name of the domain of the created accounts e.g.: "lab.net". Set-DomainUser will attempt to detect this automatically.
@@ -38,5 +39,7 @@ Optional parameters:
 	LocalConfigurationOnly 			- Do not create platforms or onboard accounts in Privilege Cloud. This may be used when running the script on additional servers after the first.
 	SkipPSMUserTests 				- By default the script will attempt to check the domain users for configuration errors. This option skips these tests.
 	SkipPSMObjectUpdate				- By default the script will configure the PSM server object with the updated PSM user details. This option skips this configuration.
+	SkipSecurityPolicyConfiguration - Do not update Local Security Policy to allow PSM users to log on with Remote Desktop
+	SkipAddingUsersToRduGroup       - Do not add PSM users to the Remote Desktop Users group
 	Verbose 						- Show detailed progress messages to assist with troubleshooting
 	
