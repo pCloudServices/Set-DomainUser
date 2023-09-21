@@ -374,9 +374,15 @@ Function Get-CurrentSecurityPolicy {
         [string]
         $LogFile
     )
+
+    $LogFileSplit = ($LogFile -split "\.")
+    $LogFileLength = $LogFileSplit.Count
+    $LogFileBase = ($LogFileSplit)[0..($LogFileLength - 2)]
+    $StdOutLogFile = (($LogFileBase -join ".") + ".stdout.log")
+
     try {
         $SecEditExe = Get-Command secedit.exe
-        $process = Start-Process -Wait -FilePath $SecEditExe -PassThru -NoNewWindow -RedirectStandardOutput null `
+        $process = Start-Process -Wait -FilePath $SecEditExe -PassThru -NoNewWindow -RedirectStandardOutput $StdOutLogFile `
             -ArgumentList @("/export", "/cfg", "`"$OutFile`"", "/log", "`"$LogFile`"")
         If ($process.ExitCode -eq 0) {
             return $True
@@ -408,9 +414,15 @@ Function Set-CurrentSecurityPolicy {
         [string]
         $LogFile
     )
+
+    $LogFileSplit = ($LogFile -split "\.")
+    $LogFileLength = $LogFileSplit.Count
+    $LogFileBase = ($LogFileSplit)[0..($LogFileLength - 2)]
+    $StdOutLogFile = (($LogFileBase -join ".") + ".stdout.log")
+
     try {
         $SecEditExe = Get-Command secedit.exe
-        $process = Start-Process -Wait -FilePath $SecEditExe -PassThru  -NoNewWindow -RedirectStandardOutput null `
+        $process = Start-Process -Wait -FilePath $SecEditExe -PassThru  -NoNewWindow -RedirectStandardOutput $StdOutLogFile `
             -ArgumentList @("/configure", "/db", "`"$DatabaseFile`"", "/cfg", "`"$ConfigFile`"", "/log", "`"$LogFile`"")
         If ($process.ExitCode -eq 0) {
             return $True
