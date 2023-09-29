@@ -437,10 +437,16 @@ Function Set-CurrentSecurityPolicy {
 Function Get-ProxyDetails {
     Write-LogMessage -type Verbose -MSG "Detecting proxy from user profile"
     try {
-        $ProxyString = (Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings').proxyServer
-
-        If ($ProxyString) {
-            return $ProxyString
+        $ProxyStatus = (Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings').ProxyEnable
+        If ($ProxyStatus -eq 1) {
+            $ProxyString = (Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings').proxyServer
+            If ($ProxyString) {
+                return $ProxyString
+            }
+            else {
+                Write-LogMessage -type Verbose -MSG "No proxy detected"
+                return $false
+            }
         }
         else {
             Write-LogMessage -type Verbose -MSG "No proxy detected"
