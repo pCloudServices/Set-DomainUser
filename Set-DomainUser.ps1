@@ -155,7 +155,7 @@ param(
 
     [Parameter(
         Mandatory = $false,
-        HelpMessage = "Proxy Server in address:port format")]
+        HelpMessage = "Proxy Server in address:port format or `"None`" for no proxy")]
     [string]$Proxy
 )
 
@@ -1809,10 +1809,10 @@ If ($DomainNameAutodetected) {
 
 If ($OperationsToPerform.DetectProxy) {
     # Get proxy details from user profile
-    $Proxy = Get-ProxyDetails
+    $DetectedProxy = Get-ProxyDetails
 
-    If ($Proxy) {
-        $ProxyInfo = ("--------------------------------------------------------`nDetected the following proxy details:`n  Proxy Address:     {0}`nIs this correct?" -f $Proxy)
+    If ($DetectedProxy) {
+        $ProxyInfo = ("--------------------------------------------------------`nDetected the following proxy details:`n  Proxy Address:     {0}`nIs this correct?" -f $DetectedProxy)
 
         $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
         $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the proxy details are correct"))
@@ -1821,17 +1821,21 @@ If ($OperationsToPerform.DetectProxy) {
         $ProxyPromptSelection = $Host.UI.PromptForChoice("", $ProxyInfo, $PromptOptions, 1)
         If ($ProxyPromptSelection -eq 0) {
             Write-LogMessage -Type Info "Proxy details confirmed"
+            $Proxy = $DetectedProxy
         }
         Else {
             Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct proxy details on the command line."
             exit 1
         }
     }
+    else {
+        $Proxy = "None"
+    }
 }
 
 $Global:WebRequestSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 
-If ($Proxy) {
+If ("None" -ne $Proxy) {
     try {
         $ProxyObject = New-Object System.Net.WebProxy
         $ProxyObject.Address = "http://$Proxy"
