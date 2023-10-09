@@ -1548,7 +1548,7 @@ Function Set-PSMServerObject {
         [String]
         $PSMAdminConnectAccountName,
         [Parameter(Mandatory = $False)]
-        [PSCustomObject]
+        [string]
         $Proxy
     )
 
@@ -1572,7 +1572,7 @@ Function Set-PSMServerObject {
     New-Item -Path "$VaultOperationsFolder\Vault.ini" -Force
     Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('VAULT = "Vault"')
 
-    If ($Proxy) {
+    If ("None" -ne $Proxy) {
         $ProxyAddress = $Proxy.Split(":")[0]
         $ProxyPort = $Proxy.Split(":")[1]
         Add-Content -Path "$VaultOperationsFolder\Vault.ini" -Force -Value ('PROXYADDRESS = {0}' -f $ProxyAddress)
