@@ -155,7 +155,7 @@ param(
 
     [Parameter(
         Mandatory = $false,
-        HelpMessage = "Proxy Server in address:port format or `"None`" for no proxy")]
+        HelpMessage = "Proxy Server in address:port format or `"none`" for no proxy")]
     [string]$Proxy
 )
 
