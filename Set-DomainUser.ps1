@@ -441,7 +441,12 @@ Function Get-ProxyDetails {
         If ($ProxyStatus -eq 1) {
             $ProxyString = (Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings').proxyServer
             If ($ProxyString) {
-                return $ProxyString
+                If ($ProxyString -match "^http://(.*)") {
+                    return $Matches[1]
+                }
+                else {
+                    return $ProxyString
+                }
             }
             else {
                 Write-LogMessage -type Verbose -MSG "No proxy detected"
