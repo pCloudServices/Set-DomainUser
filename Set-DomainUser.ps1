@@ -45,7 +45,7 @@ Do not add PSM users to the Remote Desktop Users group
 This script is being run on additional servers following the first. Skip platform and safe creation and account onboarding.
 #>
 
-# Version: 1.5
+# Version: 1.5.2
 
 [CmdletBinding()]
 param(
