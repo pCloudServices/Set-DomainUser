@@ -1698,6 +1698,7 @@ switch ($PSBoundParameters) {
 # If not doing any remote work, skip proxy detection
 If (!($OperationsToPerform.RemoteConfiguration -or $OperationsToPerform.ServerObjectConfiguration)) {
     $OperationsToPerform.DetectProxy = $false
+    $Proxy = "None"
 }
 
 $global:InVerbose = $PSBoundParameters.Verbose.IsPresent
