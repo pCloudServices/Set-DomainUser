@@ -1846,18 +1846,20 @@ If ($OperationsToPerform.DetectProxy) {
 }
 
 $Global:WebRequestSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$ProxyObject = New-Object System.Net.WebProxy
 
 If ("None" -ne $Proxy) {
     try {
-        $ProxyObject = New-Object System.Net.WebProxy
+        Write-LogMessage -type Verbose -MSG "Setting web requests to use proxy $Proxy"
         $ProxyObject.Address = "http://$Proxy"
-        $Global:WebRequestSession.Proxy = $ProxyObject
     }
     catch {
         Write-LogMessage -type Error -MSG "Failed to configure proxy. Please ensure it is provided in address:port format."
         exit 1
     }
 }
+
+$Global:WebRequestSession.Proxy = $ProxyObject
 
 if ($OperationsToPerform.UserTests) {
     # Gather the information we'll be comparing
