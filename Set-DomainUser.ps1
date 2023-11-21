@@ -1792,6 +1792,8 @@ If ($false -eq $PrivilegeCloudUrl) {
     exit 1
 }
 
+$DomainNameAutodetected = $false
+
 Write-LogMessage -Type Verbose -MSG "Getting domain details"
 if ($OperationsToPerform.DomainDNSNameDetection) {
     $DomainNameAutodetected = $true
