@@ -1982,7 +1982,7 @@ if ($OperationsToPerform.UserTests) {
         $UsersWithConfigurationErrors | ForEach-Object {
             $User = $_
             Write-LogMessage -Type Error -MSG ("Configuration errors for {0}:" -f $User)
-            $UserConfigurationErrors | Where-Object User -eq $user | Select-Object Username, SettingName, Expected, Current | Format-Table
+            $UserConfigurationErrors | Where-Object User -eq $user | Select-Object Username, SettingName, Expected, Current | Format-Table -Wrap
         }
         If ("Unset" -in $UserConfigurationErrors.Current) {
             Write-LogMessage -type Error -MSG "Errors occurred while retrieving some user properties, which usually means they do not exist. These will show as `"Unset`" above."
