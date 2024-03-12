@@ -1695,11 +1695,19 @@ switch ($PSBoundParameters) {
     }
 }
 
-# If not doing any remote work, skip proxy detection
+# If not doing any remote work, skip proxy detection and getting user details
 If (!($OperationsToPerform.RemoteConfiguration -or $OperationsToPerform.ServerObjectConfiguration)) {
     $OperationsToPerform.DetectProxy = $false
     $Proxy = "None"
+    $OperationsToPerform.GetInstallerUserCredentials = $false
 }
+
+# If credentials have been provided, do not ask
+If ($InstallUser) {
+    $OperationsToPerform.GetInstallerUserCredentials = $false
+}
+
+
 
 $global:InVerbose = $PSBoundParameters.Verbose.IsPresent
 $ScriptLocation = Split-Path -Parent $MyInvocation.MyCommand.Path
