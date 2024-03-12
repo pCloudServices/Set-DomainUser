@@ -2023,20 +2023,19 @@ $PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
 
 ## Remote Configuration Block
 If ($OperationsToPerform.GetInstallerUserCredentials) {
-    if ($null -eq $InstallUser) {
-        if ($UM) {
-            $TinaUserType = "installer user"
-        }
-        else {
-            $TinaUserType = "tenant administrator"
-        }
-        $InstallUser = Get-Credential -Message ("Please enter {0} credentials" -f $TinaUserType)
-        if (!($InstallUser)) {
-            Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
-            exit 1
-        }
+    if ($UM) {
+        $TinaUserType = "installer user"
+    }
+    else {
+        $TinaUserType = "tenant administrator"
+    }
+    $InstallUser = Get-Credential -Message ("Please enter {0} credentials" -f $TinaUserType)
+    if (!($InstallUser)) {
+        Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
+        exit 1
     }
 }
+
 If ($OperationsToPerform.RemoteConfiguration) {
     Write-LogMessage -type Info -MSG "Starting backend configuration"
 
