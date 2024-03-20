@@ -2082,13 +2082,19 @@ If ($OperationsToPerform.RemoteConfiguration) {
         # Creating Platform
         Write-LogMessage -Type Verbose -MSG "Creating new platform"
         Duplicate-Platform -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -CurrentPlatformId $WinDomainPlatformId -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
-        $TasksTop += ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
+        $TasksTop += @{
+            Message  = ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
+            Priority = "Low"
+        }
         # Get platform info again so we can ensure it's activated
         $platformStatus = Get-PlatformStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId $PlatformName
     }
     else {
         Write-LogMessage -Type Warning -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
-        $TasksTop += ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
+        $TasksTop += @{
+            Message  = ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
+            Priority = "Low"
+        }
     }
     if ($platformStatus.Active -eq $false) {
         Write-LogMessage -Type Verbose -MSG "Platform is deactivated. Activating."
@@ -2130,7 +2136,10 @@ If ($OperationsToPerform.RemoteConfiguration) {
     }
     ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
         Write-LogMessage -Type Warning -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
-        $TasksTop += "Verify that the $PSMConnectAccountName object in $safe safe contains correct PSMConnect user details"
+        $TasksTop += @{
+            Message  = "Verify that the $PSMConnectAccountName object in the `"$safe`" safe contains correct PSMConnect user details.`nIf you're configuring PSM servers in a new domain, you may need to specify alternative safe and account names."
+            Priority = "High"
+        }
     }
     Else {
         Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
@@ -2245,7 +2254,10 @@ If ($OperationsToPerform.SecurityPolicyConfiguration) {
     If ($false -eq $GetSecPolResult) {
         Write-LogMessage -type Warning -MSG "Security policy export failed, so the current policy will not be modified."
         Write-LogMessage -type Warning -MSG "Please edit local security policy manually to allow PSM users to log on with Remote Desktop."
-        $TasksTop += "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+        $TasksTop += @{
+            Message  = "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+            Priority = "High"
+        }
     }
     If ($GetSecPolResult) {
         $Content = Get-Content $CurrentSecurityPolicyFile
@@ -2265,13 +2277,22 @@ If ($OperationsToPerform.SecurityPolicyConfiguration) {
     If ($false -eq $SetSecPolResult) {
         Write-LogMessage -type Error -MSG "Failed to configure local security policy."
         Write-LogMessage -type Warning -MSG "Please edit local security policy manually to allow PSM users to log on with Remote Desktop."
-        $TasksTop += "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+        $TasksTop += @{
+            Message  = "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+            Priority = "High"
+        }
     }
 }
 else {
-    $TasksTop += "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+    $TasksTop += @{
+        Message  = "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+        Priority = "High"
+    }
 }
-$TasksTop += "Ensure domain GPOs allow PSM users to log on to PSM servers with Remote Desktop"
+$TasksTop += @{
+    Message  = "Ensure domain GPOs allow PSM users to log on to PSM servers with Remote Desktop"
+    Priority = "Medium"
+}
 
 If ($OperationsToPerform.RemoteDesktopUsersGroupAddition) {
     try {
@@ -2286,13 +2307,18 @@ If ($OperationsToPerform.RemoteDesktopUsersGroupAddition) {
     catch {
         Write-Host $_.Exception
         Write-LogMessage -type Error -MSG "Failed to add PSM users to Remote Desktop Users group. Please add these users manually."
-        $TasksTop += "Add PSM users to Remote Desktop Users group"
+        $TasksTop += @{
+            Message  = "Add PSM users to Remote Desktop Users group"
+            Priority = "High"
+        }
     }
 }
 else {
-    $TasksTop += "Add PSM users to Remote Desktop Users group"
+    $TasksTop += @{
+        Message  = "Add PSM users to Remote Desktop Users group"
+        Priority = "High"
+    }
 }
-
 
 # End group membership and security policy changes
 
@@ -2319,7 +2345,10 @@ If ($OperationsToPerform.PsmConfiguration) {
             Write-LogMessage -Type Warning -MSG $AddAdminUserToTSResult.Error
             Write-LogMessage -Type Warning -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration."
             Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
-            $TasksTop += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
+            $TasksTop += @{
+                Message  = "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
+                Priority = "High"
+            }
         }
         else {
             Write-LogMessage -Type Error -MSG $AddAdminUserToTSResult.Error
@@ -2342,7 +2371,10 @@ If ($OperationsToPerform.PsmConfiguration) {
                 Write-LogMessage -Type Warning -MSG $AddAdminUserTSShadowPermissionResult.Error
                 Write-LogMessage -Type Warning -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
                 Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
-                $TasksTop += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
+                $TasksTop += @{
+                    Message  = "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
+                    Priority = "High"
+                }
             }
             else {
                 Write-LogMessage -Type Error -MSG $AddAdminUserTSShadowPermissionResult.Error
@@ -2368,7 +2400,10 @@ If ($OperationsToPerform.Hardening) {
 }
 else {
     Write-LogMessage -Type Warning -MSG "Skipping Hardening due to -DoNotHarden parameter"
-    $TasksTop += "Run script to perform server hardening (PSMHardening.ps1)"
+    $TasksTop += @{
+        Message  = "Run script to perform server hardening (PSMHardening.ps1)"
+        Priority = "High"
+    }
 }
 If ($OperationsToPerform.ConfigureAppLocker) {
     Write-LogMessage -Type Info -MSG "Running PSM Configure AppLocker script"
@@ -2379,29 +2414,46 @@ If ($OperationsToPerform.ConfigureAppLocker) {
 }
 else {
     Write-LogMessage -Type Warning -MSG "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
-    $TasksTop += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
+    $TasksTop += @{
+        Message  = "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
+        Priority = "High"
+    }
 }
 Write-LogMessage -Type Verbose -MSG "Restarting CyberArk Privileged Session Manager Service"
 Restart-Service $REGKEY_PSMSERVICE
 Write-LogMessage -Type Success -MSG "All tasks completed."
 
-Write-LogMessage -type Info -MSG "The following additional steps may be required:"
+$string = "The following additional steps may be required (in ascending order of importance):"
+Write-LogMessage -type Info -MSG " "
+Write-LogMessage -type Info -MSG ($string)
 $TasksBottom += "Restart Server"
 
 foreach ($Task in $TasksTop) {
-    Write-LogMessage -Type Info " - $Task"
+    $Message = $Task.Message
+    $Type = $(
+        switch ($Task.Priority) {
+            "High" { "Error" }
+            "Medium" { "Warning" }
+            "Low" { "Info" }
+            Default { "Info" }
+        }
+    )
+    $Tasks = ($Tasks | Where-Object Priority -eq "Low") + ($Tasks | Where-Object Priority -eq "Medium") + ($Tasks | Where-Object Priority -eq "High")
+    Write-LogMessage -Type $Type " - $Message"
 }
 If ($SkipPSMObjectUpdate -or $LocalConfigurationOnly) {
-    Write-LogMessage -Type Info -MSG (" - Update the PSM Server configuration:")
-    Write-LogMessage -Type Info -MSG ("   - Log in to Privilege Cloud as an administrative user")
-    Write-LogMessage -Type Info -MSG ("   - Go to Administration -> Configuration Options")
-    Write-LogMessage -Type Info -MSG ("   - Expand Privileged Session Management -> Configured PSM Servers -> {0} -> " -f $PSMServerId)
-    Write-LogMessage -Type Info -MSG ("       Connection Details -> Server")
-    Write-LogMessage -Type Info -MSG ("   - Configure the following:")
-    Write-LogMessage -Type Info -MSG ("       Safe: {0}" -f $Safe)
-    Write-LogMessage -Type Info -MSG ("       Object: {0}" -f $PSMConnectAccountName)
-    Write-LogMessage -Type Info -MSG ("       AdminObject: {0}" -f $PSMAdminConnectAccountName)
+    Write-LogMessage -Type Error -MSG (" - Update the PSM Server configuration:")
+    Write-LogMessage -Type Error -MSG ("   - Log in to Privilege Cloud as an administrative user")
+    Write-LogMessage -Type Error -MSG ("   - Go to Administration -> Configuration Options")
+    Write-LogMessage -Type Error -MSG ("   - Expand Privileged Session Management -> Configured PSM Servers -> {0} -> " -f $PSMServerId)
+    Write-LogMessage -Type Error -MSG ("       Connection Details -> Server")
+    Write-LogMessage -Type Error -MSG ("   - Configure the following:")
+    Write-LogMessage -Type Error -MSG ("       Safe: {0}" -f $Safe)
+    Write-LogMessage -Type Error -MSG ("       Object: {0}" -f $PSMConnectAccountName)
+    Write-LogMessage -Type Error -MSG ("       AdminObject: {0}" -f $PSMAdminConnectAccountName)
 }
 foreach ($Task in $TasksBottom) {
     Write-LogMessage -Type Info " - $Task"
 }
+
+Write-LogMessage -type Info -MSG " "
