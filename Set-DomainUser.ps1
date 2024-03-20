@@ -2452,7 +2452,7 @@ foreach ($Task in $SortedTasksTop) {
             Default { "Info" }
         }
     )
-    Write-LogMessage -Type $Type " - $Message"
+    Write-LogMessage -Type "Info" -MSG " - $Message"
 }
 If ($SkipPSMObjectUpdate -or $LocalConfigurationOnly) {
     Write-LogMessage -Type Error -MSG (" - Update the PSM Server configuration:")
