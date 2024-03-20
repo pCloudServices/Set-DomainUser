@@ -2441,6 +2441,18 @@ Write-LogMessage -type Info -MSG " "
 Write-LogMessage -type Info -MSG ($string)
 $TasksBottom += "Restart Server"
 
+If ($SkipPSMObjectUpdate -or $LocalConfigurationOnly) {
+    Write-LogMessage -Type Error -MSG (" - Update the PSM Server configuration:")
+    Write-LogMessage -Type Error -MSG ("   - Log in to Privilege Cloud as an administrative user")
+    Write-LogMessage -Type Error -MSG ("   - Go to Administration -> Configuration Options")
+    Write-LogMessage -Type Error -MSG ("   - Expand Privileged Session Management -> Configured PSM Servers -> {0} -> " -f $PSMServerId)
+    Write-LogMessage -Type Error -MSG ("       Connection Details -> Server")
+    Write-LogMessage -Type Error -MSG ("   - Configure the following:")
+    Write-LogMessage -Type Error -MSG ("       Safe: {0}" -f $Safe)
+    Write-LogMessage -Type Error -MSG ("       Object: {0}" -f $PSMConnectAccountName)
+    Write-LogMessage -Type Error -MSG ("       AdminObject: {0}" -f $PSMAdminConnectAccountName)
+}
+
 $SortedTasksTop = ([array]($TasksTop | Where-Object Priority -eq "High") + [array]($TasksTop | Where-Object Priority -eq "Medium") + [array]($TasksTop | Where-Object Priority -eq "Low"))
 foreach ($Task in $SortedTasksTop) {
     $Message = $Task.Message
@@ -2453,17 +2465,6 @@ foreach ($Task in $SortedTasksTop) {
         }
     )
     Write-LogMessage -Type "Info" -MSG " - $Message"
-}
-If ($SkipPSMObjectUpdate -or $LocalConfigurationOnly) {
-    Write-LogMessage -Type Error -MSG (" - Update the PSM Server configuration:")
-    Write-LogMessage -Type Error -MSG ("   - Log in to Privilege Cloud as an administrative user")
-    Write-LogMessage -Type Error -MSG ("   - Go to Administration -> Configuration Options")
-    Write-LogMessage -Type Error -MSG ("   - Expand Privileged Session Management -> Configured PSM Servers -> {0} -> " -f $PSMServerId)
-    Write-LogMessage -Type Error -MSG ("       Connection Details -> Server")
-    Write-LogMessage -Type Error -MSG ("   - Configure the following:")
-    Write-LogMessage -Type Error -MSG ("       Safe: {0}" -f $Safe)
-    Write-LogMessage -Type Error -MSG ("       Object: {0}" -f $PSMConnectAccountName)
-    Write-LogMessage -Type Error -MSG ("       AdminObject: {0}" -f $PSMAdminConnectAccountName)
 }
 
 foreach ($Task in $TasksBottom) {
