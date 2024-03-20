@@ -2031,6 +2031,7 @@ If ($OperationsToPerform.GetInstallerUserCredentials) {
         }
     }
 }
+
 If ($OperationsToPerform.RemoteConfiguration) {
     Write-LogMessage -type Info -MSG "Starting backend configuration"
 
@@ -2117,7 +2118,10 @@ If ($OperationsToPerform.RemoteConfiguration) {
     If (!($safeStatus.managingCpm)) {
         # Safe exists but no CPM assigned
         Write-LogMessage -Type Warning -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
-        $TasksTop += ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
+        $TasksTop += @{
+            Message  = ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
+            Priority = "Low"
+        }
     }
     # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
     If ($UM) {
@@ -2137,7 +2141,10 @@ If ($OperationsToPerform.RemoteConfiguration) {
     ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
         Write-LogMessage -Type Warning -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
         $TasksTop += @{
-            Message  = "Verify that the $PSMConnectAccountName object in the `"$safe`" safe contains correct PSMConnect user details.`nIf you're configuring PSM servers in a new domain, you may need to specify alternative safe and account names."
+            Message  = 
+            "Verify that the $PSMConnectAccountName object in the `"$safe`" safe contains correct PSMConnect user details.`n" + `
+            "     If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
+            "     and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
             Priority = "High"
         }
     }
@@ -2153,7 +2160,13 @@ If ($OperationsToPerform.RemoteConfiguration) {
     }
     ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
         Write-LogMessage -Type Warning -MSG "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
-        $TasksTop += "Verify that the $PSMAdminConnectAccountName object in $safe safe contains correct PSMAdminConnect user details"
+        $TasksTop += @{
+            Message  = 
+            "Verify that the $PSMAdminConnectAccountName object in the `"$safe`" safe contains correct PSMAdminConnect user details.`n" + `
+            "     If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
+            "     and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
+            Priority = "High"
+        }
     }
     Else {
         Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
@@ -2428,7 +2441,8 @@ Write-LogMessage -type Info -MSG " "
 Write-LogMessage -type Info -MSG ($string)
 $TasksBottom += "Restart Server"
 
-foreach ($Task in $TasksTop) {
+$SortedTasksTop = ([array]($TasksTop | Where-Object Priority -eq "Low") + [array]($TasksTop | Where-Object Priority -eq "Medium") + [array]($TasksTop | Where-Object Priority -eq "High"))
+foreach ($Task in $SortedTasksTop) {
     $Message = $Task.Message
     $Type = $(
         switch ($Task.Priority) {
@@ -2438,7 +2452,6 @@ foreach ($Task in $TasksTop) {
             Default { "Info" }
         }
     )
-    $Tasks = ($Tasks | Where-Object Priority -eq "Low") + ($Tasks | Where-Object Priority -eq "Medium") + ($Tasks | Where-Object Priority -eq "High")
     Write-LogMessage -Type $Type " - $Message"
 }
 If ($SkipPSMObjectUpdate -or $LocalConfigurationOnly) {
@@ -2452,9 +2465,11 @@ If ($SkipPSMObjectUpdate -or $LocalConfigurationOnly) {
     Write-LogMessage -Type Error -MSG ("       Object: {0}" -f $PSMConnectAccountName)
     Write-LogMessage -Type Error -MSG ("       AdminObject: {0}" -f $PSMAdminConnectAccountName)
 }
-foreach ($Task in $TasksBottom) {
 
-    Write-LogMessage -Type Info " - $Task"
+foreach ($Task in $TasksBottom) {
+    Write-LogMessage -Type Error " - $Task"
 }
 
 Write-LogMessage -type Info -MSG " "
+
+Write-LogMessage -type Warning -MSG "Any tasks in red above must be completed to ensure PSM is functional."
