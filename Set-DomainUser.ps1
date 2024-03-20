@@ -1944,8 +1944,8 @@ if ($OperationsToPerform.UserTests) {
             }
             else {
                 Write-LogMessage -type Error -MSG ("User {0}\{1} not found. Please ensure the user exists and" -f $DomainNetbiosName, $Username)
-                Write-LogMessage -type Error -MSG ("that you have provided the pre-Windows 2000 logon name or")
-                Write-LogMessage -type Error -MSG ("run this script with the -SkipPSMUserTests option to skip this check.")
+                Write-LogMessage -type Error -MSG ("  that you have provided the pre-Windows 2000 logon name or")
+                Write-LogMessage -type Error -MSG ("  run this script with the -SkipPSMUserTests option to skip this check.")
                 exit 1
             }
         }
