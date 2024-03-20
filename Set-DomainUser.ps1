@@ -2441,7 +2441,7 @@ Write-LogMessage -type Info -MSG " "
 Write-LogMessage -type Info -MSG ($string)
 $TasksBottom += "Restart Server"
 
-$SortedTasksTop = ([array]($TasksTop | Where-Object Priority -eq "Low") + [array]($TasksTop | Where-Object Priority -eq "Medium") + [array]($TasksTop | Where-Object Priority -eq "High"))
+$SortedTasksTop = ([array]($TasksTop | Where-Object Priority -eq "High") + [array]($TasksTop | Where-Object Priority -eq "Medium") + [array]($TasksTop | Where-Object Priority -eq "Low"))
 foreach ($Task in $SortedTasksTop) {
     $Message = $Task.Message
     $Type = $(
@@ -2472,4 +2472,4 @@ foreach ($Task in $TasksBottom) {
 
 Write-LogMessage -type Info -MSG " "
 
-Write-LogMessage -type Warning -MSG "Any tasks in red above must be completed to ensure PSM is functional."
+#Write-LogMessage -type Warning -MSG "Any tasks in red above must be completed to ensure PSM is functional."
