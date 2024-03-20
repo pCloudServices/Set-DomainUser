@@ -2142,7 +2142,7 @@ If ($OperationsToPerform.RemoteConfiguration) {
         Write-LogMessage -Type Warning -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
         $TasksTop += @{
             Message  = 
-            "Verify that the $PSMConnectAccountName object in the `"$safe`" safe contains correct PSMConnect user details.`n" + `
+            "Verify that the `"$PSMConnectAccountName`" object in the `"$safe`" safe contains correct PSMConnect user details.`n" + `
             "     If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
             "     and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
             Priority = "High"
@@ -2162,7 +2162,7 @@ If ($OperationsToPerform.RemoteConfiguration) {
         Write-LogMessage -Type Warning -MSG "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
         $TasksTop += @{
             Message  = 
-            "Verify that the $PSMAdminConnectAccountName object in the `"$safe`" safe contains correct PSMAdminConnect user details.`n" + `
+            "Verify that the `"$PSMAdminConnectAccountName`" object in the `"$safe`" safe contains correct PSMAdminConnect user details.`n" + `
             "     If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
             "     and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
             Priority = "High"
