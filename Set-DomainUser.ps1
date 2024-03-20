@@ -1943,15 +1943,16 @@ if ($OperationsToPerform.UserTests) {
                 $UserObject = Get-UserObjectFromDN $UserDN
             }
             else {
-                Write-LogMessage -type Error -MSG ("User {0} not found on domain {1}. Please ensure the user exists, or" -f $Username, $DomainDNSName)
-                Write-LogMessage -type Error -MSG ("run this script with the -SkipPSMUserConfigureCheck option to skip")
+                Write-LogMessage -type Error -MSG ("User {0}\{1} not found. Please ensure the user exists and" -f $DomainNetbiosName, $Username)
+                Write-LogMessage -type Error -MSG ("that you have provided the pre-Windows 2000 logon name or")
                 Write-LogMessage -type Error -MSG ("this check.")
             }
         }
         catch {
             Write-LogMessage -type Error -MSG ("Failed to retrieve {0} user details from Active Directory." -f $UserType)
-            Write-LogMessage -type Error -MSG ("Please ensure the user exists and is configured correctly")
-            Write-LogMessage -type Error -MSG ("  and run this script again, or run the script with the ")
+            Write-LogMessage -type Error -MSG ("Failed to retrieve {0}\{1} user details from Active Directory." -f $DomainNetbiosName, $Username)
+            Write-LogMessage -type Error -MSG ("Please ensure the user exists and is configured correctly and")
+            Write-LogMessage -type Error -MSG ("  that you have provided the pre-Windows 2000 logon name or")
             Write-LogMessage -type Error -MSG ("  -SkipPSMUserTests flag to skip this check.")
             exit 1
         }
