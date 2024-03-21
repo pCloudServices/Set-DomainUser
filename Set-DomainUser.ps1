@@ -2015,7 +2015,7 @@ if ($OperationsToPerform.UserTests) {
                     $UsersWithoutComputerNameInLogonRestrictions += "$Username"
                     $TasksTop += @{
                         Message  = ("Add {0} to the `"Log On To`" section for user {1}" -f $env:computername, $Username)
-                        Priority = "High"
+                        Priority = "Required"
                     }
                 }
             }
@@ -2155,7 +2155,7 @@ If ($OperationsToPerform.RemoteConfiguration) {
         Duplicate-Platform -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -CurrentPlatformId $WinDomainPlatformId -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
         $TasksTop += @{
             Message  = ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
-            Priority = "Low"
+            Priority = "Recommended"
         }
         # Get platform info again so we can ensure it's activated
         $platformStatus = Get-PlatformStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId $PlatformName
@@ -2164,7 +2164,7 @@ If ($OperationsToPerform.RemoteConfiguration) {
         Write-LogMessage -Type Warning -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
         $TasksTop += @{
             Message  = ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
-            Priority = "Low"
+            Priority = "Recommended"
         }
     }
     if ($platformStatus.Active -eq $false) {
@@ -2190,7 +2190,7 @@ If ($OperationsToPerform.RemoteConfiguration) {
         Write-LogMessage -Type Warning -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
         $TasksTop += @{
             Message  = ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
-            Priority = "Low"
+            Priority = "Recommended"
         }
     }
     # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
@@ -2212,7 +2212,7 @@ If ($OperationsToPerform.RemoteConfiguration) {
         Write-LogMessage -Type Warning -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
         $TasksTop += @{
             Message  = "Verify that the `"$PSMConnectAccountName`" object in the `"$safe`" safe contains correct PSMConnect user details."
-            Priority = "High"
+            Priority = "Required"
         }
         $PSMObjectsAlreadyExisted = $true
     }
@@ -2230,7 +2230,7 @@ If ($OperationsToPerform.RemoteConfiguration) {
         Write-LogMessage -Type Warning -MSG "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
         $TasksTop += @{
             Message  = "Verify that the `"$PSMAdminConnectAccountName`" object in the `"$safe`" safe contains correct PSMAdminConnect user details."
-            Priority = "High"
+            Priority = "Required"
         }
         $PSMObjectsAlreadyExisted = $true
     }
@@ -2335,7 +2335,7 @@ If ($OperationsToPerform.SecurityPolicyConfiguration) {
         Write-LogMessage -type Warning -MSG "Please edit local security policy manually to allow PSM users to log on with Remote Desktop."
         $TasksTop += @{
             Message  = "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
-            Priority = "High"
+            Priority = "Required"
         }
     }
     If ($GetSecPolResult) {
@@ -2358,19 +2358,19 @@ If ($OperationsToPerform.SecurityPolicyConfiguration) {
         Write-LogMessage -type Warning -MSG "Please edit local security policy manually to allow PSM users to log on with Remote Desktop."
         $TasksTop += @{
             Message  = "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
-            Priority = "High"
+            Priority = "Required"
         }
     }
 }
 else {
     $TasksTop += @{
         Message  = "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
-        Priority = "High"
+        Priority = "Required"
     }
 }
 $TasksTop += @{
     Message  = "Ensure domain GPOs allow PSM users to log on to PSM servers with Remote Desktop"
-    Priority = "Medium"
+    Priority = "Required"
 }
 
 If ($OperationsToPerform.RemoteDesktopUsersGroupAddition) {
@@ -2388,14 +2388,14 @@ If ($OperationsToPerform.RemoteDesktopUsersGroupAddition) {
         Write-LogMessage -type Error -MSG "Failed to add PSM users to Remote Desktop Users group. Please add these users manually."
         $TasksTop += @{
             Message  = "Add PSM users to Remote Desktop Users group"
-            Priority = "High"
+            Priority = "Required"
         }
     }
 }
 else {
     $TasksTop += @{
         Message  = "Add PSM users to Remote Desktop Users group"
-        Priority = "High"
+        Priority = "Required"
     }
 }
 
@@ -2426,7 +2426,7 @@ If ($OperationsToPerform.PsmConfiguration) {
             Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
             $TasksTop += @{
                 Message  = "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
-                Priority = "High"
+                Priority = "Required"
             }
         }
         else {
@@ -2451,8 +2451,8 @@ If ($OperationsToPerform.PsmConfiguration) {
                 Write-LogMessage -Type Warning -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
                 Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
                 $TasksTop += @{
-                    Message  = "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
-                    Priority = "High"
+                    Message  = "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script."
+                    Priority = "Required"
                 }
             }
             else {
@@ -2481,7 +2481,7 @@ else {
     Write-LogMessage -Type Warning -MSG "Skipping Hardening due to -DoNotHarden parameter"
     $TasksTop += @{
         Message  = "Run script to perform server hardening (PSMHardening.ps1)"
-        Priority = "High"
+        Priority = "Required"
     }
 }
 If ($OperationsToPerform.ConfigureAppLocker) {
@@ -2495,20 +2495,16 @@ else {
     Write-LogMessage -Type Warning -MSG "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
     $TasksTop += @{
         Message  = "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
-        Priority = "High"
+        Priority = "Required"
     }
 }
 Write-LogMessage -Type Verbose -MSG "Restarting CyberArk Privileged Session Manager Service"
 Restart-Service $REGKEY_PSMSERVICE
 Write-LogMessage -Type Success -MSG "All tasks completed."
 
-$string = "The following additional steps are required:"
-Write-LogMessage -type Info -MSG ("-" * $string.length)
-Write-LogMessage -type Info -MSG ($string)
-
-$HighPriorityTasks = @()
+$RequiredTasks = @()
 If ($SkipPSMObjectUpdate -or $LocalConfigurationOnly) {
-    $HighPriorityTasks += @(
+    $RequiredTasks += @(
         @{ Message   = `
             ("Update the PSM Server configuration:`n") + `
             ("     a. Log in to Privilege Cloud as an administrative user`n") + `
@@ -2519,43 +2515,54 @@ If ($SkipPSMObjectUpdate -or $LocalConfigurationOnly) {
             ("          Safe: {0}`n" -f $Safe) + `
             ("          Object: {0}`n" -f $PSMConnectAccountName) + `
             ("          AdminObject: {0}" -f $PSMAdminConnectAccountName)
-            Priority = "High"
+            Priority = "Required"
         }
     )
 }
 
-$i = 1
-$HighPriorityTasks += $TasksTop | Where-Object Priority -eq "High"
-$HighPriorityTasks += @{ Message = "Restart Server"; Priority = "High" }
-foreach ($Task in $HighPriorityTasks) {
-    Write-LogMessage -Type Info -MSG (" {0:D2}. {1}" -f $i, $Task.Message)
-    $i++
-}
+# Finalise tasks
+$RequiredTasks += $TasksTop | Where-Object Priority -eq "Required"
+$RequiredTasks += @{ Message = "Restart Server"; Priority = "Required" }
+$RecommendedTasks = $TasksTop | Where-Object Priority -ne "Required"
 
-If ($PSMObjectsAlreadyExisted) {
-    Write-LogMessage -type Warning -MSG " "
-    Write-LogMessage -type Info -MSG (`
-            "NOTE: If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
-            "and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
-    )
-}
-
-Write-LogMessage -type Warning -MSG " "
+# Print recommended tasks
 
 $string = "The following additional steps are recommended:"
 Write-LogMessage -type Info -MSG ("-" * $string.length)
 Write-LogMessage -type Info -MSG ($string)
 
-$LowerPriorityTasks = $TasksTop | Where-Object Priority -ne "High"
-
 $i = 1
-foreach ($Task in $LowerPriorityTasks) {
+foreach ($Task in $RecommendedTasks) {
     Write-LogMessage -Type Info -MSG (" {0:D2}. {1}" -f $i, $Task.Message)
     $i++
 }
 
-Write-LogMessage -type Warning -MSG " "
+Write-LogMessage -type Info -MSG " " # Print a gap
 
-#$HighPriorityTasks.Message | Out-GridView -Title "Required tasks"
+# Print required tasks
+
+$string = "The following additional tasks MUST be completed:"
+Write-LogMessage -type Info -MSG ("-" * $string.length)
+Write-LogMessage -type Info -MSG ($string)
+
+
+$i = 1
+foreach ($Task in $RequiredTasks) {
+    Write-LogMessage -Type Info -MSG (" {0:D2}. {1}" -f $i, $Task.Message)
+    $i++
+}
+
+If ($PSMObjectsAlreadyExisted) {
+Write-LogMessage -type Warning -MSG " "
+    Write-LogMessage -type Info -MSG (`
+    "NOTE: If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
+    "and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
+    )
+}
+
+
+Write-LogMessage -type Info -MSG " " # Print a gap
+
+#$RequiredTasks.Message | Out-GridView -Title "Required tasks"
 
 #Write-LogMessage -type Warning -MSG "Any tasks in red above must be completed to ensure PSM is functional."
