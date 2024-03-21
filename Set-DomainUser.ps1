@@ -1885,71 +1885,79 @@ if ($OperationsToPerform.UserTests) {
             Name          = "TerminalServicesInitialProgram"
             DisplayName   = "Initial Program"
             ExpectedValue = $PSMInitSessionPath
+            SettingType   = "StringCompare"
         },
         @{
             UserType      = "All"
             Name          = "TerminalServicesWorkDirectory"
             DisplayName   = "Working Directory"
             ExpectedValue = $PSMComponentsPath
+            Path          = $true
+            SettingType   = "StringCompare"
         },
         @{
             UserType      = "All"
             Name          = "ConnectClientDrivesAtLogon"
             DisplayName   = "Connect client drives at logon"
             ExpectedValue = 0
+            SettingType   = "Value"
         },
         @{
             UserType      = "All"
             Name          = "ConnectClientPrintersAtLogon"
             DisplayName   = "Connect client drives at logon"
             ExpectedValue = 0
+            SettingType   = "Value"
         },
         @{
             UserType      = "All"
             Name          = "DefaultToMainPrinter"
             DisplayName   = "Default to main client printer"
             ExpectedValue = 0
+            SettingType   = "Value"
         },
         @{
             UserType      = "All"
             Name          = "EnableRemoteControl"
             DisplayName   = "Enable remote control"
             ExpectedValue = 2, 4
+            SettingType   = "Value"
         },
         @{
             UserType      = "PSMConnect"
             Name          = "MaxDisconnectionTime"
             DisplayName   = "End a disconnected session"
             ExpectedValue = 1
+            SettingType   = "Value"
         },
         @{
             UserType      = "PSMConnect"
             Name          = "ReconnectionAction"
             DisplayName   = "Allow reconnection"
             ExpectedValue = 1
+            SettingType   = "Value"
         }
     )
 
-    # Initialise array containing issues
+    # Initialise array which will capture detected misconfigurations
     $UserConfigurationErrors = @()
-    $UsersToCheck | ForEach-Object {
+    $UsersToCheck | ForEach-Object { # For each of PSMConnect and PSMAdminConnect
         $UserType = $_.UserType
         $Username = $_.Username
 
-        # Initialise array containing issues
         try {
             $UserDN = Get-UserDNFromSamAccountName -Username $Username
             If ($UserDN) {
-                $UserObject = Get-UserObjectFromDN $UserDN
+                $UserObject = Get-UserObjectFromDN $UserDN # Search for the user
             }
-            else {
+            else { # If user was not found throw error
                 Write-LogMessage -type Error -MSG ("User {0}\{1} not found. Please ensure the user exists and" -f $DomainNetbiosName, $Username)
                 Write-LogMessage -type Error -MSG ("  that you have provided the pre-Windows 2000 logon name or")
                 Write-LogMessage -type Error -MSG ("  run this script with the -SkipPSMUserTests option to skip this check.")
                 exit 1
             }
         }
-        catch {
+        catch { # Failed to search AD
             Write-LogMessage -type Error -MSG ("Failed to retrieve {0}\{1} user details from Active Directory." -f $DomainNetbiosName, $Username)
             Write-LogMessage -type Error -MSG ("Please ensure the user exists and is configured correctly and")
             Write-LogMessage -type Error -MSG ("  that you have provided the pre-Windows 2000 logon name or")
@@ -1958,33 +1966,70 @@ if ($OperationsToPerform.UserTests) {
             exit 1
         }
 
-        $SettingsToCheck | ForEach-Object {
+        $SettingsToCheck | ForEach-Object { # For each aspect of the configuration
             $SettingName = $_.Name
             $SettingUserType = $_.UserType
             $SettingDisplayName = $_.DisplayName
             $SettingExpectedValue = $_.ExpectedValue
             $SettingCurrentValue = Get-UserProperty -UserObject $UserObject -Property $SettingName
+            $SettingType = $_.Type
+
+            If ($_.Path) { # If the value we're checking is a directory, trim training backslashes as they don't matter
+                $SettingCurrentValue = ($SettingCurrentValue -replace "\\*$", "")
+            }
 
 
-            if ($SettingUserType -in "All", $UserType) {
-                # If the setting that we are checking applies to the user we're checking, or all users
-                If ($SettingCurrentValue -notin $SettingExpectedValue) {
-                    $UserConfigurationErrors += [PSCustomObject]@{
+            if ($SettingUserType -in "All", $UserType) { # If the setting that we are checking applies to the user we're checking, or all users
+                If ($SettingCurrentValue -notin $SettingExpectedValue) { # If the current configuration is not set to one of the acceptable values
+                    $UserConfigurationErrors += [PSCustomObject]@{ # add it to the array containing the list of misconfigurations
                         Username    = $Username
                         User        = $UserType
                         SettingName = $SettingDisplayName
                         Current     = $SettingCurrentValue
                         Expected    = $SettingExpectedValue
+                        SettingType = $SettingType
                     }
                 }
             }
         }
     }
-
-    If ($UserConfigurationErrors) {
-        $UsersWithConfigurationErrors = $UserConfigurationErrors.User | Select-Object -Unique
-        $UsersWithConfigurationErrors | ForEach-Object {
+    
+    If ($UserConfigurationErrors) { # Misconfigurations have been detected and will be listed by the following section
+        $UsersWithConfigurationErrors = $UserConfigurationErrors.User | Select-Object -Unique # Get a list of the affected users
+        $UsersWithConfigurationErrors | ForEach-Object { # For each user
             $User = $_
+            Write-LogMessage -Type Info -MSG ("Configuration errors for {0}:" -f $User)
+            $UserConfigurationErrors | Where-Object User -eq $user | Where-Object SettingType -eq "Value" | Select-Object Username, SettingName, Expected, Current | Format-Table -Wrap # Output simple misconfigurations in table format
+            $ListUserConfigurationErrors = $UserConfigurationErrors | Where-Object User -eq $user | Where-Object SettingType -eq "StringCompare" # for more complex misconfigurations (strings), capture them separately
+            If ($ListUserConfigurationErrors) {
+                Write-LogMessage -type Info -MSG "-----"
+                foreach ($ConfigErrorSetting in $ListUserConfigurationErrors) { # and for each misconfiguration, output the
+                    Write-LogMessage -type Info -MSG ("Setting: {0}" -f $ConfigErrorSetting.SettingName)
+                    Write-LogMessage -type Info -MSG ("Expected value: `"{0}`"" -f $ConfigErrorSetting.Expected) # expected value and
+                    Write-LogMessage -type Info -MSG ("Detected value: `"{0}`"" -f $ConfigErrorSetting.Current) # current value
+                    If ($ConfigErrorSetting.Type -eq "StringCompare") {
+                        $DifferencePosition = $( # work out the position where the current value differs from the expected value by comparing them 1 character at a time
+                            $ExpectedValueLength = $ConfigErrorSetting.Expected.length
+                            $i = 0
+                            While ($i -le $ExpectedValueLength) {
+                                If ($ConfigErrorSetting.Expected[$i] -eq $ConfigErrorSetting.Current[$i]) {
+                                    $i++
+                                }
+                                else {
+                                    $DifferencePosition = $i
+                                    $DifferencePosition
+                                    break
+                                }
+                            }
+                        )
+                        Write-LogMessage -type Info -MSG ("                ` {0}^" -f (" " * $DifferencePosition)) # display the position of the first difference
+                    }
+                    Write-LogMessage -type Info -MSG "-----"
+                }
+            }
+        }
+        If ("Unset" -in $UserConfigurationErrors.Current) {
+            Write-LogMessage -type Error -MSG "Errors occurred while retrieving some user properties, which usually means they do not exist. These will show as `"Unset`" above."◙
         }
         Write-LogMessage -type Error -MSG "Please resolve the issues above or rerun this script with -SkipPSMUserTests to ignore these errors."
         exit 1
@@ -2138,8 +2183,8 @@ If ($OperationsToPerform.RemoteConfiguration) {
         $TasksTop += @{
             Message  = 
             "Verify that the `"$PSMConnectAccountName`" object in the `"$safe`" safe contains correct PSMConnect user details.`n" + `
-            "     If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
-            "     and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
+                "     If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
+                "     and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
             Priority = "High"
         }
     }
@@ -2158,8 +2203,8 @@ If ($OperationsToPerform.RemoteConfiguration) {
         $TasksTop += @{
             Message  = 
             "Verify that the `"$PSMAdminConnectAccountName`" object in the `"$safe`" safe contains correct PSMAdminConnect user details.`n" + `
-            "     If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
-            "     and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
+                "     If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
+                "     and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
             Priority = "High"
         }
     }
