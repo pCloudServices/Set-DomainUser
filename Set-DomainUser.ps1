@@ -2181,12 +2181,10 @@ If ($OperationsToPerform.RemoteConfiguration) {
     ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
         Write-LogMessage -Type Warning -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
         $TasksTop += @{
-            Message  = 
-            "Verify that the `"$PSMConnectAccountName`" object in the `"$safe`" safe contains correct PSMConnect user details.`n" + `
-                "     If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
-                "     and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
+            Message  = "Verify that the `"$PSMConnectAccountName`" object in the `"$safe`" safe contains correct PSMConnect user details."
             Priority = "High"
         }
+        $PSMObjectsAlreadyExisted = $true
     }
     Else {
         Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
@@ -2201,12 +2199,10 @@ If ($OperationsToPerform.RemoteConfiguration) {
     ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
         Write-LogMessage -Type Warning -MSG "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
         $TasksTop += @{
-            Message  = 
-            "Verify that the `"$PSMAdminConnectAccountName`" object in the `"$safe`" safe contains correct PSMAdminConnect user details.`n" + `
-                "     If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
-                "     and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
+            Message  = "Verify that the `"$PSMAdminConnectAccountName`" object in the `"$safe`" safe contains correct PSMAdminConnect user details."
             Priority = "High"
         }
+        $PSMObjectsAlreadyExisted = $true
     }
     Else {
         Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
@@ -2476,41 +2472,60 @@ Write-LogMessage -Type Verbose -MSG "Restarting CyberArk Privileged Session Mana
 Restart-Service $REGKEY_PSMSERVICE
 Write-LogMessage -Type Success -MSG "All tasks completed."
 
-$string = "The following additional steps may be required (in ascending order of importance):"
-Write-LogMessage -type Info -MSG " "
+$string = "The following additional steps are required:"
+Write-LogMessage -type Info -MSG ("-" * $string.length)
 Write-LogMessage -type Info -MSG ($string)
-$TasksBottom += "Restart Server"
 
+$HighPriorityTasks = @()
 If ($SkipPSMObjectUpdate -or $LocalConfigurationOnly) {
-    Write-LogMessage -Type Info -MSG (" - Update the PSM Server configuration:")
-    Write-LogMessage -Type Info -MSG ("   - Log in to Privilege Cloud as an administrative user")
-    Write-LogMessage -Type Info -MSG ("   - Go to Administration -> Configuration Options")
-    Write-LogMessage -Type Info -MSG ("   - Expand Privileged Session Management -> Configured PSM Servers -> {0} -> " -f $PSMServerId)
-    Write-LogMessage -Type Info -MSG ("       Connection Details -> Server")
-    Write-LogMessage -Type Info -MSG ("   - Configure the following:")
-    Write-LogMessage -Type Info -MSG ("       Safe: {0}" -f $Safe)
-    Write-LogMessage -Type Info -MSG ("       Object: {0}" -f $PSMConnectAccountName)
-    Write-LogMessage -Type Info -MSG ("       AdminObject: {0}" -f $PSMAdminConnectAccountName)
-}
-
-$SortedTasksTop = ([array]($TasksTop | Where-Object Priority -eq "High") + [array]($TasksTop | Where-Object Priority -eq "Medium") + [array]($TasksTop | Where-Object Priority -eq "Low"))
-foreach ($Task in $SortedTasksTop) {
-    $Message = $Task.Message
-    $Type = $(
-        switch ($Task.Priority) {
-            "High" { "Error" }
-            "Medium" { "Warning" }
-            "Low" { "Info" }
-            Default { "Info" }
+    $HighPriorityTasks += @(
+        @{ Message   = `
+            ("Update the PSM Server configuration:`n") + `
+            ("     a. Log in to Privilege Cloud as an administrative user`n") + `
+            ("     b. Go to Administration -> Configuration Options`n") + `
+            ("     c. Expand Privileged Session Management -> Configured PSM Servers -> {0} -> `n" -f $PSMServerId) + `
+            ("          Connection Details -> Server`n") + `
+            ("     d. Configure the following:`n") + `
+            ("          Safe: {0}`n" -f $Safe) + `
+            ("          Object: {0}`n" -f $PSMConnectAccountName) + `
+            ("          AdminObject: {0}" -f $PSMAdminConnectAccountName)
+            Priority = "High"
         }
     )
-    Write-LogMessage -Type "Info" -MSG " - $Message"
 }
 
-foreach ($Task in $TasksBottom) {
-    Write-LogMessage -Type Info " - $Task"
+$i = 1
+$HighPriorityTasks += $TasksTop | Where-Object Priority -eq "High"
+$HighPriorityTasks += @{ Message = "Restart Server"; Priority = "High" }
+foreach ($Task in $HighPriorityTasks) {
+    Write-LogMessage -Type Info -MSG (" {0:D2}. {1}" -f $i, $Task.Message)
+    $i++
+}
+
+If ($PSMObjectsAlreadyExisted) {
+    Write-LogMessage -type Warning -MSG " "
+    Write-LogMessage -type Info -MSG (`
+            "NOTE: If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
+            "and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
+    )
 }
 
 Write-LogMessage -type Warning -MSG " "
+
+$string = "The following additional steps are recommended:"
+Write-LogMessage -type Info -MSG ("-" * $string.length)
+Write-LogMessage -type Info -MSG ($string)
+
+$LowerPriorityTasks = $TasksTop | Where-Object Priority -ne "High"
+
+$i = 1
+foreach ($Task in $LowerPriorityTasks) {
+    Write-LogMessage -Type Info -MSG (" {0:D2}. {1}" -f $i, $Task.Message)
+    $i++
+}
+
+Write-LogMessage -type Warning -MSG " "
+
+#$HighPriorityTasks.Message | Out-GridView -Title "Required tasks"
 
 #Write-LogMessage -type Warning -MSG "Any tasks in red above must be completed to ensure PSM is functional."
