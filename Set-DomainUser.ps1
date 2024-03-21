@@ -2508,9 +2508,9 @@ foreach ($Task in $SortedTasksTop) {
 }
 
 foreach ($Task in $TasksBottom) {
-    Write-LogMessage -Type Error " - $Task"
+    Write-LogMessage -Type Info " - $Task"
 }
 
-Write-LogMessage -type Info -MSG " "
+Write-LogMessage -type Warning -MSG " "
 
 #Write-LogMessage -type Warning -MSG "Any tasks in red above must be completed to ensure PSM is functional."
