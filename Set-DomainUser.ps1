@@ -1972,7 +1972,7 @@ if ($OperationsToPerform.UserTests) {
             $SettingDisplayName = $_.DisplayName
             $SettingExpectedValue = $_.ExpectedValue
             $SettingCurrentValue = Get-UserProperty -UserObject $UserObject -Property $SettingName
-            $SettingType = $_.Type
+            $SettingType = $_.SettingType
 
             If ($_.Path) { # If the value we're checking is a directory, trim training backslashes as they don't matter
                 $SettingCurrentValue = ($SettingCurrentValue -replace "\\*$", "")
