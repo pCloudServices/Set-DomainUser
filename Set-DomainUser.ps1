@@ -2553,7 +2553,7 @@ foreach ($Task in $RequiredTasks) {
 }
 
 If ($PSMObjectsAlreadyExisted) {
-Write-LogMessage -type Warning -MSG " "
+    Write-LogMessage -type Warning -MSG " "
     Write-LogMessage -type Info -MSG (`
     "NOTE: If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
     "and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
