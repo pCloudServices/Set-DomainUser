@@ -1936,6 +1936,13 @@ if ($OperationsToPerform.UserTests) {
             DisplayName   = "Allow reconnection"
             ExpectedValue = 1
             SettingType   = "Value"
+        },
+        @{
+            UserType      = "All"
+            Name          = "userWorkstations"
+            DisplayName   = "Log On To Restrictions"
+            ExpectedValue = $env:computername
+            SettingType   = "LogOnTo"
         }
     )
 
@@ -1950,14 +1957,16 @@ if ($OperationsToPerform.UserTests) {
             If ($UserDN) {
                 $UserObject = Get-UserObjectFromDN $UserDN # Search for the user
             }
-            else { # If user was not found throw error
+            else {
+                # If user was not found throw error
                 Write-LogMessage -type Error -MSG ("User {0}\{1} not found. Please ensure the user exists and" -f $DomainNetbiosName, $Username)
                 Write-LogMessage -type Error -MSG ("  that you have provided the pre-Windows 2000 logon name or")
                 Write-LogMessage -type Error -MSG ("  run this script with the -SkipPSMUserTests option to skip this check.")
                 exit 1
             }
         }
-        catch { # Failed to search AD
+        catch {
+            # Failed to search AD
             Write-LogMessage -type Error -MSG ("Failed to retrieve {0}\{1} user details from Active Directory." -f $DomainNetbiosName, $Username)
             Write-LogMessage -type Error -MSG ("Please ensure the user exists and is configured correctly and")
             Write-LogMessage -type Error -MSG ("  that you have provided the pre-Windows 2000 logon name or")
@@ -1965,8 +1974,7 @@ if ($OperationsToPerform.UserTests) {
             Write-LogMessage -type Error -MSG ("  -SkipPSMUserTests flag to skip this check.")
             exit 1
         }
-
-        $SettingsToCheck | ForEach-Object { # For each aspect of the configuration
+        $SettingsToCheck | Where-Object SettingType -in "Value", "StringCompare" | ForEach-Object { # For each aspect of the configuration
             $SettingName = $_.Name
             $SettingUserType = $_.UserType
             $SettingDisplayName = $_.DisplayName
@@ -1974,13 +1982,16 @@ if ($OperationsToPerform.UserTests) {
             $SettingCurrentValue = Get-UserProperty -UserObject $UserObject -Property $SettingName
             $SettingType = $_.SettingType
 
-            If ($_.Path) { # If the value we're checking is a directory, trim training backslashes as they don't matter
+            If ($_.Path) {
+                # If the value we're checking is a directory, trim training backslashes as they don't matter
                 $SettingCurrentValue = ($SettingCurrentValue -replace "\\*$", "")
             }
 
 
-            if ($SettingUserType -in "All", $UserType) { # If the setting that we are checking applies to the user we're checking, or all users
-                If ($SettingCurrentValue -notin $SettingExpectedValue) { # If the current configuration is not set to one of the acceptable values
+            if ($SettingUserType -in "All", $UserType) {
+                # If the setting that we are checking applies to the user we're checking, or all users
+                If ($SettingCurrentValue -notin $SettingExpectedValue) {
+                    # If the current configuration is not set to one of the acceptable values
                     $UserConfigurationErrors += [PSCustomObject]@{ # add it to the array containing the list of misconfigurations
                         Username    = $Username
                         User        = $UserType
@@ -1992,9 +2003,27 @@ if ($OperationsToPerform.UserTests) {
                 }
             }
         }
+        $SettingsToCheck  | Where-Object SettingType -in "LogOnTo" | ForEach-Object { # Check Logon restrictions
+            $UsersWithoutComputerNameInLogonRestrictions = @()
+            $SettingName = $_.Name
+            $SettingAllowedWorkstations = Get-UserProperty -UserObject $UserObject -Property $SettingName
+            $SettingExpectedValue = $_.ExpectedValue
+            If ($SettingAllowedWorkstations) {
+                $SettingAllowedWorkstations = $SettingAllowedWorkstations.Split(",")
+                If ($SettingExpectedValue -notin $SettingAllowedWorkstations) {
+                    Write-LogMessage -type Warning -MSG ("Computer name {0} missing from `"Log on to`" setting for {1}" -f $env:computername, $Username)
+                    $UsersWithoutComputerNameInLogonRestrictions += "$Username"
+                    $TasksTop += @{
+                        Message  = ("Add {0} to the `"Log On To`" section for user {1}" -f $env:computername, $Username)
+                        Priority = "High"
+                    }
+                }
+            }
+        }
     }
     
-    If ($UserConfigurationErrors) { # Misconfigurations have been detected and will be listed by the following section
+    If ($UserConfigurationErrors) {
+        # Misconfigurations have been detected and will be listed by the following section
         $UsersWithConfigurationErrors = $UserConfigurationErrors.User | Select-Object -Unique # Get a list of the affected users
         $UsersWithConfigurationErrors | ForEach-Object { # For each user
             $User = $_
@@ -2003,11 +2032,12 @@ if ($OperationsToPerform.UserTests) {
             $ListUserConfigurationErrors = $UserConfigurationErrors | Where-Object User -eq $user | Where-Object SettingType -eq "StringCompare" # for more complex misconfigurations (strings), capture them separately
             If ($ListUserConfigurationErrors) {
                 Write-LogMessage -type Info -MSG "-----"
-                foreach ($ConfigErrorSetting in $ListUserConfigurationErrors) { # and for each misconfiguration, output the
+                foreach ($ConfigErrorSetting in $ListUserConfigurationErrors) {
+                    # and for each misconfiguration, output the
                     Write-LogMessage -type Info -MSG ("Setting: {0}" -f $ConfigErrorSetting.SettingName)
                     Write-LogMessage -type Info -MSG ("Expected value: `"{0}`"" -f $ConfigErrorSetting.Expected) # expected value and
                     Write-LogMessage -type Info -MSG ("Detected value: `"{0}`"" -f $ConfigErrorSetting.Current) # current value
-                    If ($ConfigErrorSetting.Type -eq "StringCompare") {
+                    If ($ConfigErrorSetting.SettingType -eq "StringCompare") {
                         $DifferencePosition = $( # work out the position where the current value differs from the expected value by comparing them 1 character at a time
                             $ExpectedValueLength = $ConfigErrorSetting.Expected.length
                             $i = 0
