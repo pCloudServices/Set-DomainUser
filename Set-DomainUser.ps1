@@ -159,7 +159,38 @@ param(
     [string]$Proxy
 )
 
-#Functions
+<#
+Script Order of Operations (search for a comment to find the relevant script section)
+# Functions
+# Determine what operations need to be performed
+# Initialise variables
+## Import previously validated inputs, if available
+# Perform initial checks
+## Proxy configuration
+## Check if domain user
+## Get Privilege Cloud URL
+## Identify AD domain
+# Gather information from user
+## PSMConnect user
+## PSMAdminConnect user
+## InstallerUser/Tina
+# Validate detected AD domain details
+# Test users
+## Test PSM user credential format
+## Test PSM user credentials
+## Test PSM user configuration
+## Test InstallerUser/Tina user credentials
+# List detected PSM user configuration errors
+# Save validated inputs
+# Remote Configuration
+# Perform local configuration
+# Post-configuration
+## Group membership and security policy changes
+## Invoke hardening scripts and restart service
+# Display summary and additional tasks
+#>
+
+# Functions
 Function Get-RestMethodError {
     <# Invoke-RestMethod can have several different possible results
     Connection failure: The connection error will be contained in $_.Exception.Message
