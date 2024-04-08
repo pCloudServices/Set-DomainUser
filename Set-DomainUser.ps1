@@ -234,6 +234,26 @@ Function Get-RestMethodError {
     }
 }
 
+Function Get-DifferencePosition {
+    param(
+        [Parameter(Mandatory = $true)][string]$String1,
+        [Parameter(Mandatory = $true)][string]$String2
+    )
+    $DifferencePosition = $( # work out the position where the current value differs from the expected value by comparing them 1 character at a time ...
+        $ExpectedValueLength = $String1.length
+        $i = 0
+        While ($i -le $ExpectedValueLength) {
+            If ($String1[$i] -eq $String2[$i]) {
+                $i++
+            }
+            else {
+                $DifferencePosition = $i
+                return $DifferencePosition
+            }
+        }
+    )
+}
+
 Function Write-LogMessage {
     <#
 .SYNOPSIS
@@ -382,6 +402,22 @@ Function Get-PvwaAddress {
             Throw
         }
         return $Address
+    }
+    catch {
+        return $false
+    }
+}
+
+Function Set-ValidatedInputs {
+    param (
+        [Parameter(Mandatory = $true)]
+        $Data,
+        [Parameter(Mandatory = $true)]
+        $OutputFile
+    )
+    try {
+        Export-Clixml -Depth 5 -Path $ValidatedInputFile -InputObject $ValidatedInputs -Force
+        return $true
     }
     catch {
         return $false
