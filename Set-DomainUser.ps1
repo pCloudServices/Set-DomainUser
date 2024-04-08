@@ -556,7 +556,6 @@ Function Get-VaultAddress {
     }
 }
 
-
 Function ValidateCredentials {
     <#
     .SYNOPSIS
@@ -960,24 +959,14 @@ Function Get-VaultAccountDetails {
     Address of the PVWA
     .PARAMETER pvwaToken
     Token to log into PVWA using APIs
-    .PARAMETER name
-    Name of the account (PSMConnect/PSMAdminConnect)
-    .PARAMETER domain
-    Domain of the users needed to be onboarded
-    .PARAMETER Credentials
-    Credentials to be onboarded (has both the username and password)
-    .PARAMETER platformID
-    The Platform to onboard the account to. We will use the PlatformID in this script from what we create.
+    .PARAMETER safe
+    Safe to search
     #>
     param (
         [Parameter(Mandatory = $true)]
         $pvwaAddress,
         [Parameter(Mandatory = $true)]
         $pvwaToken,
-        [Parameter(Mandatory = $true)]
-        $AccountName,
-        [Parameter(Mandatory = $true)]
-        [String]$domain,
         [Parameter(Mandatory = $false)]
         $safe = "PSM"
     )
@@ -986,7 +975,7 @@ Function Get-VaultAccountDetails {
     try {
         $result = Invoke-RestMethod -Method GET -Uri $url -Headers @{ "Authorization" = $pvwaToken } `
             -ContentType "application/json" -ErrorVariable ResultError -WebSession $Global:WebRequestSession
-        $Accounts = $result.value | Where-Object address -eq $domain | Where-Object name -eq $AccountName
+        $Accounts = $result.value
         return $Accounts
     }
     catch {
@@ -995,7 +984,7 @@ Function Get-VaultAccountDetails {
             return $ErrorMessage
         }
         catch {
-            Write-LogMessage -Type Error -MSG ("Error creating user: {0}" -f $ResultError.Message)
+            Write-LogMessage -Type Error -MSG ("Error retrieving account details: {0}" -f $ResultError.Message)
             exit 1
         }
     }
@@ -2001,6 +1990,7 @@ $BackupSubDirectory = (Get-Date).ToString('yyyMMdd-HHmmss')
 $BackupPath = "$psmRootInstallLocation\Backup\Set-DomainUser\$BackupSubDirectory"
 $ValidatedInputFileName = "_Set-DomainUserValidatedInputs.xml"
 $ValidatedInputFile = "$ScriptLocation\$ValidatedInputFileName"
+$ValidationFailed = $false
 $PSMConnectUserName = ""
 $PSMAdminConnectUserName = ""
 $TasksTop = @()
@@ -2018,21 +2008,21 @@ If (Test-Path $ValidatedInputFile) {
     # For credentials:
     # If user names present in validated inputs, remember them for later
     $RawValidatedInputs = Import-Clixml -Path $ValidatedInputFile
-    If ($RawValidatedInputs.PSMConnectUserName) {
+    If (($null -eq $psmConnectCredentials) -and ($RawValidatedInputs.PSMConnectUserName)) {
         # If PSMConnectUserName has been validated previously
         $ValidatedInputs += @{ PSMConnectUserName = $RawValidatedInputs.PSMConnectUserName }
         $PSMConnectUserName = $RawValidatedInputs.PSMConnectUserName
         # Store it for later
     }
 
-    If ($RawValidatedInputs.PSMConnectUserName) {
+    If (($null -eq $psmAdminCredentials) -and ($RawValidatedInputs.PSMAdminConnectUserName)) {
         # If PSMAdminConnectUserName has been validated previously
         $ValidatedInputs += @{ PSMAdminConnectUserName = $RawValidatedInputs.PSMAdminConnectUserName }
         $PSMAdminConnectUserName = $RawValidatedInputs.PSMAdminConnectUserName
         # Store it for later
     }
 
-    If ($RawValidatedInputs.InstallUserName) {
+    If (($null -eq $InstallUser) -and ($RawValidatedInputs.InstallUserName)) {
         # If InstallUserName has been validated previously
         $ValidatedInputs += @{ InstallUserName = $RawValidatedInputs.InstallUserName }
         $InstallUserName = $RawValidatedInputs.InstallUserName
@@ -2058,6 +2048,7 @@ If (Test-Path $ValidatedInputFile) {
     Write-LogMessage -type Info -MSG $StandardSeparator
     $MessageString = ($ValidatedInputs | Out-String).Trim()
     Write-LogMessage -type Info -MSG $MessageString
+    Write-LogMessage -type Info -MSG $StandardSeparator
 }
 
 # Perform initial checks
@@ -2281,6 +2272,7 @@ foreach ($CurrentUser in $UsersToTest) {
 
 ## Test PSM user configuration
 foreach ($CurrentUser in $UsersToTest) {
+    $FailedToSearchAD = $false
     Write-LogMessage -type Verbose -MSG "Testing $UserType configuration"
     $Credential = $CurrentUser.Credential
     $UserType = $CurrentUser.UserType
@@ -2423,6 +2415,71 @@ If ($OperationsToPerform.TestInstallerUserCredentials) {
         $ValidationFailed = $true
     }
 }
+
+If ($OperationsToPerform.RemoteConfiguration) {
+    If ($pvwaToken) {
+        $ExistingAccountsObj = Get-VaultAccountDetails -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $Safe
+        $ArrayOfUserOnboardingConflictErrors = @()
+        $CheckIfTheseAccountsExistInVault = @(
+            [PSCustomObject]@{
+                Credentials = $psmConnectCredentials
+                AccountName = $PSMConnectAccountName
+            },
+            [PSCustomObject]@{
+                Credentials = $psmAdminCredentials
+                AccountName = $PSMAdminConnectAccountName
+            }
+        )
+        $AccountsToOnboard = @()
+        foreach ($AccountToCheck in $CheckIfTheseAccountsExistInVault) {
+            $ReqCredentials = $AccountToCheck.Credentials
+            $ReqUserName = $ReqCredentials.UserName
+            $ReqAccountName = $AccountToCheck.AccountName
+            Write-LogMessage -type Verbose -MSG ("Checking if {0} exists in vault" -f $ReqUserName)
+            $ExistingAccountObj = $ExistingAccountsObj | Where-Object name -eq $ReqAccountName
+            If ($ExistingAccountObj) {
+                Write-LogMessage -Type Verbose -MSG "Existing account found. Checking if it has the correct details."
+                # an account with the same name already exists in the safe. Checking if the username and domain match
+                $ExistingAccountAddress = $ExistingAccountObj.address
+                $ExistingAccountUsername = $ExistingAccountObj.userName
+                If (($ExistingAccountAddress -ne $DomainDNSName) -or ($ExistingAccountUsername -ne $ReqUserName)) {
+                    $NewError = ""
+                    $NewError += ("An object with Account Name `"{0}`" already exists in the safe `"{1}`" and its details do not match the specified user details. A comparison is below.`n" -f $ReqAccountName, $Safe)
+                    $Comparison = @(
+                        [PSCustomObject]@{
+                            Account  = "Existing user"
+                            Username = $ExistingAccountUsername
+                            Address  = $ExistingAccountAddress
+                        },
+                        [PSCustomObject]@{
+                            Account  = "New user"
+                            Username = $ReqUserName
+                            Address  = $DomainDNSName
+                        }
+                    )
+                    $NewError += ($Comparison | Out-String).Trim()
+                    $ArrayOfUserOnboardingConflictErrors += $NewError
+                    $ValidationFailed = $true
+                }
+                else {
+                    Write-LogMessage -Type Verbose -MSG "Existing account has the correct details. Will skip onboarding."
+                }
+            }
+            else {
+                # Account not found, will be onboarded
+                Write-LogMessage -type Verbose -MSG "Account does not exist yet. Will be onboarded."
+                $AccountsToOnboard += [PSCustomObject]@{
+                    Credentials = $ReqCredentials
+                    AccountName = $ReqAccountName
+                }
+            }
+        }
+    }
+    else {
+        Write-LogMessage -type Verbose -MSG "Skipping user onboarding conflict check as we have not authenticated to backend."
+    }
+}
+
 Write-LogMessage -type Verbose -MSG "Completed PSM and install user tests"
 
 If ($ArrayOfUserErrors) {
@@ -2433,6 +2490,16 @@ If ($ArrayOfUserErrors) {
         Write-LogMessage -type Error -MSG $StandardSeparator
         Write-LogMessage -type Error -MSG $UserError
     }
+}
+
+If ($ArrayOfUserOnboardingConflictErrors) {
+    Write-LogMessage -type Error -MSG $SectionSeparator
+    Write-LogMessage -type Error -MSG "PSM users exist in the vault with details that do not match this environment. See below for comparisons of the conflicting users."
+    foreach ($UserConflict in $ArrayOfUserOnboardingConflictErrors) {
+        Write-LogMessage -type Error -MSG $StandardSeparator
+        Write-LogMessage -type Error -MSG $UserConflict
+    }
+    Write-LogMessage -type Error -MSG "Use -PSMConnectAccountName, -PSMAdminConnectAccountName and -Safe parameters to provide alternative details for this environment."
 }
 
 If ($ArrayOfTinaErrors) {
@@ -2532,41 +2599,21 @@ If ($OperationsToPerform.RemoteConfiguration) {
             New-SafePermissions -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $safe -safeMember "Vault Admins"
         }
     }
-    # Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
-    Write-LogMessage -Type Verbose -MSG "Onboarding PSMConnect Account"
-    $OnboardResult = New-VaultAdminObject -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $DomainDNSName -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
-    If ($OnboardResult.name) {
-        Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
-    }
-    ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
-        Write-LogMessage -Type Verbose -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
-        $TasksTop += @{
-            Message  = "Verify that the `"$PSMConnectAccountName`" object in the `"$safe`" safe contains correct PSMConnect user details."
-            Priority = "Required"
+
+    foreach ($AccountToOnboard in $AccountsToOnboard) {
+        $NewCredentials = $AccountToOnboard.Credentials
+        $NewUserName = $NewCredentials.UserName
+        $NewAccountName = $AccountToOnboard.AccountName
+        Write-LogMessage -type Verbose -MSG ("Onboarding {0}" -f $NewUserName)
+        Write-LogMessage -Type Verbose -MSG "Onboarding Account"
+        $OnboardResult = New-VaultAdminObject -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -name $NewAccountName -domain $DomainDNSName -Credentials $NewCredentials -platformID $PlatformName -safe $safe
+        If ($OnboardResult.name) {
+            Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
         }
-        $PSMObjectsAlreadyExisted = $true
-    }
-    Else {
-        Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
-        exit 1
-    }
-    # Creating PSMAdminConnect
-    Write-LogMessage -Type Verbose -MSG "Onboarding PSMAdminConnect Account"
-    $OnboardResult = New-VaultAdminObject -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $DomainDNSName -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
-    If ($OnboardResult.name) {
-        Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
-    }
-    ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
-        Write-LogMessage -Type Verbose -MSG "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
-        $TasksTop += @{
-            Message  = "Verify that the `"$PSMAdminConnectAccountName`" object in the `"$safe`" safe contains correct PSMAdminConnect user details."
-            Priority = "Required"
+        Else {
+            Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
+            exit 1
         }
-        $PSMObjectsAlreadyExisted = $true
-    }
-    Else {
-        Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
-        exit 1
     }
 }
 
@@ -2833,13 +2880,6 @@ else {
 Write-LogMessage -Type Verbose -MSG "Restarting CyberArk Privileged Session Manager Service"
 Restart-Service $REGKEY_PSMSERVICE
 
-If (Test-Path $ValidatedInputFile) {
-    Write-LogMessage -type Verbose -MSG "Removing saved credentials from validation input file"
-    "InstallUser", "PSMConnectCredentials", "PSMAdminConnectCredentials" | ForEach-Object {
-        $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input $_
-    }
-    $ValidationSaveResult = Set-ValidatedInputs -Data $ValidatedInputs -OutputFile $ValidatedInputFile
-}
 Write-LogMessage -Type Success -MSG "All tasks completed."
 
 $RequiredTasks = @()
@@ -2867,8 +2907,8 @@ $RecommendedTasks = $TasksTop | Where-Object Priority -ne "Required"
 
 # Print recommended tasks
 
+Write-LogMessage -type Info -MSG $SectionSeparator
 $string = "The following additional steps are recommended:"
-Write-LogMessage -type Info -MSG ("-" * $string.length)
 Write-LogMessage -type Info -MSG ($string)
 
 $i = 1
@@ -2881,8 +2921,8 @@ Write-LogMessage -type Info -MSG " " # Print a gap
 
 # Print required tasks
 
+Write-LogMessage -type Info -MSG $SectionSeparator
 $string = "The following additional tasks MUST be completed:"
-Write-LogMessage -type Info -MSG ("-" * $string.length)
 Write-LogMessage -type Info -MSG ($string)
 
 $i = 1
@@ -2891,16 +2931,4 @@ foreach ($Task in $RequiredTasks) {
     $i++
 }
 
-If ($PSMObjectsAlreadyExisted) {
-    Write-LogMessage -type Warning -MSG " "
-    Write-LogMessage -type Info -MSG (`
-            "NOTE: If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
-            "and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
-    )
-}
-
 Write-LogMessage -type Info -MSG " "
-
-#$RequiredTasks.Message | Out-GridView -Title "Required tasks"
-
-#Write-LogMessage -type Warning -MSG "Any tasks in red above must be completed to ensure PSM is functional."
