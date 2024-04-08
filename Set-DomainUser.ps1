@@ -2268,8 +2268,7 @@ foreach ($CurrentUser in $UsersToTest) {
             }
             else {
                 $NewError = ""
-                $NewError += "An attempt to authenticate to the domain using the $Username username and password failed.`n"
-                $NewError += "  Please validate the user name and password or run Set-DomainUser with -SkipPSMUserTests to skip this test"
+                $NewError += "An attempt to authenticate to the domain using the $Username username and password failed."
                 $ArrayOfUserErrors += $NewError
                 Throw
             }
@@ -2297,8 +2296,7 @@ foreach ($CurrentUser in $UsersToTest) {
                 # If user was not found throw error
                 $NewError = ""
                 $NewError += ("User {0} not found in the domain. Please ensure the user exists and`n" -f $Username)
-                $NewError += ("  that you have provided the pre-Windows 2000 logon name or`n")
-                $NewError += ("  run this script with the -SkipPSMUserTests option to skip this check.`n")
+                $NewError += ("  that you have provided the pre-Windows 2000 logon name.")
                 $ArrayOfUserErrors += $NewError
             }
         }
@@ -2307,9 +2305,7 @@ foreach ($CurrentUser in $UsersToTest) {
             $NewError = ""
             $NewError += ("Failed to retrieve {0} user details from Active Directory." -f $Username)
             $NewError += ("Please ensure the user exists and is configured correctly and")
-            $NewError += ("  that you have provided the pre-Windows 2000 logon name")
-            $NewError += ("  and run this script again, or run the script with the ")
-            $NewError += ("  -SkipPSMUserTests flag to skip this check.")
+            $NewError += ("  that you have provided the pre-Windows 2000 logon name.")
             $ArrayOfUserErrors += $NewError
             $FailedToSearchAD = $true
             $ValidationFailed = $true
@@ -2334,28 +2330,27 @@ foreach ($CurrentUser in $UsersToTest) {
 # List detected PSM user configuration errors
 If ($UserConfigurationErrors) {
     # Misconfigurations have been detected and will be listed by the following section
-    $UsersWithConfigurationErrors = $UserConfigurationErrors.User | Select-Object -Unique # Get a list of the affected users
+    $UsersWithConfigurationErrors = $UserConfigurationErrors.UserName | Select-Object -Unique # Get a list of the affected users
     $UsersWithConfigurationErrors | ForEach-Object { # For each user
         $User = $_
         $NewError = ("Configuration errors for {0} in Active Directory user properties:`n" -f $User)
         # Output simple misconfigurations in table format
-        $ErrorTableSettings = $UserConfigurationErrors | Where-Object User -eq $user | Where-Object SettingType -in "Value", "LogOnTo"
+        $ErrorTableSettings = $UserConfigurationErrors | Where-Object UserName -eq $user | Where-Object SettingType -in "Value", "LogOnTo"
         If ($ErrorTableSettings) {
-            $NewError += "  Settings:`n"
-            $NewError += "  ---------`n"
+            $NewError += "Settings:`n"
+            $NewError += "---------`n"
             $NewError += (
                 $ErrorTableSettings | Select-Object Username, SettingName, Expected, Current | Format-Table -Wrap -Property `
-                @{Name = "Username"; Expression = { $_.Username }; Alignment = "Left" }, `
                 @{Name = "SettingName"; Expression = { $_.SettingName }; Alignment = "Left" }, `
                 @{Name = "Expected"; Expression = { $_.Expected }; Alignment = "Left" }, `
                 @{Name = "Current"; Expression = { $_.Current }; Alignment = "Left" } | Out-String
             ).Trim()
             $NewError += "`n"
         }
-        $ListUserConfigurationErrors = $UserConfigurationErrors | Where-Object User -eq $user | Where-Object SettingType -eq "StringCompare" # for more complex misconfigurations (strings), capture them separately
+        $ListUserConfigurationErrors = $UserConfigurationErrors | Where-Object UserName -eq $user | Where-Object SettingType -eq "StringCompare" # for more complex misconfigurations (strings), capture them separately
         If ($ListUserConfigurationErrors) {
-            $NewError += "  Paths:`n"
-            $NewError += "  ------`n"
+            $NewError += "Paths:`n"
+            $NewError += "------`n"
             foreach ($ConfigErrorSetting in $ListUserConfigurationErrors) {
                 # and for each misconfiguration, ...
                 $NewError += ("Setting: {0}`n" -f $ConfigErrorSetting.SettingName)
@@ -2367,10 +2362,10 @@ If ($UserConfigurationErrors) {
                 }
             }
         }
-        $ArrayOfUserErrors += $NewError
+        $ArrayOfUserErrors += $NewError.trim()
     }
     If ("Unset" -in $UserConfigurationErrors.Current) {
-        $NewError = "Errors occurred while retrieving some user properties, which usually means they do not exist. These will show as `"Unset`" above."
+        $NewError = "Errors occurred while retrieving some user properties, which usually means they do not exist. These will show as `"Unset`" above.`n"
         $ArrayOfUserErrors += $NewError
     }
     #    Write-LogMessage -type Error -MSG "Please resolve the issues above or rerun this script with -SkipPSMUserTests to ignore these errors."
@@ -2432,11 +2427,11 @@ Write-LogMessage -type Verbose -MSG "Completed PSM and install user tests"
 
 If ($ArrayOfUserErrors) {
     Write-LogMessage -type Error -MSG $SectionSeparator
-    Write-LogMessage -type Error -MSG "The following errors occurred while validating the PSM user details:"
-    Write-LogMessage -type Error -MSG $StandardSeparator
+    Write-LogMessage -type Error -MSG "The following errors occurred while validating the PSM user details."
+    Write-LogMessage -type Error -MSG "These tests may be skipped by running Set-DomainUser with the -SkipPSMUserTests parameter."
     foreach ($UserError in $ArrayOfUserErrors) {
-        Write-LogMessage -type Error -MSG $UserError
         Write-LogMessage -type Error -MSG $StandardSeparator
+        Write-LogMessage -type Error -MSG $UserError
     }
 }
 
@@ -2496,7 +2491,7 @@ If ($OperationsToPerform.RemoteConfiguration) {
         $platformStatus = Get-PlatformStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId $PlatformName
     }
     else {
-        Write-LogMessage -Type Warning -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
+        Write-LogMessage -Type Verbose -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
         $TasksTop += @{
             Message  = ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
             Priority = "Recommended"
@@ -2522,7 +2517,7 @@ If ($OperationsToPerform.RemoteConfiguration) {
     }
     If (!($safeStatus.managingCpm)) {
         # Safe exists but no CPM assigned
-        Write-LogMessage -Type Warning -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
+        Write-LogMessage -Type Verbose -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
         $TasksTop += @{
             Message  = ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
             Priority = "Recommended"
@@ -2544,7 +2539,7 @@ If ($OperationsToPerform.RemoteConfiguration) {
         Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
     }
     ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
-        Write-LogMessage -Type Warning -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
+        Write-LogMessage -Type Verbose -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
         $TasksTop += @{
             Message  = "Verify that the `"$PSMConnectAccountName`" object in the `"$safe`" safe contains correct PSMConnect user details."
             Priority = "Required"
@@ -2562,7 +2557,7 @@ If ($OperationsToPerform.RemoteConfiguration) {
         Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
     }
     ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
-        Write-LogMessage -Type Warning -MSG "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
+        Write-LogMessage -Type Verbose -MSG "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
         $TasksTop += @{
             Message  = "Verify that the `"$PSMAdminConnectAccountName`" object in the `"$safe`" safe contains correct PSMAdminConnect user details."
             Priority = "Required"
@@ -2667,8 +2662,8 @@ If ($OperationsToPerform.SecurityPolicyConfiguration) {
     $CurrentSecurityPolicyFile = "$BackupPath\CurrentSecurityPolicy.cfg"
     $GetSecPolResult = Get-CurrentSecurityPolicy -OutFile $CurrentSecurityPolicyFile -LogFile $BackupPath\SeceditExport.log
     If ($false -eq $GetSecPolResult) {
-        Write-LogMessage -type Warning -MSG "Security policy export failed, so the current policy will not be modified."
-        Write-LogMessage -type Warning -MSG "Please edit local security policy manually to allow PSM users to log on with Remote Desktop."
+        Write-LogMessage -type Verbose -MSG "Security policy export failed, so the current policy will not be modified."
+        Write-LogMessage -type Verbose -MSG "Please edit local security policy manually to allow PSM users to log on with Remote Desktop."
         $TasksTop += @{
             Message  = "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
             Priority = "Required"
