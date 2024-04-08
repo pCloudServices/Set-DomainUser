@@ -950,6 +950,57 @@ Function New-VaultAdminObject {
     }
 }
 
+Function Get-VaultAccountDetails {
+    <#
+    .SYNOPSIS
+    Onboards an account in the vault
+    .DESCRIPTION
+    Onboards an account in the vault
+    .PARAMETER pvwaAddress
+    Address of the PVWA
+    .PARAMETER pvwaToken
+    Token to log into PVWA using APIs
+    .PARAMETER name
+    Name of the account (PSMConnect/PSMAdminConnect)
+    .PARAMETER domain
+    Domain of the users needed to be onboarded
+    .PARAMETER Credentials
+    Credentials to be onboarded (has both the username and password)
+    .PARAMETER platformID
+    The Platform to onboard the account to. We will use the PlatformID in this script from what we create.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $pvwaAddress,
+        [Parameter(Mandatory = $true)]
+        $pvwaToken,
+        [Parameter(Mandatory = $true)]
+        $AccountName,
+        [Parameter(Mandatory = $true)]
+        [String]$domain,
+        [Parameter(Mandatory = $false)]
+        $safe = "PSM"
+    )
+
+    $url = ("{0}/PasswordVault/api/Accounts?filter=safename eq {1}" -f $pvwaAddress, $safe)
+    try {
+        $result = Invoke-RestMethod -Method GET -Uri $url -Headers @{ "Authorization" = $pvwaToken } `
+            -ContentType "application/json" -ErrorVariable ResultError -WebSession $Global:WebRequestSession
+        $Accounts = $result.value | Where-Object address -eq $domain | Where-Object name -eq $AccountName
+        return $Accounts
+    }
+    catch {
+        try {
+            $ErrorMessage = $ResultError.Message | ConvertFrom-Json
+            return $ErrorMessage
+        }
+        catch {
+            Write-LogMessage -Type Error -MSG ("Error creating user: {0}" -f $ResultError.Message)
+            exit 1
+        }
+    }
+}
+
 Function Add-AdminUserToTS {
     <#
     .SYNOPSIS
