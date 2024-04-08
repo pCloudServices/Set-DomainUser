@@ -1532,6 +1532,139 @@ function Test-CredentialFormat {
     return $true
 }
 
+function Test-PSMUserConfiguration {
+    param (
+        [Parameter(Mandatory = $true)][System.DirectoryServices.DirectoryEntry]$UserObject,
+        [Parameter(Mandatory = $true)][string]$UserType,
+        [Parameter(Mandatory = $true)][string]$PSMInstallLocation
+
+    )
+    # Define the settings we'll be comparing against
+    $PSMComponentsPath = $PSMInstallLocation + "Components"
+    $PSMInitSessionPath = $PSMComponentsPath + "\PSMInitSession.exe"
+    $SettingsToCheck = @(
+        @{
+            UserType      = "All"
+            Name          = "TerminalServicesInitialProgram"
+            DisplayName   = "Initial Program"
+            ExpectedValue = $PSMInitSessionPath
+            SettingType   = "StringCompare"
+        },
+        @{
+            UserType      = "All"
+            Name          = "TerminalServicesWorkDirectory"
+            DisplayName   = "Working Directory"
+            ExpectedValue = $PSMComponentsPath
+            Path          = $true
+            SettingType   = "StringCompare"
+        },
+        @{
+            UserType      = "All"
+            Name          = "ConnectClientDrivesAtLogon"
+            DisplayName   = "Connect client drives at logon"
+            ExpectedValue = 0
+            SettingType   = "Value"
+        },
+        @{
+            UserType      = "All"
+            Name          = "ConnectClientPrintersAtLogon"
+            DisplayName   = "Connect client drives at logon"
+            ExpectedValue = 0
+            SettingType   = "Value"
+        },
+        @{
+            UserType      = "All"
+            Name          = "DefaultToMainPrinter"
+            DisplayName   = "Default to main client printer"
+            ExpectedValue = 0
+            SettingType   = "Value"
+        },
+        @{
+            UserType      = "All"
+            Name          = "EnableRemoteControl"
+            DisplayName   = "Enable remote control"
+            ExpectedValue = 2, 4
+            SettingType   = "Value"
+        },
+        @{
+            UserType      = "PSMConnect"
+            Name          = "MaxDisconnectionTime"
+            DisplayName   = "End a disconnected session"
+            ExpectedValue = 1
+            SettingType   = "Value"
+        },
+        @{
+            UserType      = "PSMConnect"
+            Name          = "ReconnectionAction"
+            DisplayName   = "Allow reconnection"
+            ExpectedValue = 1
+            SettingType   = "Value"
+        },
+        @{
+            UserType      = "All"
+            Name          = "userWorkstations"
+            DisplayName   = "`"Log On To`" Restrictions"
+            ExpectedValue = $env:computername
+            SettingType   = "LogOnTo"
+        }
+    )
+    $UserName = $UserObject.Name
+    $SettingsToCheck | ForEach-Object { # For each aspect of the configuration
+        $SettingName = $_.Name
+        $SettingUserType = $_.UserType
+        $SettingDisplayName = $_.DisplayName
+        $SettingExpectedValue = $_.ExpectedValue
+        $SettingCurrentValue = Get-UserProperty -UserObject $UserObject -Property $SettingName
+        $SettingType = $_.SettingType
+
+        If ($_.Path) {
+            # If the value we're checking is a directory, trim training backslashes as they don't matter
+            $SettingCurrentValue = ($SettingCurrentValue -replace "\\*$", "")
+        }
+
+        if ($SettingUserType -in "All", $UserType) {
+            # If the setting that we are checking applies to the user we're checking, or all users
+            If ($SettingType -eq "LogOnTo") {
+                # split $SettingCurrentValue into an array
+                $SettingCurrentValue = $SettingCurrentValue -split ","
+            }
+            If (
+                (
+                ($SettingType -in "Value", "StringCompare") -and
+                ($SettingCurrentValue -notin $SettingExpectedValue)
+                    # For Value and StringCompare setting types, we check if the current value is one of the expected values
+                ) -or
+                (
+                ($SettingType -eq "LogOnTo") -and (
+                    ($SettingCurrentValue) -and
+                    ($SettingExpectedValue -notin $SettingCurrentValue)
+                    )
+                    # but for Log On To, it's the other way round - the expected value must be in the current value (or be empty - "all workstations")
+                )
+            ) {
+                $ThisUserConfigurationError = [PSCustomObject]@{ # add it to the array containing the list of misconfigurations
+                    Username    = $Username
+                    User        = $UserType
+                    SettingName = $SettingDisplayName
+                    Current     = $SettingCurrentValue
+                    Expected    = $SettingExpectedValue
+                    SettingType = $SettingType
+                }
+                if ($SettingType -eq "LogOnTo") {
+                    $ThisUserConfigurationError.Expected = "Must include `"$SettingExpectedValue`""
+                }
+                return @{
+                    Result = "Error"
+                    Errors = $ThisUserConfigurationError
+                }
+            }
+            return @{
+                Result = "Success"
+            }
+        }
+    }
+}
+
 function Test-PasswordCharactersValid {
     param (
         [Parameter(Mandatory = $true)][PSCredential]$Credential
@@ -1589,6 +1722,36 @@ function Get-UserProperty {
         $Result = "Unset"
     }
     return $Result
+}
+
+function Update-ValidatedInputs {
+    param (
+        [Parameter(Mandatory = $True)]
+        [hashtable]$Object,
+
+        [Parameter(Mandatory = $True)]
+        [string]$InputName,
+
+        [Parameter(Mandatory = $False)]
+        $Value
+
+    )
+    If ($Value) {
+        # Value is set so update or add a value
+        If ($Object.$InputName) {
+            $Object.$InputName = $Value
+        }
+        else {
+            $Object += @{
+                $InputName = $Value
+            }
+        }
+    }
+    else {
+        # Value is empty so remove a value instead
+        $Object.Remove($InputName)
+    }
+    return $Object
 }
 
 Function Set-PSMServerObject {
