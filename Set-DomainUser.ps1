@@ -1857,10 +1857,12 @@ Function Set-PSMServerObject {
     }
 }
 
-#Running Set-DomainUser script
+# End of function definitions
 
+# Running Set-DomainUser script
 $OperationsToPerform = @{
     GetInstallerUserCredentials       = $true
+    TestInstallerUserCredentials      = $true
     GetPSMConnectUserCredentials      = $true
     GetPSMAdminConnectUserCredentials = $true
     UserTests                         = $true
@@ -1877,6 +1879,7 @@ $OperationsToPerform = @{
     DetectProxy                       = $true
 }
 
+# Determine what operations need to be performed
 switch ($PSBoundParameters) {
     { $_.psmConnectCredentials } {
         $OperationsToPerform.GetPSMConnectUserCredentials = $false
@@ -1904,6 +1907,8 @@ switch ($PSBoundParameters) {
         $OperationsToPerform.RemoteConfiguration = $false
         $OperationsToPerform.ServerObjectConfiguration = $false
         $OperationsToPerform.UserTests = $false
+        $OperationsToPerform.GetInstallerUserCredentials = $false
+        $OperationsToPerform.TestInstallerUserCredentials = $false
     }
     { $_.DoNotHarden } {
         $OperationsToPerform.Hardening = $false
@@ -1931,31 +1936,80 @@ If (!($OperationsToPerform.RemoteConfiguration -or $OperationsToPerform.ServerOb
     $Proxy = "None"
 }
 
+# Initialise variables
+$StandardSeparator = ("-" * 50)
+$SectionSeparator = ("#" * 50)
 $global:InVerbose = $PSBoundParameters.Verbose.IsPresent
 $ScriptLocation = Split-Path -Parent $MyInvocation.MyCommand.Path
 $global:LOG_FILE_PATH = "$ScriptLocation\_Set-DomainUser.log"
-
-if ($OperationsToPerform.GetPSMConnectUserCredentials) {
-    $psmConnectCredentials = Get-Credential -Message "Please enter PSMConnect domain user credentials"
-    if (!($psmConnectCredentials)) {
-        Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
-        exit 1
-    }
-}
-
-if ($OperationsToPerform.GetPSMAdminConnectUserCredentials) {
-    $psmAdminCredentials = Get-Credential -Message "Please enter PSMAdminConnect domain user credentials"
-    if (!($psmAdminCredentials)) {
-        Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
-        exit 1
-    }
-}
-
 $PsmServiceNames = "Cyber-Ark Privileged Session Manager", "CyberArk Privileged Session Manager"
 $PsmService = Get-Service | Where-Object Name -in $PsmServiceNames
 $REGKEY_PSMSERVICE = $PsmService.Name
 $psmRootInstallLocation = ($(Get-ServiceInstallPath $REGKEY_PSMSERVICE)).Replace("CAPSM.exe", "").Replace('"', "").Trim()
+$BackupSubDirectory = (Get-Date).ToString('yyyMMdd-HHmmss')
+$BackupPath = "$psmRootInstallLocation\Backup\Set-DomainUser\$BackupSubDirectory"
+$ValidatedInputFileName = "_Set-DomainUserValidatedInputs.xml"
+$ValidatedInputFile = "$ScriptLocation\$ValidatedInputFileName"
+$PSMConnectUserName = ""
+$PSMAdminConnectUserName = ""
+$TasksTop = @()
 
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+Write-Host ""
+Write-LogMessage -type Info -MSG "Gathering information"
+
+# Initialise the variable to store inputs as they are validated
+$ValidatedInputs = @{}
+
+## Import previously validated inputs, if available, and not provided on command line (command-line parameters take precedence)
+If (Test-Path $ValidatedInputFile) {
+    # For credentials:
+    # If user names present in validated inputs, remember them for later
+    $RawValidatedInputs = Import-Clixml -Path $ValidatedInputFile
+    If ($RawValidatedInputs.PSMConnectUserName) {
+        # If PSMConnectUserName has been validated previously
+        $ValidatedInputs += @{ PSMConnectUserName = $RawValidatedInputs.PSMConnectUserName }
+        $PSMConnectUserName = $RawValidatedInputs.PSMConnectUserName
+        # Store it for later
+    }
+
+    If ($RawValidatedInputs.PSMConnectUserName) {
+        # If PSMAdminConnectUserName has been validated previously
+        $ValidatedInputs += @{ PSMAdminConnectUserName = $RawValidatedInputs.PSMAdminConnectUserName }
+        $PSMAdminConnectUserName = $RawValidatedInputs.PSMAdminConnectUserName
+        # Store it for later
+    }
+
+    If ($RawValidatedInputs.InstallUserName) {
+        # If InstallUserName has been validated previously
+        $ValidatedInputs += @{ InstallUserName = $RawValidatedInputs.InstallUserName }
+        $InstallUserName = $RawValidatedInputs.InstallUserName
+        # Store it for later
+    }
+
+    # For domain details:
+    ## Take from command line parameters
+    ## if not provided in parameters, take from import
+    ## if not present in import, do nothing
+    If (([String]::IsNullOrWhiteSpace($DomainDNSName)) -and ($RawValidatedInputs.DomainDNSName)) {
+        $ValidatedInputs += @{ DomainDNSName = $RawValidatedInputs.DomainDNSName }
+        $DomainDNSName = $RawValidatedInputs.DomainDNSName
+        $OperationsToPerform.DomainDNSNameDetection = $false
+    }
+
+    If (([String]::IsNullOrWhiteSpace($DomainNetbiosName)) -and ($RawValidatedInputs.DomainNetbiosName)) {
+        $ValidatedInputs += @{ DomainNetbiosName = $RawValidatedInputs.DomainNetbiosName }
+        $DomainNetbiosName = $RawValidatedInputs.DomainNetbiosName
+        $OperationsToPerform.DomainNETBIOSNameDetection = $false
+    }
+    Write-LogMessage -type Info -MSG "Imported the following details from $ValidatedInputFileName`:"
+    Write-LogMessage -type Info -MSG $StandardSeparator
+    $MessageString = ($ValidatedInputs | Out-String).Trim()
+    Write-LogMessage -type Info -MSG $MessageString
+}
+
+# Perform initial checks
 If (Check-UM -psmRootInstallLocation $psmRootInstallLocation) {
     $UM = $true
 }
@@ -1963,94 +2017,7 @@ else {
     $UM = $false
 }
 
-$BackupSubDirectory = (Get-Date).ToString('yyyMMdd-HHmmss')
-$BackupPath = "$psmRootInstallLocation\Backup\Set-DomainUser\$BackupSubDirectory"
-
-$TasksTop = @()
-
-Write-LogMessage -Type Info -MSG "Gathering information"
-
-Write-LogMessage -Type Verbose -MSG "Checking if user is a domain user"
-if (IsUserDomainJoined) {
-    Write-LogMessage -Type Verbose -MSG "User is a domain user"
-}
-else {
-    Write-LogMessage -Type Error -MSG "Stopping. Please run this script as a domain user"
-    exit 1
-}
-
-# Test if PSM credentials were entered in the right format
-
-Write-LogMessage -Type Verbose -MSG "Verifying PSM credentials were provided in expected format"
-If (!(Test-CredentialFormat -Credential $psmConnectCredentials)) {
-    Write-LogMessage -Type Error -MSG "Username provided for PSMConnect user contained invalid characters or is too long."
-    Write-LogMessage -Type Error -MSG "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain, and ensure"
-    Write-LogMessage -Type Error -MSG "the username is no more than 20 characters long"
-    exit 1
-}
-
-If (!(Test-CredentialFormat -Credential $psmAdminCredentials)) {
-    Write-LogMessage -Type Error -MSG "Username provided for PSMAdminConnect user contained invalid characters or is too long."
-    Write-LogMessage -Type Error -MSG "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain, and ensure"
-    Write-LogMessage -Type Error -MSG "the username is no more than 20 characters long"
-    exit 1
-}
-
-if ($OperationsToPerform.UserTests) {
-    If (!(Test-PasswordCharactersValid -Credential $psmConnectCredentials)) {
-        Write-LogMessage -Type Error -MSG "Password provided for PSMConnect user contained invalid characters."
-        Write-LogMessage -Type Error -MSG 'Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
-        exit 1
-    }
-
-
-    If (!(Test-PasswordCharactersValid -Credential $psmAdminCredentials)) {
-        Write-LogMessage -Type Error -MSG "Password provided for PSMAdminConnect user contained invalid characters."
-        Write-LogMessage -Type Error -MSG 'Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
-        exit 1
-    }
-}
-
-
-# Get-Variables
-if ($OperationsToPerform.GetPrivilegeCloudUrl) {
-    Write-LogMessage -Type Verbose -MSG "Getting PVWA address"
-    $PrivilegeCloudUrl = Get-PvwaAddress -psmRootInstallLocation $psmRootInstallLocation
-}
-If ($false -eq $PrivilegeCloudUrl) {
-    Write-LogMessage -Type Error -MSG "Unable to detect PVWA address automatically. Please rerun script and provide it using the -PrivilegeCloudUrl parameter."
-    exit 1
-}
-
-$DomainNameAutodetected = $false
-
-Write-LogMessage -Type Verbose -MSG "Getting domain details"
-if ($OperationsToPerform.DomainDNSNameDetection) {
-    $DomainNameAutodetected = $true
-    $DomainDNSName = Get-DomainDnsName
-}
-if ($OperationsToPerform.DomainNetbiosNameDetection) {
-    $DomainNameAutodetected = $true
-    $DomainNetbiosName = Get-DomainNetbiosName
-}
-If ($DomainNameAutodetected) {
-
-    $DomainInfo = ("--------------------------------------------------------`nDetected the following domain names:`n  DNS name:     {0}`n  NETBIOS name: {1}`nIs this correct?" -f $DomainDNSName, $DomainNetbiosName)
-
-    $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
-    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the domain details are correct"))
-    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct domain details can be provided"))
-
-    $DomainPromptSelection = $Host.UI.PromptForChoice("", $DomainInfo, $PromptOptions, 1)
-    If ($DomainPromptSelection -eq 0) {
-        Write-LogMessage -Type Info "Domain details confirmed"
-    }
-    Else {
-        Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct domain DNS and NETBIOS names on the command line."
-        exit 1
-    }
-}
-
+## Proxy configuration
 If ($OperationsToPerform.DetectProxy) {
     # Get proxy details from user profile
     $DetectedProxy = Get-ProxyDetails
@@ -2064,8 +2031,11 @@ If ($OperationsToPerform.DetectProxy) {
 
         $ProxyPromptSelection = $Host.UI.PromptForChoice("", $ProxyInfo, $PromptOptions, 1)
         If ($ProxyPromptSelection -eq 0) {
-            Write-LogMessage -Type Info "Proxy details confirmed"
+            Write-LogMessage -Type Verbose "Proxy details confirmed"
             $Proxy = $DetectedProxy
+            $ValidatedInputs += @{
+                Proxy = $Proxy
+            }
         }
         Else {
             Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct proxy details on the command line."
@@ -2093,277 +2063,361 @@ If ("None" -ne $Proxy) {
 
 $Global:WebRequestSession.Proxy = $ProxyObject
 
-if ($OperationsToPerform.UserTests) {
-    # Gather the information we'll be comparing
-    $PSMComponentsPath = $psmRootInstallLocation + "Components"
-    $PSMInitSessionPath = $PSMComponentsPath + "\PSMInitSession.exe"
+## Check if domain user
+Write-LogMessage -Type Verbose -MSG "Checking if user is a domain user"
+if (IsUserDomainJoined) {
+    Write-LogMessage -Type Verbose -MSG "User is a domain user"
+}
+else {
+    Write-LogMessage -Type Error -MSG "Stopping. Please run this script as a domain user"
+    exit 1
+}
 
-    # Get PSMConnect user information
-    $UsersToCheck = @(
-        @{
-            UserType = "PSMConnect"
-            Username = $psmConnectCredentials.UserName
-        },
-        @{
-            UserType = "PSMAdminConnect"
-            Username = $psmAdminCredentials.UserName
+## Get Privilege Cloud URL
+if ($OperationsToPerform.GetPrivilegeCloudUrl) {
+    Write-LogMessage -Type Verbose -MSG "Getting PVWA address"
+    $PrivilegeCloudUrl = Get-PvwaAddress -psmRootInstallLocation $psmRootInstallLocation
+}
+If ($false -eq $PrivilegeCloudUrl) {
+    Write-LogMessage -Type Error -MSG "Unable to detect PVWA address automatically. Please rerun script and provide it using the -PrivilegeCloudUrl parameter."
+    exit 1
+}
+
+## Identify AD domain
+$DomainNameAutodetected = $false
+Write-LogMessage -Type Verbose -MSG "Getting domain details"
+if ($OperationsToPerform.DomainDNSNameDetection) {
+    $DomainNameAutodetected = $true
+    $DomainDNSName = Get-DomainDnsName
+}
+if ($OperationsToPerform.DomainNetbiosNameDetection) {
+    $DomainNameAutodetected = $true
+    $DomainNetbiosName = Get-DomainNetbiosName
+}
+
+# Gather information from user
+## PSMConnect user
+if ($OperationsToPerform.GetPSMConnectUserCredentials) {
+    $psmConnectCredentials = Get-Credential -Message "Please enter PSMConnect domain user credentials" -UserName $PSMConnectUserName
+    if (!($psmConnectCredentials)) {
+        Write-LogMessage -Type Error -MSG "No PSMConnect user credentials provided. Exiting."
+        exit 1
+    }
+    $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input "PSMConnectUserName" -Value $psmConnectCredentials.UserName
+}
+
+## PSMAdminConnect user
+if ($OperationsToPerform.GetPSMAdminConnectUserCredentials) {
+    $psmAdminCredentials = Get-Credential -Message "Please enter PSMAdminConnect domain user credentials" -UserName $PSMAdminConnectUserName
+    if (!($psmAdminCredentials)) {
+        Write-LogMessage -Type Error -MSG "No PSMAdminConnect user credentials provided. Exiting."
+        exit 1
+    }
+    $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input "PSMAdminConnectUserName" -Value $psmAdminCredentials.UserName
+}
+
+## InstallerUser/Tina
+$InstallUserError = $false
+If ($OperationsToPerform.GetInstallerUserCredentials) {
+    if ($null -eq $InstallUser) {
+        $InstallUser = Get-Credential -Message ("Please enter installer user credentials") -UserName $InstallUserName
+        if (!($InstallUser)) {
+            Write-LogMessage -Type Error -MSG "No install user credentials provided. Exiting."
+            exit 1
         }
-    )
-    $SettingsToCheck = @(
-        @{
-            UserType      = "All"
-            Name          = "TerminalServicesInitialProgram"
-            DisplayName   = "Initial Program"
-            ExpectedValue = $PSMInitSessionPath
-            SettingType   = "StringCompare"
-        },
-        @{
-            UserType      = "All"
-            Name          = "TerminalServicesWorkDirectory"
-            DisplayName   = "Working Directory"
-            ExpectedValue = $PSMComponentsPath
-            Path          = $true
-            SettingType   = "StringCompare"
-        },
-        @{
-            UserType      = "All"
-            Name          = "ConnectClientDrivesAtLogon"
-            DisplayName   = "Connect client drives at logon"
-            ExpectedValue = 0
-            SettingType   = "Value"
-        },
-        @{
-            UserType      = "All"
-            Name          = "ConnectClientPrintersAtLogon"
-            DisplayName   = "Connect client drives at logon"
-            ExpectedValue = 0
-            SettingType   = "Value"
-        },
-        @{
-            UserType      = "All"
-            Name          = "DefaultToMainPrinter"
-            DisplayName   = "Default to main client printer"
-            ExpectedValue = 0
-            SettingType   = "Value"
-        },
-        @{
-            UserType      = "All"
-            Name          = "EnableRemoteControl"
-            DisplayName   = "Enable remote control"
-            ExpectedValue = 2, 4
-            SettingType   = "Value"
-        },
-        @{
-            UserType      = "PSMConnect"
-            Name          = "MaxDisconnectionTime"
-            DisplayName   = "End a disconnected session"
-            ExpectedValue = 1
-            SettingType   = "Value"
-        },
-        @{
-            UserType      = "PSMConnect"
-            Name          = "ReconnectionAction"
-            DisplayName   = "Allow reconnection"
-            ExpectedValue = 1
-            SettingType   = "Value"
-        },
-        @{
-            UserType      = "All"
-            Name          = "userWorkstations"
-            DisplayName   = "Log On To Restrictions"
-            ExpectedValue = $env:computername
-            SettingType   = "LogOnTo"
+    }
+    $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input "InstallUserName" -Value $InstallUser.UserName
+}
+
+# Validate detected AD domain details
+If ($DomainNameAutodetected) {
+
+    $DomainInfo = ("--------------------------------------------------------`nDetected the following domain names:`n  DNS name:     {0}`n  NETBIOS name: {1}`nIs this correct?" -f $DomainDNSName, $DomainNetbiosName)
+
+    $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
+    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the domain details are correct"))
+    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct domain details can be provided"))
+
+    $DomainPromptSelection = $Host.UI.PromptForChoice("", $DomainInfo, $PromptOptions, 1)
+    If ($DomainPromptSelection -eq 0) {
+        Write-LogMessage -Type Info "Domain details confirmed"
+        $ValidatedInputs += @{
+            DomainDNSName     = $DomainDNSName
+            DomainNetbiosName = $DomainNetbiosName
         }
-    )
+    }
+    Else {
+        Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct domain DNS and NETBIOS names on the command line."
+        $ValidationFailed = $true
+    }
+}
 
-    # Initialise array which will capture detected misconfigurations
-    $UserConfigurationErrors = @()
-    $UsersToCheck | ForEach-Object { # For each of PSMConnect and PSMAdminConnect
-        $UserType = $_.UserType
-        $Username = $_.Username
+# Test users
+Write-LogMessage -type Info -MSG "Validating PSM and install user details"
+$UsersToTest = @(
+    @{
+        Credential = $psmConnectCredentials
+        UserType   = "PSMConnect"
+    },
+    @{
+        Credential = $psmAdminCredentials
+        UserType   = "PSMAdminConnect"
+    }
+)
 
+# Test PSM user configuration
+#Initialise array which will capture detected misconfigurations
+$UserConfigurationErrors = @()
+
+$ArrayOfUserErrors = @()
+
+## Test PSM user credential format
+foreach ($CurrentUser in $UsersToTest) {
+    $Credential = $CurrentUser.Credential
+    $Username = $Credential.UserName
+    $UserType = $CurrentUser.UserType
+    Write-LogMessage -type Verbose -MSG "Testing $UserType credential format"
+    try {
+        Write-LogMessage -Type Verbose -MSG "Verifying PSM credentials were provided in expected format"
+        If (!(Test-CredentialFormat -Credential $Credential)) {
+            $NewError = ""
+            $NewError += "Username provided for PSMConnect user contained invalid characters or is too long.`n"
+            $NewError += "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain, and ensure"
+            $NewError += "the username is no more than 20 characters long"
+            $ArrayOfUserErrors += $NewError
+            Throw
+        }
+
+        If (!(Test-PasswordCharactersValid -Credential $Credential)) {
+            $NewError = ""
+            $NewError += "Password provided for $Username user contained invalid characters.`n"
+            $NewError += '  Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
+            $ArrayOfUserErrors += $NewError
+            Write-Host ""
+            Throw
+        }
+    }
+    catch {
+        $ValidationFailed = $true
+    }
+}
+
+## Test PSM user credentials
+foreach ($CurrentUser in $UsersToTest) {
+    $Credential = $CurrentUser.Credential
+    $UserType = $CurrentUser.UserType
+    Write-LogMessage -type Verbose -MSG "Testing $UserType credentials"
+    try {
+        if ($OperationsToPerform.UserTests) {
+            # Test PSM credentials
+            $UserName = $Credential.UserName
+            if (ValidateCredentials -domain $DomainDNSName -Credential $Credential) {
+                $InputName = ($UserType + "UserName")
+                Write-LogMessage -Type Verbose -MSG "$UserName user credentials validated"
+            }
+            else {
+                $NewError = ""
+                $NewError += "An attempt to authenticate to the domain using the $Username username and password failed.`n"
+                $NewError += "  Please validate the user name and password or run Set-DomainUser with -SkipPSMUserTests to skip this test"
+                $ArrayOfUserErrors += $NewError
+                Throw
+            }
+        }
+    }
+    catch {
+        $ValidationFailed = $true
+    }
+}
+
+## Test PSM user configuration
+foreach ($CurrentUser in $UsersToTest) {
+    Write-LogMessage -type Verbose -MSG "Testing $UserType configuration"
+    $Credential = $CurrentUser.Credential
+    $UserType = $CurrentUser.UserType
+    $Username = $Credential.UserName
+    if ($OperationsToPerform.UserTests) {
         try {
+            # Search for user by name
             $UserDN = Get-UserDNFromSamAccountName -Username $Username
             If ($UserDN) {
                 $UserObject = Get-UserObjectFromDN $UserDN # Search for the user
             }
             else {
                 # If user was not found throw error
-                Write-LogMessage -type Error -MSG ("User {0}\{1} not found. Please ensure the user exists and" -f $DomainNetbiosName, $Username)
-                Write-LogMessage -type Error -MSG ("  that you have provided the pre-Windows 2000 logon name or")
-                Write-LogMessage -type Error -MSG ("  run this script with the -SkipPSMUserTests option to skip this check.")
-                exit 1
+                $NewError = ""
+                $NewError += ("User {0} not found in the domain. Please ensure the user exists and`n" -f $Username)
+                $NewError += ("  that you have provided the pre-Windows 2000 logon name or`n")
+                $NewError += ("  run this script with the -SkipPSMUserTests option to skip this check.`n")
+                $ArrayOfUserErrors += $NewError
             }
         }
         catch {
             # Failed to search AD
-            Write-LogMessage -type Error -MSG ("Failed to retrieve {0}\{1} user details from Active Directory." -f $DomainNetbiosName, $Username)
-            Write-LogMessage -type Error -MSG ("Please ensure the user exists and is configured correctly and")
-            Write-LogMessage -type Error -MSG ("  that you have provided the pre-Windows 2000 logon name or")
-            Write-LogMessage -type Error -MSG ("  and run this script again, or run the script with the ")
-            Write-LogMessage -type Error -MSG ("  -SkipPSMUserTests flag to skip this check.")
-            exit 1
+            $NewError = ""
+            $NewError += ("Failed to retrieve {0} user details from Active Directory." -f $Username)
+            $NewError += ("Please ensure the user exists and is configured correctly and")
+            $NewError += ("  that you have provided the pre-Windows 2000 logon name")
+            $NewError += ("  and run this script again, or run the script with the ")
+            $NewError += ("  -SkipPSMUserTests flag to skip this check.")
+            $ArrayOfUserErrors += $NewError
+            $FailedToSearchAD = $true
+            $ValidationFailed = $true
         }
-        $SettingsToCheck | Where-Object SettingType -in "Value", "StringCompare" | ForEach-Object { # For each aspect of the configuration
-            $SettingName = $_.Name
-            $SettingUserType = $_.UserType
-            $SettingDisplayName = $_.DisplayName
-            $SettingExpectedValue = $_.ExpectedValue
-            $SettingCurrentValue = Get-UserProperty -UserObject $UserObject -Property $SettingName
-            $SettingType = $_.SettingType
-
-            If ($_.Path) {
-                # If the value we're checking is a directory, trim training backslashes as they don't matter
-                $SettingCurrentValue = ($SettingCurrentValue -replace "\\*$", "")
-            }
-
-
-            if ($SettingUserType -in "All", $UserType) {
-                # If the setting that we are checking applies to the user we're checking, or all users
-                If ($SettingCurrentValue -notin $SettingExpectedValue) {
-                    # If the current configuration is not set to one of the acceptable values
-                    $UserConfigurationErrors += [PSCustomObject]@{ # add it to the array containing the list of misconfigurations
-                        Username    = $Username
-                        User        = $UserType
-                        SettingName = $SettingDisplayName
-                        Current     = $SettingCurrentValue
-                        Expected    = $SettingExpectedValue
-                        SettingType = $SettingType
-                    }
-                }
+    }
+    if (($OperationsToPerform.UserTests) -and ($true -ne $FailedToSearchAD)) {
+        try {
+            # Test PSM user configuration
+            $PSMUserConfigTestResult = Test-PSMUserConfiguration -UserType $UserType -UserObject $UserObject -PSMInstallLocation $psmRootInstallLocation
+            Write-LogMessage -Type Verbose -MSG "Successfully checked user configuration"
+            If ($PSMUserConfigTestResult.Result -ne "Success") {
+                $UserConfigurationErrors += $PSMUserConfigTestResult.Errors
+                Throw
             }
         }
-        $SettingsToCheck  | Where-Object SettingType -in "LogOnTo" | ForEach-Object { # Check Logon restrictions
-            $UsersWithoutComputerNameInLogonRestrictions = @()
-            $SettingName = $_.Name
-            $SettingAllowedWorkstations = Get-UserProperty -UserObject $UserObject -Property $SettingName
-            $SettingExpectedValue = $_.ExpectedValue
-            If ($SettingAllowedWorkstations) {
-                $SettingAllowedWorkstations = $SettingAllowedWorkstations.Split(",")
-                If ($SettingExpectedValue -notin $SettingAllowedWorkstations) {
-                    Write-LogMessage -type Warning -MSG ("Computer name {0} missing from `"Log on to`" setting for {1}" -f $env:computername, $Username)
-                    $UsersWithoutComputerNameInLogonRestrictions += "$Username"
-                    $TasksTop += @{
-                        Message  = ("Add {0} to the `"Log On To`" section for user {1}" -f $env:computername, $Username)
-                        Priority = "Required"
-                    }
-                }
-            }
-        }
-    }
-    
-    If ($UserConfigurationErrors) {
-        # Misconfigurations have been detected and will be listed by the following section
-        $UsersWithConfigurationErrors = $UserConfigurationErrors.User | Select-Object -Unique # Get a list of the affected users
-        $UsersWithConfigurationErrors | ForEach-Object { # For each user
-            $User = $_
-            Write-LogMessage -Type Info -MSG ("Configuration errors for {0}:" -f $User)
-            $UserConfigurationErrors | Where-Object User -eq $user | Where-Object SettingType -eq "Value" | Select-Object Username, SettingName, Expected, Current | Format-Table -Wrap # Output simple misconfigurations in table format
-            $ListUserConfigurationErrors = $UserConfigurationErrors | Where-Object User -eq $user | Where-Object SettingType -eq "StringCompare" # for more complex misconfigurations (strings), capture them separately
-            If ($ListUserConfigurationErrors) {
-                Write-LogMessage -type Info -MSG "-----"
-                foreach ($ConfigErrorSetting in $ListUserConfigurationErrors) {
-                    # and for each misconfiguration, output the
-                    Write-LogMessage -type Info -MSG ("Setting: {0}" -f $ConfigErrorSetting.SettingName)
-                    Write-LogMessage -type Info -MSG ("Expected value: `"{0}`"" -f $ConfigErrorSetting.Expected) # expected value and
-                    Write-LogMessage -type Info -MSG ("Detected value: `"{0}`"" -f $ConfigErrorSetting.Current) # current value
-                    If ($ConfigErrorSetting.SettingType -eq "StringCompare") {
-                        $DifferencePosition = $( # work out the position where the current value differs from the expected value by comparing them 1 character at a time
-                            $ExpectedValueLength = $ConfigErrorSetting.Expected.length
-                            $i = 0
-                            While ($i -le $ExpectedValueLength) {
-                                If ($ConfigErrorSetting.Expected[$i] -eq $ConfigErrorSetting.Current[$i]) {
-                                    $i++
-                                }
-                                else {
-                                    $DifferencePosition = $i
-                                    $DifferencePosition
-                                    break
-                                }
-                            }
-                        )
-                        Write-LogMessage -type Info -MSG ("                ` {0}^" -f (" " * $DifferencePosition)) # display the position of the first difference
-                    }
-                    Write-LogMessage -type Info -MSG "-----"
-                }
-            }
-        }
-        If ("Unset" -in $UserConfigurationErrors.Current) {
-            Write-LogMessage -type Error -MSG "Errors occurred while retrieving some user properties, which usually means they do not exist. These will show as `"Unset`" above."◙
-        }
-        Write-LogMessage -type Error -MSG "Please resolve the issues above or rerun this script with -SkipPSMUserTests to ignore these errors."
-        exit 1
-    }
-
-    # Test PSM credentials
-    if (ValidateCredentials -domain $DomainDNSName -Credential $psmConnectCredentials) {
-        Write-LogMessage -Type Verbose -MSG "PSMConnect user credentials validated"
-    }
-    else {
-        Write-LogMessage -Type Error -MSG "PSMConnect user validation failed. Please validate PSMConnect user name and password or run script with -SkipPSMUserTests to skip this test"
-        exit 1
-    }
-    if (ValidateCredentials -domain $DomainDNSName -Credential $psmAdminCredentials) {
-        Write-LogMessage -Type Verbose -MSG "PSMAdminConnect user credentials validated"
-    }
-    else {
-        Write-LogMessage -Type Error -MSG "PSMAdminConnect user validation failed. Please validate PSMAdminConnect user name and password or run script with -SkipPSMUserTests to skip this test."
-        exit 1
-    }
-}
-
-# Reverse logic on script invocation setting because double negatives suck
-$PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
-
-## Remote Configuration Block
-If ($OperationsToPerform.GetInstallerUserCredentials) {
-    if ($null -eq $InstallUser) {
-        if ($UM) {
-            $TinaUserType = "installer user"
-        }
-        else {
-            $TinaUserType = "tenant administrator"
-        }
-        $InstallUser = Get-Credential -Message ("Please enter {0} credentials" -f $TinaUserType)
-        if (!($InstallUser)) {
-            Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
-            exit 1
+        catch {
+            $ValidationFailed = $true
         }
     }
 }
 
+# List detected PSM user configuration errors
+If ($UserConfigurationErrors) {
+    # Misconfigurations have been detected and will be listed by the following section
+    $UsersWithConfigurationErrors = $UserConfigurationErrors.User | Select-Object -Unique # Get a list of the affected users
+    $UsersWithConfigurationErrors | ForEach-Object { # For each user
+        $User = $_
+        $NewError = ("Configuration errors for {0} in Active Directory user properties:`n" -f $User)
+        # Output simple misconfigurations in table format
+        $ErrorTableSettings = $UserConfigurationErrors | Where-Object User -eq $user | Where-Object SettingType -in "Value", "LogOnTo"
+        If ($ErrorTableSettings) {
+            $NewError += "  Settings:`n"
+            $NewError += "  ---------`n"
+            $NewError += (
+                $ErrorTableSettings | Select-Object Username, SettingName, Expected, Current | Format-Table -Wrap -Property `
+                @{Name = "Username"; Expression = { $_.Username }; Alignment = "Left" }, `
+                @{Name = "SettingName"; Expression = { $_.SettingName }; Alignment = "Left" }, `
+                @{Name = "Expected"; Expression = { $_.Expected }; Alignment = "Left" }, `
+                @{Name = "Current"; Expression = { $_.Current }; Alignment = "Left" } | Out-String
+            ).Trim()
+            $NewError += "`n"
+        }
+        $ListUserConfigurationErrors = $UserConfigurationErrors | Where-Object User -eq $user | Where-Object SettingType -eq "StringCompare" # for more complex misconfigurations (strings), capture them separately
+        If ($ListUserConfigurationErrors) {
+            $NewError += "  Paths:`n"
+            $NewError += "  ------`n"
+            foreach ($ConfigErrorSetting in $ListUserConfigurationErrors) {
+                # and for each misconfiguration, ...
+                $NewError += ("Setting: {0}`n" -f $ConfigErrorSetting.SettingName)
+                $NewError += ("Expected value: `"{0}`"`n" -f $ConfigErrorSetting.Expected)
+                $NewError += ("Detected value: `"{0}`"`n" -f $ConfigErrorSetting.Current)
+                If ($ConfigErrorSetting.Current -ne "Unset") {
+                    $DifferencePosition = Get-DifferencePosition -String1 $ConfigErrorSetting.Expected -String2 $ConfigErrorSetting.Current # get the location of the first difference
+                    $NewError += ("                ` {0}^`n" -f (" " * $DifferencePosition)) # and display the position of the first difference
+                }
+            }
+        }
+        $ArrayOfUserErrors += $NewError
+    }
+    If ("Unset" -in $UserConfigurationErrors.Current) {
+        $NewError = "Errors occurred while retrieving some user properties, which usually means they do not exist. These will show as `"Unset`" above."
+        $ArrayOfUserErrors += $NewError
+    }
+    #    Write-LogMessage -type Error -MSG "Please resolve the issues above or rerun this script with -SkipPSMUserTests to ignore these errors."
+    $ValidationFailed = $true
+}
+
+$ArrayOfTinaErrors = @()
+
+# Remote Configuration
+## Test InstallerUser/Tina user credentials
+If ($OperationsToPerform.TestInstallerUserCredentials) {
+    try {
+        If ($true -ne $InstallUserError) {
+            # for each section, check that the previous section succeeded.
+            Write-LogMessage -type Verbose -MSG "Testing install user credentials"
+            $pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $PrivilegeCloudUrl -InstallUser $InstallUser
+            if ($pvwaTokenResponse.ErrorCode -ne "Success") {
+                # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
+                # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.
+                # The error message shown could be from a JSON response, e.g. wrong password, or a connection error.
+                $NewError = ""
+                $NewError += "Logon to PVWA failed. Result:`n"
+                $NewError += ("Error code: {0}`n" -f $pvwaTokenResponse.ErrorCode)
+                $NewError += ("Error message: {0}" -f $pvwaTokenResponse.ErrorMessage)
+                $ArrayOfTinaErrors += $NewError
+                Throw
+            }
+            $PVWATokenIsValid = ($pvwaTokenResponse.Response -match "[0-9a-zA-Z]{200,256}")
+            if ($false -eq $PVWATokenIsValid) {
+                # If we get here, it means we got a 200 response from the server, but the data it returned was not a valid token.
+                # In this case, we display the response we got from the server to aid troubleshooting.
+                $NewError = ""
+                $NewError += "Response from server was not a valid token:"
+                $NewError += $pvwaTokenResponse.Response
+                $ArrayOfTinaErrors += $NewError
+                Throw
+            }
+            # If we get here, the token was retrieved successfully and looks valid. We'll still test it though.
+
+            $PvwaTokenTestResponse = Test-PvwaToken -Token $pvwaTokenResponse.Response -pvwaAddress $PrivilegeCloudUrl
+            if (($true -ne $InstallUserError) -and ($PvwaTokenTestResponse.ErrorCode -eq "Success")) {
+                $pvwaToken = $pvwaTokenResponse.Response
+            }
+            else {
+                $NewError = ""
+                $NewError += "PVWA Token validation failed. Result:"
+                $NewError += $PvwaTokenTestResponse.Response
+                $ArrayOfTinaErrors += $NewError
+                Throw
+            }
+            $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input InstallUser -Value $InstallUser
+        }
+    }
+    catch {
+        $ValidationFailed = $true
+    }
+}
+Write-LogMessage -type Verbose -MSG "Completed PSM and install user tests"
+
+If ($ArrayOfUserErrors) {
+    Write-LogMessage -type Error -MSG $SectionSeparator
+    Write-LogMessage -type Error -MSG "The following errors occurred while validating the PSM user details:"
+    Write-LogMessage -type Error -MSG $StandardSeparator
+    foreach ($UserError in $ArrayOfUserErrors) {
+        Write-LogMessage -type Error -MSG $UserError
+        Write-LogMessage -type Error -MSG $StandardSeparator
+    }
+}
+
+If ($ArrayOfTinaErrors) {
+    Write-LogMessage -type Error -MSG $SectionSeparator
+    Write-LogMessage -type Error -MSG "The following errors occurred while validating the install user details:"
+    Write-LogMessage -type Error -MSG $StandardSeparator
+    foreach ($TinaError in $ArrayOfTinaErrors) {
+        Write-LogMessage -type Error -MSG $TinaError
+        Write-LogMessage -type Error -MSG $StandardSeparator
+    }
+}
+
+# Save validated inputs
+$ValidationSaveResult = Set-ValidatedInputs -Data $ValidatedInputs -OutputFile $ValidatedInputFile
+If ($ValidationSaveResult) {
+    Write-LogMessage -type Verbose -MSG ("Confirmed details saved to {0}." -f $ValidatedInputFileName)
+}
+else {
+    Write-LogMessage -type Verbose -MSG ("An error occurred while saving confirmed details to {0}." -f $ValidatedInputFileName)
+}
+
+If ($ValidationFailed) {
+    Write-LogMessage -type Info -MSG "Some tests failed, and details are shown above. Please correct these and rerun Set-DomainUser."
+    exit 1
+}
+#Write-LogMessage -type Info -MSG "Please resolve any errors and run Set-DomainUser again to try again."
+
+# Remote Configuration
 If ($OperationsToPerform.RemoteConfiguration) {
     Write-LogMessage -type Info -MSG "Starting backend configuration"
 
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-    $pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $PrivilegeCloudUrl -InstallUser $InstallUser
-    if ($pvwaTokenResponse.ErrorCode -ne "Success") {
-        # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
-        # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.
-        # The error message shown could be from a JSON response, e.g. wrong password, or a connection error.
-        Write-LogMessage -Type Error "Logon to PVWA failed. Result:"
-        Write-LogMessage -Type Error ("Error code: {0}" -f $pvwaTokenResponse.ErrorCode)
-        Write-LogMessage -Type Error ("Error message: {0}" -f $pvwaTokenResponse.ErrorMessage)
-        exit 1
-    }
-    if (!($pvwaTokenResponse.Response -match "[0-9a-zA-Z]{200,256}")) {
-        # If we get here, it means we got a 200 response from the server, but the data it returned was not a valid token.
-        # In this case, we display the response we got from the server to aid troubleshooting.
-        Write-LogMessage -Type Error "Response from server was not a valid token:"
-        Write-LogMessage -Type Error $pvwaTokenResponse.Response
-        exit 1
-    }
-    # If we get here, the token was retrieved successfully and looks valid. We'll still test it though.
-    $PvwaTokenTestResponse = Test-PvwaToken -Token $pvwaTokenResponse.Response -pvwaAddress $PrivilegeCloudUrl
-    if ($PvwaTokenTestResponse.ErrorCode -eq "Success") {
-        $pvwaToken = $pvwaTokenResponse.Response
-    }
-    else {
-        Write-LogMessage -Type Error -MSG "PVWA Token validation failed. Result:"
-        Write-LogMessage -Type Error -MSG $PvwaTokenTestResponse.Response
-        exit 1
-    }
     # Get platform info
     Write-LogMessage -Type Verbose -MSG "Checking current platform status"
     $platformStatus = Get-PlatformStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId $PlatformName
@@ -2470,6 +2524,7 @@ If ($OperationsToPerform.RemoteConfiguration) {
     }
 }
 
+$PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
 If ($OperationsToPerform.ServerObjectConfiguration) {
     Write-LogMessage -type Verbose -MSG "Configuring backend PSM server objects"
     $VaultAddress = Get-VaultAddress -psmRootInstallLocation $psmRootInstallLocation
@@ -2549,8 +2604,8 @@ If ($OperationsToPerform.ServerObjectConfiguration) {
 
 ## End Remote Configuration Block
 
+# Perform local configuration
 # Group membership and security policy changes
-
 $PsmConnectUser = ("{0}\{1}" -f $DomainNetbiosName, $psmConnectCredentials.UserName)
 $PsmAdminConnectUser = ("{0}\{1}" -f $DomainNetbiosName, $psmAdminCredentials.UserName)
 
@@ -2598,6 +2653,7 @@ else {
         Priority = "Required"
     }
 }
+
 $TasksTop += @{
     Message  = "Ensure domain GPOs allow PSM users to log on to PSM servers with Remote Desktop"
     Priority = "Required"
@@ -2631,7 +2687,7 @@ else {
 
 # End group membership and security policy changes
 
-## Local Configuration Block
+# Perform local configuration
 If ($OperationsToPerform.PsmConfiguration) {
     Write-LogMessage -Type Info -MSG "Performing local configuration and restarting service"
 
@@ -2698,8 +2754,8 @@ If ($OperationsToPerform.PsmConfiguration) {
 }
 ## End Local Configuration Block
 
-## Post-Configuration Block
-
+# Post-configuration
+## Invoke hardening scripts and restart service
 If ($OperationsToPerform.Hardening) {
     Write-LogMessage -Type Info -MSG "Running PSM Hardening script"
     Write-LogMessage -Type Info -MSG "---"
@@ -2730,6 +2786,14 @@ else {
 }
 Write-LogMessage -Type Verbose -MSG "Restarting CyberArk Privileged Session Manager Service"
 Restart-Service $REGKEY_PSMSERVICE
+
+If (Test-Path $ValidatedInputFile) {
+    Write-LogMessage -type Verbose -MSG "Removing saved credentials from validation input file"
+    "InstallUser", "PSMConnectCredentials", "PSMAdminConnectCredentials" | ForEach-Object {
+        $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input $_
+    }
+    $ValidationSaveResult = Set-ValidatedInputs -Data $ValidatedInputs -OutputFile $ValidatedInputFile
+}
 Write-LogMessage -Type Success -MSG "All tasks completed."
 
 $RequiredTasks = @()
@@ -2750,7 +2814,7 @@ If ($SkipPSMObjectUpdate -or $LocalConfigurationOnly) {
     )
 }
 
-# Finalise tasks
+# Display summary and additional tasks
 $RequiredTasks += $TasksTop | Where-Object Priority -eq "Required"
 $RequiredTasks += @{ Message = "Restart Server"; Priority = "Required" }
 $RecommendedTasks = $TasksTop | Where-Object Priority -ne "Required"
@@ -2775,7 +2839,6 @@ $string = "The following additional tasks MUST be completed:"
 Write-LogMessage -type Info -MSG ("-" * $string.length)
 Write-LogMessage -type Info -MSG ($string)
 
-
 $i = 1
 foreach ($Task in $RequiredTasks) {
     Write-LogMessage -Type Info -MSG (" {0:D2}. {1}" -f $i, $Task.Message)
@@ -2785,13 +2848,12 @@ foreach ($Task in $RequiredTasks) {
 If ($PSMObjectsAlreadyExisted) {
     Write-LogMessage -type Warning -MSG " "
     Write-LogMessage -type Info -MSG (`
-    "NOTE: If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
-    "and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
+            "NOTE: If you're configuring PSM servers in a new domain, you may need to specify alternative safe`n" + `
+            "and account names with the -Safe, -PSMConnectAccountName and -PSMAdminConnectAccountName options."
     )
 }
 
-
-Write-LogMessage -type Info -MSG " " # Print a gap
+Write-LogMessage -type Info -MSG " "
 
 #$RequiredTasks.Message | Out-GridView -Title "Required tasks"
 
