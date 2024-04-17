@@ -1927,6 +1927,7 @@ $OperationsToPerform = @{
     Hardening                         = $true
     ConfigureAppLocker                = $true
     DetectProxy                       = $true
+ExistingAccountCheck              = $true
 }
 
 # Determine what operations need to be performed
@@ -1974,7 +1975,6 @@ switch ($PSBoundParameters) {
         $OperationsToPerform.SecurityPolicyConfiguration = $false
     }
     { $_.SkipAddingUsersToRduGroup } {
-        $OperationsToPerform.ExistingAccountCheck = $false
         $OperationsToPerform.RemoteDesktopUsersGroupAddition = $false
     }
     { $_.DoNotConfigureAppLocker } {
@@ -2450,9 +2450,6 @@ If ($OperationsToPerform.TestInstallerUserCredentials) {
     }
 }
 
-If ($OperationsToPerform.RemoteConfiguration) {
-    If ($pvwaToken) {
-        $ExistingAccountsObj = Get-VaultAccountDetails -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $Safe
         $ArrayOfUserOnboardingConflictErrors = @()
         If ($OperationsToPerform.ExistingAccountCheck) {
         $AccountsToOnboard = @()
