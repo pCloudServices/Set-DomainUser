@@ -1922,7 +1922,7 @@ $OperationsToPerform = @{
     PsmConfiguration                  = $true
     SecurityPolicyConfiguration       = $true
     RemoteDesktopUsersGroupAddition   = $true
-    RemoteConfiguration               = $true
+    CreateSafePlatformAndAccounts     = $true
     ServerObjectConfiguration         = $true
     Hardening                         = $true
     ConfigureAppLocker                = $true
@@ -1942,7 +1942,7 @@ switch ($PSBoundParameters) {
     }
     { $_.NotFirstRun } {
         $OperationsToPerform.UserTests = $false
-        $OperationsToPerform.RemoteConfiguration = $false
+        $OperationsToPerform.CreateSafePlatformAndAccounts = $false
     }
     { $_.SkipPSMUserTests } {
         $OperationsToPerform.UserTests = $false
@@ -1957,7 +1957,7 @@ switch ($PSBoundParameters) {
         $OperationsToPerform.DomainDNSNameDetection = $false
     }
     { $_.LocalConfigurationOnly } {
-        $OperationsToPerform.RemoteConfiguration = $false
+        $OperationsToPerform.CreateSafePlatformAndAccounts = $false
         $OperationsToPerform.ServerObjectConfiguration = $false
         $OperationsToPerform.UserTests = $false
         $OperationsToPerform.GetInstallerUserCredentials = $false
@@ -1986,7 +1986,7 @@ switch ($PSBoundParameters) {
 }
 
 # If not doing any remote work, skip proxy detection
-If (!($OperationsToPerform.RemoteConfiguration -or $OperationsToPerform.ServerObjectConfiguration)) {
+If (!($OperationsToPerform.CreateSafePlatformAndAccounts -or $OperationsToPerform.ServerObjectConfiguration)) {
     $OperationsToPerform.DetectProxy = $false
     $Proxy = "None"
 }
