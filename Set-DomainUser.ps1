@@ -1927,12 +1927,12 @@ $OperationsToPerform = @{
     Hardening                         = $true
     ConfigureAppLocker                = $true
     DetectProxy                       = $true
-ExistingAccountCheck              = $true
+    ExistingAccountCheck              = $true
 }
 
 # Determine what operations need to be performed
 switch ($PSBoundParameters) {
-{ $_.SkipExistingAccountCheck } {
+    { $_.SkipExistingAccountCheck } {
         $OperationsToPerform.ExistingAccountCheck = $false
     }
     { $_.psmConnectCredentials } {
@@ -2086,7 +2086,7 @@ If ($OperationsToPerform.DetectProxy) {
         $ProxyInfo += ("--------------------------------------------------------`n")
         $ProxyInfo += ("Detected the following proxy details:`n")
         $ProxyInfo += ("  Proxy Address:     {0}`n" -f $DetectedProxy)
-$ProxyInfo += ("Is this correct?")
+        $ProxyInfo += ("Is this correct?")
 
         $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
         $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the proxy details are correct"))
@@ -2199,7 +2199,7 @@ If ($OperationsToPerform.GetInstallerUserCredentials) {
 
 # Validate detected AD domain details
 If ($DomainNameAutodetected) {
-Write-LogMessage -Type Verbose -MSG "Confirming auto-detected domain details"
+    Write-LogMessage -Type Verbose -MSG "Confirming auto-detected domain details"
     $DomainInfo = ""
     $DomainInfo += ("--------------------------------------------------------`n")
     $DomainInfo += ("Detected the following domain names:`n")
@@ -2285,7 +2285,7 @@ foreach ($CurrentUser in $PSMAccountDetailsArray) {
     try {
         if ($OperationsToPerform.UserTests) {
             # Test PSM credentials
-                        if (ValidateCredentials -domain $DomainDNSName -Credential $Credential) {
+            if (ValidateCredentials -domain $DomainDNSName -Credential $Credential) {
                 $InputName = ($UserType + "UserName")
                 Write-LogMessage -Type Verbose -MSG "$UserName user credentials validated"
             }
@@ -2354,7 +2354,7 @@ foreach ($CurrentUser in $PSMAccountDetailsArray) {
 # List detected PSM user configuration errors
 Write-LogMessage -Type Verbose -MSG "Checking for user configuration errors"
 If ($UserConfigurationErrors) {
-Write-LogMessage -Type Verbose -MSG "Listing detected user configuration errors"
+    Write-LogMessage -Type Verbose -MSG "Listing detected user configuration errors"
     # Misconfigurations have been detected and will be listed by the following section
     $UsersWithConfigurationErrors = $UserConfigurationErrors.UserName | Select-Object -Unique # Get a list of the affected users
     $UsersWithConfigurationErrors | ForEach-Object { # For each user
@@ -2450,10 +2450,10 @@ If ($OperationsToPerform.TestInstallerUserCredentials) {
     }
 }
 
-        $ArrayOfUserOnboardingConflictErrors = @()
-        If ($OperationsToPerform.ExistingAccountCheck) {
-        $AccountsToOnboard = @()
-        If ($pvwaToken) {
+$ArrayOfUserOnboardingConflictErrors = @()
+If ($OperationsToPerform.ExistingAccountCheck) {
+    $AccountsToOnboard = @()
+    If ($pvwaToken) {
         Write-LogMessage -Type Verbose -MSG "Retrieving PSM user details from vault"
         $ExistingAccountsObj = Get-VaultAccountDetails -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $Safe
         Write-LogMessage -Type Verbose -MSG "Checking if the found accounts have the correct details"
@@ -2590,11 +2590,11 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
         $platformStatus = Get-PlatformStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId $PlatformName
     }
     #    else {
-        #        Write-LogMessage -Type Verbose -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
-        #        $TasksTop += @{
+    #        Write-LogMessage -Type Verbose -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
+    #        $TasksTop += @{
     #            Message  = ("Enable automatic password management for the PSM accounts")
     #            Priority = "Recommended"
-        #        }
+    #        }
     #    }
     if ($platformStatus.Active -eq $false) {
         Write-LogMessage -Type Verbose -MSG "Platform is deactivated. Activating."
@@ -2615,12 +2615,12 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
         }
     }
     #    If (!($safeStatus.managingCpm)) {
-        #        # Safe exists but no CPM assigned
-        #        Write-LogMessage -Type Verbose -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
-        #        $TasksTop += @{
-            #            Message  = ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
-            #            Priority = "Recommended"
-        #        }
+    #        # Safe exists but no CPM assigned
+    #        Write-LogMessage -Type Verbose -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
+    #        $TasksTop += @{
+    #            Message  = ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
+    #            Priority = "Recommended"
+    #        }
     #    }
     # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
     If ($UM) {
@@ -2642,7 +2642,7 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
         If ($OnboardResult.name) {
             Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
         }
-ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
+        ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
             $UserType = $AccountToOnboard.UserType
             Write-LogMessage -Type Warning -MSG "Object with name $NewAccountName already exists. Please verify that it contains correct"
             Write-LogMessage -Type Warning -MSG "  $UserType account details, or specify an alternative account name."
