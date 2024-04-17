@@ -509,7 +509,6 @@ Function Set-CurrentSecurityPolicy {
 }
 
 Function Get-ProxyDetails {
-    Write-LogMessage -type Verbose -MSG "Detecting proxy from user profile"
     try {
         $ProxyStatus = (Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings').ProxyEnable
         If ($ProxyStatus -eq 1) {
@@ -636,6 +635,10 @@ Function Get-ServiceInstallPath {
             $regPath = $m_ServiceList | Where-Object { $_.PSChildName -eq $ServiceName }
             If ($Null -ne $regPath) {
                 $retInstallPath = $regPath.ImagePath.Substring($regPath.ImagePath.IndexOf('"'), $regPath.ImagePath.LastIndexOf('"') + 1)
+            }
+            else {
+                Write-LogMessage -type Error -MSG "Could not find PSM installation. Exiting."
+                exit 1
             }
         }
         catch {
@@ -2003,6 +2006,7 @@ $BackupPath = "$psmRootInstallLocation\Backup\Set-DomainUser\$BackupSubDirectory
 $ValidatedInputFileName = "_Set-DomainUserValidatedInputs.xml"
 $ValidatedInputFile = "$ScriptLocation\$ValidatedInputFileName"
 $ValidationFailed = $false
+$PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
 $PSMConnectUserName = ""
 $PSMAdminConnectUserName = ""
 $TasksTop = @()
@@ -2074,10 +2078,15 @@ else {
 ## Proxy configuration
 If ($OperationsToPerform.DetectProxy) {
     # Get proxy details from user profile
+    Write-LogMessage -type Verbose -MSG "Detecting proxy from user profile"
     $DetectedProxy = Get-ProxyDetails
 
     If ($DetectedProxy) {
-        $ProxyInfo = ("--------------------------------------------------------`nDetected the following proxy details:`n  Proxy Address:     {0}`nIs this correct?" -f $DetectedProxy)
+        $ProxyInfo = ""
+        $ProxyInfo += ("--------------------------------------------------------`n")
+        $ProxyInfo += ("Detected the following proxy details:`n")
+        $ProxyInfo += ("  Proxy Address:     {0}`n" -f $DetectedProxy)
+$ProxyInfo += ("Is this correct?")
 
         $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
         $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the proxy details are correct"))
@@ -2100,8 +2109,9 @@ If ($OperationsToPerform.DetectProxy) {
         $Proxy = "None"
     }
 }
-
+Write-LogMessage -type Verbose -MSG "Creating WebRequestSession object"
 $Global:WebRequestSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+Write-LogMessage -type Verbose -MSG "Creating proxy object"
 $ProxyObject = New-Object System.Net.WebProxy
 
 If ("None" -ne $Proxy) {
@@ -2115,6 +2125,7 @@ If ("None" -ne $Proxy) {
     }
 }
 
+Write-LogMessage -type Verbose -MSG "Setting proxy on WebRequestSession object"
 $Global:WebRequestSession.Proxy = $ProxyObject
 
 ## Check if domain user
@@ -2151,6 +2162,7 @@ if ($OperationsToPerform.DomainNetbiosNameDetection) {
 
 # Gather information from user
 ## PSMConnect user
+Write-LogMessage -Type Verbose -MSG "Getting PSMConnect user details if required"
 if ($OperationsToPerform.GetPSMConnectUserCredentials) {
     $psmConnectCredentials = Get-Credential -Message "Please enter PSMConnect domain user credentials" -UserName $PSMConnectUserName
     if (!($psmConnectCredentials)) {
@@ -2161,6 +2173,7 @@ if ($OperationsToPerform.GetPSMConnectUserCredentials) {
 }
 
 ## PSMAdminConnect user
+Write-LogMessage -Type Verbose -MSG "Getting PSMAdminConnect user details if required"
 if ($OperationsToPerform.GetPSMAdminConnectUserCredentials) {
     $psmAdminCredentials = Get-Credential -Message "Please enter PSMAdminConnect domain user credentials" -UserName $PSMAdminConnectUserName
     if (!($psmAdminCredentials)) {
@@ -2171,6 +2184,7 @@ if ($OperationsToPerform.GetPSMAdminConnectUserCredentials) {
 }
 
 ## InstallerUser/Tina
+Write-LogMessage -Type Verbose -MSG "Getting Tina user details if required"
 $InstallUserError = $false
 If ($OperationsToPerform.GetInstallerUserCredentials) {
     if ($null -eq $InstallUser) {
@@ -2185,8 +2199,13 @@ If ($OperationsToPerform.GetInstallerUserCredentials) {
 
 # Validate detected AD domain details
 If ($DomainNameAutodetected) {
-
-    $DomainInfo = ("--------------------------------------------------------`nDetected the following domain names:`n  DNS name:     {0}`n  NETBIOS name: {1}`nIs this correct?" -f $DomainDNSName, $DomainNetbiosName)
+Write-LogMessage -Type Verbose -MSG "Confirming auto-detected domain details"
+    $DomainInfo = ""
+    $DomainInfo += ("--------------------------------------------------------`n")
+    $DomainInfo += ("Detected the following domain names:`n")
+    $DomainInfo += ("  DNS name:     {0}`n" -f $DomainDNSName)
+    $DomainInfo += ("  NETBIOS name: {0}`n" -f $DomainNetbiosName)
+    $DomainInfo += ("Is this correct?")
 
     $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
     $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the domain details are correct"))
@@ -2262,7 +2281,7 @@ foreach ($CurrentUser in $PSMAccountDetailsArray) {
     $Credential = $CurrentUser.Credentials
     $UserName = $Credential.UserName
     $UserType = $CurrentUser.UserType
-    Write-LogMessage -type Verbose -MSG "Testing $UserType credentials"
+    Write-LogMessage -type Verbose -MSG "Testing $Username credentials"
     try {
         if ($OperationsToPerform.UserTests) {
             # Test PSM credentials
@@ -2333,7 +2352,9 @@ foreach ($CurrentUser in $PSMAccountDetailsArray) {
 }
 
 # List detected PSM user configuration errors
+Write-LogMessage -Type Verbose -MSG "Checking for user configuration errors"
 If ($UserConfigurationErrors) {
+Write-LogMessage -Type Verbose -MSG "Listing detected user configuration errors"
     # Misconfigurations have been detected and will be listed by the following section
     $UsersWithConfigurationErrors = $UserConfigurationErrors.UserName | Select-Object -Unique # Get a list of the affected users
     $UsersWithConfigurationErrors | ForEach-Object { # For each user
@@ -2505,12 +2526,15 @@ If ($ArrayOfUserErrors) {
 
 If ($ArrayOfUserOnboardingConflictErrors) {
     Write-LogMessage -type Error -MSG $SectionSeparator
-    Write-LogMessage -type Error -MSG "PSM users exist in the vault with details that do not match this environment. See below for comparisons of the conflicting users."
+    Write-LogMessage -type Error -MSG "PSM users exist in the vault with details that do not match this environment."
+    Write-LogMessage -type Error -MSG "See below for comparisons of the conflicting users."
     foreach ($UserConflict in $ArrayOfUserOnboardingConflictErrors) {
         Write-LogMessage -type Error -MSG $StandardSeparator
         Write-LogMessage -type Error -MSG $UserConflict
     }
-    Write-LogMessage -type Error -MSG "Use -PSMConnectAccountName, -PSMAdminConnectAccountName and -Safe parameters to provide alternative details for this environment."
+    Write-LogMessage -type Error -MSG "This check can be skipped with the -SkipExistingAccountCheck parameter, or"
+    Write-LogMessage -type Error -MSG "Use -PSMConnectAccountName, -PSMAdminConnectAccountName and -Safe parameters"
+    Write-LogMessage -type Error -MSG "to provide alternative details for this environment."
 }
 
 If ($ArrayOfTinaErrors) {
@@ -2539,7 +2563,7 @@ If ($ValidationFailed) {
 #Write-LogMessage -type Info -MSG "Please resolve any errors and run Set-DomainUser again to try again."
 
 # Remote Configuration
-If ($OperationsToPerform.RemoteConfiguration) {
+If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
     Write-LogMessage -type Info -MSG "Starting backend configuration"
 
     # Get platform info
@@ -2568,13 +2592,13 @@ If ($OperationsToPerform.RemoteConfiguration) {
         # Get platform info again so we can ensure it's activated
         $platformStatus = Get-PlatformStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId $PlatformName
     }
-    else {
-        Write-LogMessage -Type Verbose -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
-        $TasksTop += @{
-            Message  = ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
-            Priority = "Recommended"
-        }
-    }
+    #    else {
+        #        Write-LogMessage -Type Verbose -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
+        #        $TasksTop += @{
+    #            Message  = ("Enable automatic password management for the PSM accounts")
+    #            Priority = "Recommended"
+        #        }
+    #    }
     if ($platformStatus.Active -eq $false) {
         Write-LogMessage -Type Verbose -MSG "Platform is deactivated. Activating."
         Activate-Platform -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -Platform $platformStatus.Id
@@ -2593,14 +2617,14 @@ If ($OperationsToPerform.RemoteConfiguration) {
             exit 1
         }
     }
-    If (!($safeStatus.managingCpm)) {
-        # Safe exists but no CPM assigned
-        Write-LogMessage -Type Verbose -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
-        $TasksTop += @{
-            Message  = ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
-            Priority = "Recommended"
-        }
-    }
+    #    If (!($safeStatus.managingCpm)) {
+        #        # Safe exists but no CPM assigned
+        #        Write-LogMessage -Type Verbose -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
+        #        $TasksTop += @{
+            #            Message  = ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
+            #            Priority = "Recommended"
+        #        }
+    #    }
     # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
     If ($UM) {
         $SafePermissions = Get-SafePermissions -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $safe -safeMember "Vault Admins"
@@ -2637,7 +2661,6 @@ ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
     }
 }
 
-$PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
 If ($OperationsToPerform.ServerObjectConfiguration) {
     Write-LogMessage -type Verbose -MSG "Configuring backend PSM server objects"
     $VaultAddress = Get-VaultAddress -psmRootInstallLocation $psmRootInstallLocation
@@ -2918,6 +2941,11 @@ If ($SkipPSMObjectUpdate -or $LocalConfigurationOnly) {
             Priority = "Required"
         }
     )
+}
+
+$TasksTop += @{
+    Message  = ("Ensure automatic password management is enabled for the PSM accounts")
+    Priority = "Recommended"
 }
 
 # Display summary and additional tasks
