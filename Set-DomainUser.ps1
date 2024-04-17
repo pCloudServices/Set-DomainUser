@@ -1,50 +1,52 @@
 <#
 .SYNOPSIS
-This script will update the connector server to a domain user setup. It will also onboard the domain users into the portal inside the PSM safe.
-.DESCRIPTION
-Does the Domain User for PSM setup.
+ This script will update the connector server to a domain user setup. It will also onboard the domain users into the portal inside the PSM safe.
+.DESCRIPTION 
+ Configures PSM to use domain-based PSMConnect and PSMAdminConnect users instead of the default local users. 
 .PARAMETER PrivilegeCloudUrl
-The PVWA Address (e.g. https://tenant.privilegecloud.cyberark.cloud, or on-prem URL)
+ The PVWA Address (e.g. https://tenant.privilegecloud.cyberark.cloud, or on-prem URL)
 .PARAMETER VaultAddress
-The Vault Address (e.g. vault-SUBDOMAIN.privilegecloud.cyberark.cloud)
+ The Vault Address (e.g. vault-SUBDOMAIN.privilegecloud.cyberark.cloud)
 .PARAMETER DomainDNSName
-The fully qualified domain name of the domain user account(s).
+ The fully qualified domain name of the domain user account(s).
 .PARAMETER DomainNetbiosName
-The NETBIOS name for the domain user account(s).
+ The NETBIOS name for the domain user account(s).
 .PARAMETER Safe
-The safe in which to store PSM user credentials
+ The safe in which to store PSM user credentials
 .PARAMETER InstallUser
-Tenant Administrator/InstallerUser credentials
+ Tenant Administrator/InstallerUser credentials
 .PARAMETER psmConnectCredentials
-PSMConnect domain user credentials
+ PSMConnect domain user credentials
 .PARAMETER psmAdminCredentials
-PSMAdminConnect domain user credentials
+ PSMAdminConnect domain user credentials
 .PARAMETER IgnoreShadowPermissionErrors
-Ignore errors while granting PSMAdminConnect user shadow permissions
+ Ignore errors while granting PSMAdminConnect user shadow permissions
 .PARAMETER PlatformName
-The name of the platform to be created for the PSM accounts
+ The name of the platform to be created for the PSM accounts
 .PARAMETER PSMConnectAccountName
-The Account Name for the object in the vault which will contain the PSMConnect account. Defaults to "PSMConnect".
+ The Account Name for the object in the vault which will contain the PSMConnect account. Defaults to "PSMConnect".
 .PARAMETER PSMAdminConnectAccountName
-The Account Name for the object in the vault which will contain the PSMAdminConnect account. Defaults to "PSMAdminConnect".
+ The Account Name for the object in the vault which will contain the PSMAdminConnect account. Defaults to "PSMAdminConnect".
 .PARAMETER DoNotHarden
-Skip running the PSMHardening.ps1 script to speed up execution if step has already been completed.
+ Skip running the PSMHardening.ps1 script to speed up execution if step has already been completed.
 .PARAMETER DoNotConfigureAppLocker
-Skip running the PSMConfigureAppLocker.ps1 script to speed up execution if step has already been completed.
+ Skip running the PSMConfigureAppLocker.ps1 script to speed up execution if step has already been completed.
 .PARAMETER LocalConfigurationOnly
-Do not onboard accounts in Privilege Cloud. Use on subsequent servers after first run.
+ Do not onboard accounts in Privilege Cloud. Use on subsequent servers after first run.
 .PARAMETER SkipPSMUserTests
-Do not check the configuration of the PSM domain users for errors
+ Do not check the configuration of the PSM domain users for errors
 .PARAMETER SkipPSMObjectUpdate
-Do not update the PSM server object in backend
+ Do not update the PSM server object in backend
 .PARAMETER SkipSecurityPolicyConfiguration
-Do not update Local Security Policy to allow PSM users to log on with Remote Desktop
+ Do not update Local Security Policy to allow PSM users to log on with Remote Desktop
 .PARAMETER SkipAddingUsersToRduGroup
-Do not add PSM users to the Remote Desktop Users group
+ Do not add PSM users to the Remote Desktop Users group
 .PARAMETER SkipExistingAccountCheck
-Do not check whether PSM users already exist in the vault
+ Do not check whether PSM users already exist in the vault
 .PARAMETER NotFirstRun
-This script is being run on additional servers following the first. Skip platform and safe creation and account onboarding.
+ This script is being run on additional servers following the first. Skip platform and safe creation and account onboarding.
+.VERSION 14.1.0
+.AUTHOR CyberArk
 #>
 
 # Version: 14.1.0
