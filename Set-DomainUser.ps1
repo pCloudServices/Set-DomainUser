@@ -1062,7 +1062,7 @@ Function Add-AdminUserTSShadowPermission {
     }
 }
 
-Function Duplicate-Platform {
+Function Copy-Platform {
     <#
     .SYNOPSIS
     Duplicating the windows domain user platform so we can onboard the accounts into that platform
@@ -1224,7 +1224,7 @@ Function Get-SafeStatus {
     }
 }
 
-Function Activate-Platform {
+Function Enable-Platform {
     <#
     .SYNOPSIS
     Activate the required platform
@@ -1256,7 +1256,7 @@ Function Activate-Platform {
     }
 }
 
-Function Create-PSMSafe {
+Function New-PSMSafe {
     <#
     .SYNOPSIS
     Creates a new PSM Safe with correct permissions
@@ -1534,7 +1534,7 @@ Function New-SafePermissions {
     }
 }
 
-Function Check-UM {
+Function Test-UM {
     <#
     .SYNOPSIS
     Checks to see if tenant is UM or not (from the connector server)
@@ -2070,7 +2070,7 @@ If (Test-Path $ValidatedInputFile) {
 }
 
 # Perform initial checks
-If (Check-UM -psmRootInstallLocation $psmRootInstallLocation) {
+If (Test-UM -psmRootInstallLocation $psmRootInstallLocation) {
     $UM = $true
 }
 else {
@@ -2583,7 +2583,7 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
         }
         # Creating Platform
         Write-LogMessage -Type Verbose -MSG "Creating new platform"
-        Duplicate-Platform -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -CurrentPlatformId $WinDomainPlatformId -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
+        Copy-Platform -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -CurrentPlatformId $WinDomainPlatformId -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
         $TasksTop += @{
             Message  = ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
             Priority = "Recommended"
@@ -2600,14 +2600,14 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
     #    }
     if ($platformStatus.Active -eq $false) {
         Write-LogMessage -Type Verbose -MSG "Platform is deactivated. Activating."
-        Activate-Platform -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -Platform $platformStatus.Id
+        Enable-Platform -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -Platform $platformStatus.Id
     }
     Write-LogMessage -Type Verbose -MSG "Checking current safe status"
     $safeStatus = Get-SafeStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -SafeName $Safe
     if ($safeStatus -eq $false) {
         # function returns false if safe does not exist
         Write-LogMessage -Type Verbose -MSG "Safe $Safe does not exist. Creating the safe now"
-        $CreateSafeResult = Create-PSMSafe -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $Safe
+        $CreateSafeResult = New-PSMSafe -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $Safe
         If ($CreateSafeResult) {
             Write-LogMessage -type Verbose "Successfully created safe $safe"
         }
