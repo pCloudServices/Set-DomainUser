@@ -2507,11 +2507,11 @@ If ($OperationsToPerform.ExistingAccountCheck) {
     }
 }
 else {
-    Write-LogMessage -type Verbose -MSG "-SkipExistingAccountCheck requested, so will attempt to onboard all accounts."
+    Write-LogMessage -type Verbose -MSG "Skipping existing vaulted accounted check"
     $AccountsToOnboard = $PSMAccountDetailsArray
 }
 
-Write-LogMessage -type Verbose -MSG "Completed PSM and install user tests"
+Write-LogMessage -type Verbose -MSG "Completed validation steps"
 
 If ($ArrayOfUserErrors) {
     Write-LogMessage -type Error -MSG $SectionSeparator
@@ -2943,7 +2943,7 @@ If ($SkipPSMObjectUpdate -or $LocalConfigurationOnly) {
 }
 
 $TasksTop += @{
-    Message  = ("Ensure automatic password management is enabled for the PSM accounts")
+    Message  = ("Ensure automatic password management is configured for the PSM accounts")
     Priority = "Recommended"
 }
 
