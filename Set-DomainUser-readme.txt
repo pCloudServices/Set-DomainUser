@@ -41,5 +41,6 @@ Optional parameters:
 	SkipPSMObjectUpdate				- By default the script will configure the PSM server object with the updated PSM user details. This option skips this configuration.
 	SkipSecurityPolicyConfiguration - Do not update Local Security Policy to allow PSM users to log on with Remote Desktop
 	SkipAddingUsersToRduGroup       - Do not add PSM users to the Remote Desktop Users group
+	SkipExistingAccountCheck		- Do not check whether the PSM users have already been onboarded and have correct username and address
 	Verbose 						- Show detailed progress messages to assist with troubleshooting
 	
