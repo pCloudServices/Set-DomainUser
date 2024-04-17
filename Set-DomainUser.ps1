@@ -49,8 +49,6 @@
 .AUTHOR CyberArk
 #>
 
-# Version: 14.1.0
-
 [CmdletBinding()]
 param(
     [Parameter(
