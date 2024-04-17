@@ -41,6 +41,8 @@ Do not update the PSM server object in backend
 Do not update Local Security Policy to allow PSM users to log on with Remote Desktop
 .PARAMETER SkipAddingUsersToRduGroup
 Do not add PSM users to the Remote Desktop Users group
+.PARAMETER SkipExistingAccountCheck
+Do not check whether PSM users already exist in the vault
 .PARAMETER NotFirstRun
 This script is being run on additional servers following the first. Skip platform and safe creation and account onboarding.
 #>
@@ -147,6 +149,11 @@ param(
         Mandatory = $false,
         HelpMessage = "Do not add PSM users to the Remote Desktop Users group")]
     [switch]$SkipAddingUsersToRduGroup,
+
+    [Parameter(
+        Mandatory = $false,
+        HelpMessage = "Do not check whether PSM users already exist in the vault")]
+    [switch]$SkipExistingAccountCheck,
 
     [Parameter(
         Mandatory = $false,
@@ -1921,6 +1928,9 @@ $OperationsToPerform = @{
 
 # Determine what operations need to be performed
 switch ($PSBoundParameters) {
+{ $_.SkipExistingAccountCheck } {
+        $OperationsToPerform.ExistingAccountCheck = $false
+    }
     { $_.psmConnectCredentials } {
         $OperationsToPerform.GetPSMConnectUserCredentials = $false
     }
@@ -1949,6 +1959,7 @@ switch ($PSBoundParameters) {
         $OperationsToPerform.UserTests = $false
         $OperationsToPerform.GetInstallerUserCredentials = $false
         $OperationsToPerform.TestInstallerUserCredentials = $false
+        $OperationsToPerform.ExistingAccountCheck = $false
     }
     { $_.DoNotHarden } {
         $OperationsToPerform.Hardening = $false
@@ -1960,6 +1971,7 @@ switch ($PSBoundParameters) {
         $OperationsToPerform.SecurityPolicyConfiguration = $false
     }
     { $_.SkipAddingUsersToRduGroup } {
+        $OperationsToPerform.ExistingAccountCheck = $false
         $OperationsToPerform.RemoteDesktopUsersGroupAddition = $false
     }
     { $_.DoNotConfigureAppLocker } {
@@ -2196,26 +2208,27 @@ If ($DomainNameAutodetected) {
 
 # Test users
 Write-LogMessage -type Info -MSG "Validating PSM and install user details"
-$UsersToTest = @(
+$PSMAccountDetailsArray = @(
     @{
-        Credential = $psmConnectCredentials
-        UserType   = "PSMConnect"
+        Credentials = $psmConnectCredentials
+        AccountName = $PSMConnectAccountName
+        UserType    = "PSMConnect"
     },
     @{
-        Credential = $psmAdminCredentials
-        UserType   = "PSMAdminConnect"
+        Credentials = $psmAdminCredentials
+        AccountName = $PSMAdminConnectAccountName
+        UserType    = "PSMAdminConnect"
     }
 )
 
 # Test PSM user configuration
 #Initialise array which will capture detected misconfigurations
 $UserConfigurationErrors = @()
-
 $ArrayOfUserErrors = @()
 
 ## Test PSM user credential format
-foreach ($CurrentUser in $UsersToTest) {
-    $Credential = $CurrentUser.Credential
+foreach ($CurrentUser in $PSMAccountDetailsArray) {
+    $Credential = $CurrentUser.Credentials
     $Username = $Credential.UserName
     $UserType = $CurrentUser.UserType
     Write-LogMessage -type Verbose -MSG "Testing $UserType credential format"
@@ -2245,15 +2258,15 @@ foreach ($CurrentUser in $UsersToTest) {
 }
 
 ## Test PSM user credentials
-foreach ($CurrentUser in $UsersToTest) {
-    $Credential = $CurrentUser.Credential
+foreach ($CurrentUser in $PSMAccountDetailsArray) {
+    $Credential = $CurrentUser.Credentials
+    $UserName = $Credential.UserName
     $UserType = $CurrentUser.UserType
     Write-LogMessage -type Verbose -MSG "Testing $UserType credentials"
     try {
         if ($OperationsToPerform.UserTests) {
             # Test PSM credentials
-            $UserName = $Credential.UserName
-            if (ValidateCredentials -domain $DomainDNSName -Credential $Credential) {
+                        if (ValidateCredentials -domain $DomainDNSName -Credential $Credential) {
                 $InputName = ($UserType + "UserName")
                 Write-LogMessage -Type Verbose -MSG "$UserName user credentials validated"
             }
@@ -2271,12 +2284,12 @@ foreach ($CurrentUser in $UsersToTest) {
 }
 
 ## Test PSM user configuration
-foreach ($CurrentUser in $UsersToTest) {
+foreach ($CurrentUser in $PSMAccountDetailsArray) {
     $FailedToSearchAD = $false
     Write-LogMessage -type Verbose -MSG "Testing $UserType configuration"
-    $Credential = $CurrentUser.Credential
-    $UserType = $CurrentUser.UserType
+    $Credential = $CurrentUser.Credentials
     $Username = $Credential.UserName
+    $UserType = $CurrentUser.UserType
     if ($OperationsToPerform.UserTests) {
         try {
             # Search for user by name
@@ -2420,18 +2433,13 @@ If ($OperationsToPerform.RemoteConfiguration) {
     If ($pvwaToken) {
         $ExistingAccountsObj = Get-VaultAccountDetails -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $Safe
         $ArrayOfUserOnboardingConflictErrors = @()
-        $CheckIfTheseAccountsExistInVault = @(
-            [PSCustomObject]@{
-                Credentials = $psmConnectCredentials
-                AccountName = $PSMConnectAccountName
-            },
-            [PSCustomObject]@{
-                Credentials = $psmAdminCredentials
-                AccountName = $PSMAdminConnectAccountName
-            }
-        )
+        If ($OperationsToPerform.ExistingAccountCheck) {
         $AccountsToOnboard = @()
-        foreach ($AccountToCheck in $CheckIfTheseAccountsExistInVault) {
+        If ($pvwaToken) {
+        Write-LogMessage -Type Verbose -MSG "Retrieving PSM user details from vault"
+        $ExistingAccountsObj = Get-VaultAccountDetails -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $Safe
+        Write-LogMessage -Type Verbose -MSG "Checking if the found accounts have the correct details"
+        foreach ($AccountToCheck in $PSMAccountDetailsArray) {
             $ReqCredentials = $AccountToCheck.Credentials
             $ReqUserName = $ReqCredentials.UserName
             $ReqAccountName = $AccountToCheck.AccountName
@@ -2444,7 +2452,8 @@ If ($OperationsToPerform.RemoteConfiguration) {
                 $ExistingAccountUsername = $ExistingAccountObj.userName
                 If (($ExistingAccountAddress -ne $DomainDNSName) -or ($ExistingAccountUsername -ne $ReqUserName)) {
                     $NewError = ""
-                    $NewError += ("An object with Account Name `"{0}`" already exists in the safe `"{1}`" and its details do not match the specified user details. A comparison is below.`n" -f $ReqAccountName, $Safe)
+                    $NewError += ("An object with Account Name `"{0}`" already exists in the safe `"{1}`" and `n" -f $ReqAccountName, $Safe)
+                    $NewError += ("  its details do not match the specified user details. A comparison is below.`n" -f $ReqAccountName, $Safe)
                     $Comparison = @(
                         [PSCustomObject]@{
                             Account  = "Existing user"
@@ -2458,6 +2467,7 @@ If ($OperationsToPerform.RemoteConfiguration) {
                         }
                     )
                     $NewError += ($Comparison | Out-String).Trim()
+                    $NewError += "`n"
                     $ArrayOfUserOnboardingConflictErrors += $NewError
                     $ValidationFailed = $true
                 }
@@ -2467,17 +2477,18 @@ If ($OperationsToPerform.RemoteConfiguration) {
             }
             else {
                 # Account not found, will be onboarded
-                Write-LogMessage -type Verbose -MSG "Account does not exist yet. Will be onboarded."
-                $AccountsToOnboard += [PSCustomObject]@{
-                    Credentials = $ReqCredentials
-                    AccountName = $ReqAccountName
-                }
+                Write-LogMessage -type Verbose -MSG "Account does not exist yet."
+                $AccountsToOnboard += $AccountToCheck
             }
         }
     }
     else {
         Write-LogMessage -type Verbose -MSG "Skipping user onboarding conflict check as we have not authenticated to backend."
     }
+}
+else {
+    Write-LogMessage -type Verbose -MSG "-SkipExistingAccountCheck requested, so will attempt to onboard all accounts."
+    $AccountsToOnboard = $PSMAccountDetailsArray
 }
 
 Write-LogMessage -type Verbose -MSG "Completed PSM and install user tests"
@@ -2609,6 +2620,15 @@ If ($OperationsToPerform.RemoteConfiguration) {
         $OnboardResult = New-VaultAdminObject -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -name $NewAccountName -domain $DomainDNSName -Credentials $NewCredentials -platformID $PlatformName -safe $safe
         If ($OnboardResult.name) {
             Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
+        }
+ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
+            $UserType = $AccountToOnboard.UserType
+            Write-LogMessage -Type Warning -MSG "Object with name $NewAccountName already exists. Please verify that it contains correct"
+            Write-LogMessage -Type Warning -MSG "  $UserType account details, or specify an alternative account name."
+            $TasksTop += @{
+                Message  = ("Verify that the {0} object in {1} safe contains correct {2} user details" -f $NewAccountName, $safe, $UserType)
+                Priority = "Required"
+            }
         }
         Else {
             Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
