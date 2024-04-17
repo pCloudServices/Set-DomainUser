@@ -2455,7 +2455,7 @@ If ($OperationsToPerform.TestInstallerUserCredentials) {
 $ArrayOfUserOnboardingConflictErrors = @()
 If ($OperationsToPerform.ExistingAccountCheck) {
     $AccountsToOnboard = @()
-    If ($pvwaToken) {
+    If ($false -eq [string]::IsNullOrEmpty($pvwaToken)) { # double negative; read: "if $pvwaToken is set"
         Write-LogMessage -Type Verbose -MSG "Retrieving PSM user details from vault"
         $ExistingAccountsObj = Get-VaultAccountDetails -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $Safe
         Write-LogMessage -Type Verbose -MSG "Checking if the found accounts have the correct details"
