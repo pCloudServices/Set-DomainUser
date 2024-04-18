@@ -2306,7 +2306,11 @@ If ($ArrayOfTinaErrors) {
     }
 }
 
-# Gather information from user
+If ($ValidationFailed) {
+    Write-LogMessage -type Info -MSG "Some tests failed, and details are shown above. Please correct these and rerun Set-DomainUser."
+    exit 1
+}
+
 ## PSMConnect user
 Write-LogMessage -Type Verbose -MSG "Getting PSMConnect user details if required"
 if ($OperationsToPerform.GetPSMConnectUserCredentials) {
