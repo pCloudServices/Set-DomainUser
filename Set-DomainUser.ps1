@@ -2051,6 +2051,7 @@ $ValidationFailed = $false
 $PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
 $PSMConnectUserName = ""
 $PSMAdminConnectUserName = ""
+$pvwaToken = ""
 $TasksTop = @()
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
