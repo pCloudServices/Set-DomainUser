@@ -2231,7 +2231,80 @@ If ($DomainNameAutodetected) {
     }
 }
 
+## InstallerUser/Tina
+Write-LogMessage -Type Verbose -MSG "Getting Tina user details if required"
+$InstallUserError = $false
+If ($OperationsToPerform.GetInstallerUserCredentials) {
+    if ($null -eq $InstallUser) {
+        $InstallUser = Get-Credential -Message ("Please enter installer user credentials") -UserName $InstallUserName
+        if (!($InstallUser)) {
+            Write-LogMessage -Type Error -MSG "No install user credentials provided. Exiting."
+            exit 1
+        }
+    }
+    $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input "InstallUserName" -Value $InstallUser.UserName
+}
 
+$ArrayOfTinaErrors = @()
+
+## Test InstallerUser/Tina user credentials
+If ($OperationsToPerform.TestInstallerUserCredentials) {
+    try {
+        If ($true -ne $InstallUserError) {
+            # for each section, check that the previous section succeeded.
+            Write-LogMessage -type Verbose -MSG "Testing install user credentials"
+            $pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $PrivilegeCloudUrl -InstallUser $InstallUser
+            if ($pvwaTokenResponse.ErrorCode -ne "Success") {
+                # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
+                # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.
+                # The error message shown could be from a JSON response, e.g. wrong password, or a connection error.
+                $NewError = ""
+                $NewError += "Logon to PVWA failed. Result:`n"
+                $NewError += ("Error code: {0}`n" -f $pvwaTokenResponse.ErrorCode)
+                $NewError += ("Error message: {0}" -f $pvwaTokenResponse.ErrorMessage)
+                $ArrayOfTinaErrors += $NewError
+                Throw
+            }
+            $PVWATokenIsValid = ($pvwaTokenResponse.Response -match "[0-9a-zA-Z]{200,256}")
+            if ($false -eq $PVWATokenIsValid) {
+                # If we get here, it means we got a 200 response from the server, but the data it returned was not a valid token.
+                # In this case, we display the response we got from the server to aid troubleshooting.
+                $NewError = ""
+                $NewError += "Response from server was not a valid token:"
+                $NewError += $pvwaTokenResponse.Response
+                $ArrayOfTinaErrors += $NewError
+                Throw
+            }
+            # If we get here, the token was retrieved successfully and looks valid. We'll still test it though.
+
+            $PvwaTokenTestResponse = Test-PvwaToken -Token $pvwaTokenResponse.Response -pvwaAddress $PrivilegeCloudUrl
+            if (($true -ne $InstallUserError) -and ($PvwaTokenTestResponse.ErrorCode -eq "Success")) {
+                $pvwaToken = $pvwaTokenResponse.Response
+            }
+            else {
+                $NewError = ""
+                $NewError += "PVWA Token validation failed. Result:"
+                $NewError += $PvwaTokenTestResponse.Response
+                $ArrayOfTinaErrors += $NewError
+                Throw
+            }
+            $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input InstallUser -Value $InstallUser
+        }
+    }
+    catch {
+        $ValidationFailed = $true
+    }
+}
+
+If ($ArrayOfTinaErrors) {
+    Write-LogMessage -type Error -MSG $SectionSeparator
+    Write-LogMessage -type Error -MSG "The following errors occurred while validating the install user details:"
+    Write-LogMessage -type Error -MSG $StandardSeparator
+    foreach ($TinaError in $ArrayOfTinaErrors) {
+        Write-LogMessage -type Error -MSG $TinaError
+        Write-LogMessage -type Error -MSG $StandardSeparator
+    }
+}
 
 # Gather information from user
 ## PSMConnect user
@@ -2254,20 +2327,6 @@ if ($OperationsToPerform.GetPSMAdminConnectUserCredentials) {
         exit 1
     }
     $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input "PSMAdminConnectUserName" -Value $psmAdminCredentials.UserName
-}
-
-## InstallerUser/Tina
-Write-LogMessage -Type Verbose -MSG "Getting Tina user details if required"
-$InstallUserError = $false
-If ($OperationsToPerform.GetInstallerUserCredentials) {
-    if ($null -eq $InstallUser) {
-        $InstallUser = Get-Credential -Message ("Please enter installer user credentials") -UserName $InstallUserName
-        if (!($InstallUser)) {
-            Write-LogMessage -Type Error -MSG "No install user credentials provided. Exiting."
-            exit 1
-        }
-    }
-    $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input "InstallUserName" -Value $InstallUser.UserName
 }
 
 # Test users
@@ -2443,57 +2502,7 @@ If ($UserConfigurationErrors) {
     $ValidationFailed = $true
 }
 
-$ArrayOfTinaErrors = @()
-
 # Remote Configuration
-## Test InstallerUser/Tina user credentials
-If ($OperationsToPerform.TestInstallerUserCredentials) {
-    try {
-        If ($true -ne $InstallUserError) {
-            # for each section, check that the previous section succeeded.
-            Write-LogMessage -type Verbose -MSG "Testing install user credentials"
-            $pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $PrivilegeCloudUrl -InstallUser $InstallUser
-            if ($pvwaTokenResponse.ErrorCode -ne "Success") {
-                # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
-                # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.
-                # The error message shown could be from a JSON response, e.g. wrong password, or a connection error.
-                $NewError = ""
-                $NewError += "Logon to PVWA failed. Result:`n"
-                $NewError += ("Error code: {0}`n" -f $pvwaTokenResponse.ErrorCode)
-                $NewError += ("Error message: {0}" -f $pvwaTokenResponse.ErrorMessage)
-                $ArrayOfTinaErrors += $NewError
-                Throw
-            }
-            $PVWATokenIsValid = ($pvwaTokenResponse.Response -match "[0-9a-zA-Z]{200,256}")
-            if ($false -eq $PVWATokenIsValid) {
-                # If we get here, it means we got a 200 response from the server, but the data it returned was not a valid token.
-                # In this case, we display the response we got from the server to aid troubleshooting.
-                $NewError = ""
-                $NewError += "Response from server was not a valid token:"
-                $NewError += $pvwaTokenResponse.Response
-                $ArrayOfTinaErrors += $NewError
-                Throw
-            }
-            # If we get here, the token was retrieved successfully and looks valid. We'll still test it though.
-
-            $PvwaTokenTestResponse = Test-PvwaToken -Token $pvwaTokenResponse.Response -pvwaAddress $PrivilegeCloudUrl
-            if (($true -ne $InstallUserError) -and ($PvwaTokenTestResponse.ErrorCode -eq "Success")) {
-                $pvwaToken = $pvwaTokenResponse.Response
-            }
-            else {
-                $NewError = ""
-                $NewError += "PVWA Token validation failed. Result:"
-                $NewError += $PvwaTokenTestResponse.Response
-                $ArrayOfTinaErrors += $NewError
-                Throw
-            }
-            $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input InstallUser -Value $InstallUser
-        }
-    }
-    catch {
-        $ValidationFailed = $true
-    }
-}
 
 $ArrayOfUserOnboardingConflictErrors = @()
 If ($OperationsToPerform.ExistingAccountCheck) {
@@ -2577,16 +2586,6 @@ If ($ArrayOfUserOnboardingConflictErrors) {
     Write-LogMessage -type Error -MSG "This check can be skipped with the -SkipExistingAccountCheck parameter, or"
     Write-LogMessage -type Error -MSG "Use -PSMConnectAccountName, -PSMAdminConnectAccountName and -Safe parameters"
     Write-LogMessage -type Error -MSG "to provide alternative details for this environment."
-}
-
-If ($ArrayOfTinaErrors) {
-    Write-LogMessage -type Error -MSG $SectionSeparator
-    Write-LogMessage -type Error -MSG "The following errors occurred while validating the install user details:"
-    Write-LogMessage -type Error -MSG $StandardSeparator
-    foreach ($TinaError in $ArrayOfTinaErrors) {
-        Write-LogMessage -type Error -MSG $TinaError
-        Write-LogMessage -type Error -MSG $StandardSeparator
-    }
 }
 
 # Save validated inputs
