@@ -45,7 +45,7 @@
  Do not check whether PSM users already exist in the vault
 .PARAMETER NotFirstRun
  This script is being run on additional servers following the first. Skip platform and safe creation and account onboarding.
-.VERSION 14.1.0
+.VERSION 14.1.1
 .AUTHOR CyberArk
 #>
 
