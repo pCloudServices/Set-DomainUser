@@ -2203,6 +2203,36 @@ if ($OperationsToPerform.DomainNetbiosNameDetection) {
     $DomainNetbiosName = Get-DomainNetbiosName
 }
 
+# Validate detected AD domain details
+If ($DomainNameAutodetected) {
+    Write-LogMessage -Type Verbose -MSG "Confirming auto-detected domain details"
+    $DomainInfo = ""
+    $DomainInfo += ("--------------------------------------------------------`n")
+    $DomainInfo += ("Detected the following domain names:`n")
+    $DomainInfo += ("  DNS name:     {0}`n" -f $DomainDNSName)
+    $DomainInfo += ("  NETBIOS name: {0}`n" -f $DomainNetbiosName)
+    $DomainInfo += ("Is this correct?")
+
+    $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
+    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the domain details are correct"))
+    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct domain details can be provided"))
+
+    $DomainPromptSelection = $Host.UI.PromptForChoice("", $DomainInfo, $PromptOptions, 1)
+    If ($DomainPromptSelection -eq 0) {
+        Write-LogMessage -Type Info "Domain details confirmed"
+        $ValidatedInputs += @{
+            DomainDNSName     = $DomainDNSName
+            DomainNetbiosName = $DomainNetbiosName
+        }
+    }
+    Else {
+        Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct domain DNS and NETBIOS names on the command line."
+        $ValidationFailed = $true
+    }
+}
+
+
+
 # Gather information from user
 ## PSMConnect user
 Write-LogMessage -Type Verbose -MSG "Getting PSMConnect user details if required"
@@ -2238,34 +2268,6 @@ If ($OperationsToPerform.GetInstallerUserCredentials) {
         }
     }
     $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input "InstallUserName" -Value $InstallUser.UserName
-}
-
-# Validate detected AD domain details
-If ($DomainNameAutodetected) {
-    Write-LogMessage -Type Verbose -MSG "Confirming auto-detected domain details"
-    $DomainInfo = ""
-    $DomainInfo += ("--------------------------------------------------------`n")
-    $DomainInfo += ("Detected the following domain names:`n")
-    $DomainInfo += ("  DNS name:     {0}`n" -f $DomainDNSName)
-    $DomainInfo += ("  NETBIOS name: {0}`n" -f $DomainNetbiosName)
-    $DomainInfo += ("Is this correct?")
-
-    $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
-    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the domain details are correct"))
-    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct domain details can be provided"))
-
-    $DomainPromptSelection = $Host.UI.PromptForChoice("", $DomainInfo, $PromptOptions, 1)
-    If ($DomainPromptSelection -eq 0) {
-        Write-LogMessage -Type Info "Domain details confirmed"
-        $ValidatedInputs += @{
-            DomainDNSName     = $DomainDNSName
-            DomainNetbiosName = $DomainNetbiosName
-        }
-    }
-    Else {
-        Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct domain DNS and NETBIOS names on the command line."
-        $ValidationFailed = $true
-    }
 }
 
 # Test users
