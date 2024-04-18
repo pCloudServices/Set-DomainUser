@@ -2245,9 +2245,8 @@ If ($OperationsToPerform.GetInstallerUserCredentials) {
     $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input "InstallUserName" -Value $InstallUser.UserName
 }
 
-$ArrayOfTinaErrors = @()
-
 ## Test InstallerUser/Tina user credentials
+$ArrayOfTinaErrors = @()
 If ($OperationsToPerform.TestInstallerUserCredentials) {
     Write-LogMessage -type Info -MSG "Validating Installer user details"
     try {
