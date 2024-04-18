@@ -2249,6 +2249,7 @@ $ArrayOfTinaErrors = @()
 
 ## Test InstallerUser/Tina user credentials
 If ($OperationsToPerform.TestInstallerUserCredentials) {
+    Write-LogMessage -type Info -MSG "Validating Installer user details"
     try {
         If ($true -ne $InstallUserError) {
             # for each section, check that the previous section succeeded.
