@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
  This script will update the connector server to a domain user setup. It will also onboard the domain users into the portal inside the PSM safe.
-.DESCRIPTION 
- Configures PSM to use domain-based PSMConnect and PSMAdminConnect users instead of the default local users. 
+.DESCRIPTION
+ Configures PSM to use domain-based PSMConnect and PSMAdminConnect users instead of the default local users.
 .PARAMETER PrivilegeCloudUrl
  The PVWA Address (e.g. https://tenant.privilegecloud.cyberark.cloud, or on-prem URL)
 .PARAMETER VaultAddress
