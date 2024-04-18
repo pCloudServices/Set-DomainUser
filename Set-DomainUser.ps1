@@ -1000,6 +1000,46 @@ Function Get-VaultAccountDetails {
     }
 }
 
+Function Get-VaultAccountPassword {
+    <#
+    .SYNOPSIS
+    Onboards an account in the vault
+    .DESCRIPTION
+    Onboards an account in the vault
+    .PARAMETER pvwaAddress
+    Address of the PVWA
+    .PARAMETER pvwaToken
+    Token to log into PVWA using APIs
+    .PARAMETER safe
+    Safe to search
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $pvwaAddress,
+        [Parameter(Mandatory = $true)]
+        $pvwaToken,
+        [Parameter(Mandatory = $true)]
+        $AccountId
+    )
+
+    $url = ("{0}/PasswordVault/API/Accounts/{1}/Password/Retrieve/" -f $pvwaAddress, $AccountId)
+    try {
+        $result = Invoke-RestMethod -Method POST -Uri $url -Headers @{ "Authorization" = $pvwaToken } `
+            -ContentType "application/json" -ErrorVariable ResultError -WebSession $Global:WebRequestSession
+        return $result
+    }
+    catch {
+        try {
+            $ErrorMessage = $ResultError.Message | ConvertFrom-Json
+            return $ErrorMessage
+        }
+        catch {
+            Write-LogMessage -Type Error -MSG ("Error retrieving account password: {0}" -f $ResultError.Message)
+            exit 1
+        }
+    }
+}
+
 Function Add-AdminUserToTS {
     <#
     .SYNOPSIS
