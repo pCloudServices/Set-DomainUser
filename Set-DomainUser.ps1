@@ -2122,8 +2122,6 @@ If ($OperationsToPerform.TestInstallerUserCredentials) {
             $NewError += $PvwaTokenTestResponse.Response
             $ArrayOfTinaErrors += $NewError
             Throw
-            }
-            $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input InstallUser -Value $InstallUser
         }
     }
     catch {
