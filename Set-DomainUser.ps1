@@ -658,7 +658,7 @@ Function New-ConnectionToRestAPI {
     }
     $json = $body | ConvertTo-Json
     Try {
-        $Result = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -ContentType 'application/json' -WebSession $WebRequestSession
+        $Result = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -ContentType 'application/json'
         return @{
             ErrorCode = "Success"
             Response  = $Result
@@ -693,7 +693,7 @@ Function Test-PvwaToken {
         Authorization = $Token
     }
     try {
-        $testToken = Invoke-RestMethod -Method 'Get' -Uri $url -Headers $Headers -ContentType 'application/json' -WebSession $Global:WebRequestSession
+        $testToken = Invoke-RestMethod -Method 'Get' -Uri $url -Headers $Headers -ContentType 'application/json'
         if ($testToken) {
             return @{
                 ErrorCode = "Success"
@@ -906,7 +906,7 @@ Function New-VaultAdminObject {
     $json = $body | ConvertTo-Json
     try {
         $result = Invoke-RestMethod -Method POST -Uri $url -Body $json -Headers @{ "Authorization" = $pvwaToken } `
-            -ContentType "application/json" -ErrorVariable ResultError -WebSession $Global:WebRequestSession
+            -ContentType "application/json" -ErrorVariable ResultError
         return $result
     }
     catch {
@@ -946,7 +946,7 @@ Function Get-VaultAccountDetails {
     $url = ("{0}/PasswordVault/api/Accounts?filter=safename eq {1}" -f $pvwaAddress, $safe)
     try {
         $result = Invoke-RestMethod -Method GET -Uri $url -Headers @{ "Authorization" = $pvwaToken } `
-            -ContentType "application/json" -ErrorVariable ResultError -WebSession $Global:WebRequestSession
+            -ContentType "application/json" -ErrorVariable ResultError
         $Accounts = $result.value
         return $Accounts
     }
@@ -987,7 +987,7 @@ Function Get-VaultAccountPassword {
     $url = ("{0}/PasswordVault/API/Accounts/{1}/Password/Retrieve/" -f $pvwaAddress, $AccountId)
     try {
         $result = Invoke-RestMethod -Method POST -Uri $url -Headers @{ "Authorization" = $pvwaToken } `
-            -ContentType "application/json" -ErrorVariable ResultError -WebSession $Global:WebRequestSession
+            -ContentType "application/json" -ErrorVariable ResultError
         return $result
     }
     catch {
@@ -1094,7 +1094,7 @@ Function Copy-Platform {
             Description = $NewPlatformDescription
         }
         $json = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
+        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
     }
     catch {
         Write-LogMessage -Type Error -MSG "Error duplicating platform"
@@ -1127,7 +1127,7 @@ Function Get-PlatformStatus {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Platforms/targets?search=" + $PlatformId
-        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError -WebSession $Global:WebRequestSession
+        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError
         # This query returns a list of platforms where the name contains the search string. Find and return just the one with an exactly matching name.
         $TargetPlatform = $Getresult.Platforms | Where-Object Name -eq $PlatformId
         if ($TargetPlatform) {
@@ -1168,7 +1168,7 @@ Function Get-PlatformStatusById {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Platforms/targets"
-        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError -WebSession $Global:WebRequestSession
+        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError
         # This query returns a list of platforms where the name contains the search string. Find and return just the one with an exactly matching name.
         $TargetPlatform = $Getresult.Platforms | Where-Object PlatformID -eq $PlatformId
         if ($TargetPlatform) {
@@ -1209,7 +1209,7 @@ Function Get-SafeStatus {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/safes?search=$SafeName"
-        $SafeRequest = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -WebSession $Global:WebRequestSession
+        $SafeRequest = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue
         # This query returns a list of safes where the name contains the search string. Find and return just the one with an exactly matching name.
         $Safe = $SafeRequest.Value | Where-Object safeName -eq $SafeName
         if ($Safe) {
@@ -1249,7 +1249,7 @@ Function Enable-Platform {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Platforms/Targets/$PlatformNumId/activate"
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
+        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
     }
     catch {
         Write-LogMessage -Type Error -MSG "Error activating platform"
@@ -1288,7 +1288,7 @@ Function New-PSMSafe {
             description = $description
         }
         $json = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
+        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
         #Permissions for the needed accounts
         #PSMMaster full permissions
         New-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PSMMaster"
@@ -1411,7 +1411,7 @@ Function Set-SafePermissions {
             permissions = $safePermissions
         }
         $json = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Method 'Put' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
+        $null = Invoke-RestMethod -Method 'Put' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
     }
     catch {
         Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
@@ -1451,7 +1451,7 @@ Function Get-SafePermissions {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Safes/$safe/members/$safeMember/"
-        $result = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
+        $result = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
         if ($result) {
             return $result.permissions
         }
@@ -1529,7 +1529,7 @@ Function New-SafePermissions {
             permissions = $safePermissions
         }
         $json = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
+        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
     }
     catch {
         Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
@@ -2154,7 +2154,7 @@ If ($pvwaToken) {
             If ($DomainDNSName -eq $VaultedAccountAddress) {
                 # the address of the account is the same as the domain DNS name we're setting up, so store its details for further configuration
                 # Note we don't need its actual password as it's already onboarded.
-                $VaultedAccountPassword = ConvertTo-SecureString -String "" -AsPlainText -Force
+                $VaultedAccountPassword = ConvertTo-SecureString -String "NoPassword" -AsPlainText -Force
                 $AccountObj = [PSCustomObject]@{
                     AccountName = $AccountName
                     UserType    = $AccountType
@@ -2215,7 +2215,7 @@ If (!($pvwaToken)) {
         $UserType = $_.UserType
         $AccountName = $_.AccountName
         $Username = Read-Host -Prompt "Please provide the pre-Windows 2000 username of the $UserType account"
-        $Password = ConvertTo-SecureString -String "" -AsPlainText -Force
+        $Password = ConvertTo-SecureString -String "NoPassword" -AsPlainText -Force
         $AccountObj = [PSCustomObject]@{
             AccountName = $AccountName
             UserType    = $UserType
@@ -2276,6 +2276,8 @@ $AccountsToOnboard = $PSMAccountDetailsArray | Where-Object Onboard -eq $true
 # If accounts are to be onboarded, check them first
 If (($AccountsToOnboard) -and ($OperationsToPerform.UserTests)) {
     foreach ($Account in $AccountsToOnboard) {
+        $UserDN = $false
+        $UserObject = $false
         $UserType = $Account.UserType
         $Credential = $Account.Credentials
         $Username = $Credential.Username
@@ -2290,6 +2292,7 @@ If (($AccountsToOnboard) -and ($OperationsToPerform.UserTests)) {
             $NewError = ""
             $NewError += "An attempt to authenticate to the domain using the $Username username and password failed."
             $ArrayOfUserErrors += $NewError
+            $ValidationFailed = $true
         }
         # Search for user by name
         $UserDN = Get-UserDNFromSamAccountName -Username $Username
