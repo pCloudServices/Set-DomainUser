@@ -1913,25 +1913,19 @@ Function Set-PSMServerObject {
 
 # Running Set-DomainUser script
 $OperationsToPerform = @{
-    GetInstallerUserCredentials       = $true
-    TestInstallerUserCredentials      = $true
-    GetPSMConnectUserCredentials      = $true
-    GetPSMAdminConnectUserCredentials = $true
-    GetPSMConnectUserName             = $false
-    GetPSMAdminConnectUserName        = $false
-    UserTests                         = $true
-    GetPrivilegeCloudUrl              = $true
-    DomainNetbiosNameDetection        = $true
-    DomainDNSNameDetection            = $true
-    PsmConfiguration                  = $true
-    SecurityPolicyConfiguration       = $true
-    RemoteDesktopUsersGroupAddition   = $true
-    CreateSafePlatformAndAccounts     = $true
-    ServerObjectConfiguration         = $true
-    Hardening                         = $true
-    ConfigureAppLocker                = $true
-    DetectProxy                       = $true
-    ExistingAccountCheck              = $true
+    GetInstallerUserCredentials     = $true
+    TestInstallerUserCredentials    = $true
+    UserTests                       = $true
+    GetPrivilegeCloudUrl            = $true
+    DomainNetbiosNameDetection      = $true
+    DomainDNSNameDetection          = $true
+    PsmLocalConfiguration           = $true
+    SecurityPolicyConfiguration     = $true
+    RemoteDesktopUsersGroupAddition = $true
+    CreateSafePlatformAndAccounts   = $true
+    ServerObjectConfiguration       = $true
+    Hardening                       = $true
+    ConfigureAppLocker              = $true
 }
 
 # Determine what operations need to be performed
