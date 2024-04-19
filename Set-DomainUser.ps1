@@ -407,22 +407,6 @@ Function Get-PvwaAddress {
     }
 }
 
-Function Set-ValidatedInputs {
-    param (
-        [Parameter(Mandatory = $true)]
-        $Data,
-        [Parameter(Mandatory = $true)]
-        $OutputFile
-    )
-    try {
-        Export-Clixml -Depth 5 -Path $ValidatedInputFile -InputObject $ValidatedInputs -Force
-        return $true
-    }
-    catch {
-        return $false
-    }
-}
-
 Function Get-CurrentSecurityPolicy {
     <#
     .SYNOPSIS
