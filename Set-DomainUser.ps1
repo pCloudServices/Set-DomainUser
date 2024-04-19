@@ -1652,7 +1652,7 @@ function Test-PSMUserConfiguration {
         @{
             UserType      = "All"
             Name          = "ConnectClientPrintersAtLogon"
-            DisplayName   = "Connect client drives at logon"
+            DisplayName   = "Connect client printers at logon"
             ExpectedValue = 0
             SettingType   = "Value"
         },
