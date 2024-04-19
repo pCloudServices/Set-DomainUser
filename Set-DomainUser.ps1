@@ -2073,16 +2073,12 @@ If ($DomainNameAutodetected) {
 
 ## InstallerUser/Tina
 Write-LogMessage -Type Verbose -MSG "Getting Tina user details if required"
-$InstallUserError = $false
 If ($OperationsToPerform.GetInstallerUserCredentials) {
-    if ($null -eq $InstallUser) {
-        $InstallUser = Get-Credential -Message ("Please enter installer user credentials") -UserName $InstallUserName
-        if (!($InstallUser)) {
-            Write-LogMessage -Type Error -MSG "No install user credentials provided. Exiting."
-            exit 1
-        }
+    $InstallUser = Get-Credential -Message ("Please enter installer user credentials") -UserName $InstallUserName
+    if (!($InstallUser)) {
+        Write-LogMessage -Type Error -MSG "No install user credentials provided. Exiting."
+        exit 1
     }
-    $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input "InstallUserName" -Value $InstallUser.UserName
 }
 
 ## Test InstallerUser/Tina user credentials
@@ -2090,43 +2086,42 @@ If ($OperationsToPerform.TestInstallerUserCredentials) {
     $ArrayOfTinaErrors = @()
     Write-LogMessage -type Info -MSG "Validating Installer user details"
     try {
-        If ($true -ne $InstallUserError) {
-            # for each section, check that the previous section succeeded.
-            Write-LogMessage -type Verbose -MSG "Testing install user credentials"
-            $pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $PrivilegeCloudUrl -InstallUser $InstallUser
-            if ($pvwaTokenResponse.ErrorCode -ne "Success") {
-                # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
-                # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.
-                # The error message shown could be from a JSON response, e.g. wrong password, or a connection error.
-                $NewError = ""
-                $NewError += "Logon to PVWA failed. Result:`n"
-                $NewError += ("Error code: {0}`n" -f $pvwaTokenResponse.ErrorCode)
-                $NewError += ("Error message: {0}" -f $pvwaTokenResponse.ErrorMessage)
-                $ArrayOfTinaErrors += $NewError
-                Throw
-            }
-            $PVWATokenIsValid = ($pvwaTokenResponse.Response -match "[0-9a-zA-Z]{200,256}")
-            if ($false -eq $PVWATokenIsValid) {
-                # If we get here, it means we got a 200 response from the server, but the data it returned was not a valid token.
-                # In this case, we display the response we got from the server to aid troubleshooting.
-                $NewError = ""
-                $NewError += "Response from server was not a valid token:"
-                $NewError += $pvwaTokenResponse.Response
-                $ArrayOfTinaErrors += $NewError
-                Throw
-            }
-            # If we get here, the token was retrieved successfully and looks valid. We'll still test it though.
+        # for each section, check that the previous section succeeded.
+        Write-LogMessage -type Verbose -MSG "Testing install user credentials"
+        $pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $PrivilegeCloudUrl -InstallUser $InstallUser
+        if ($pvwaTokenResponse.ErrorCode -ne "Success") {
+            # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
+            # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.
+            # The error message shown could be from a JSON response, e.g. wrong password, or a connection error.
+            $NewError = ""
+            $NewError += "Logon to PVWA failed. Result:`n"
+            $NewError += ("Error code: {0}`n" -f $pvwaTokenResponse.ErrorCode)
+            $NewError += ("Error message: {0}" -f $pvwaTokenResponse.ErrorMessage)
+            $ArrayOfTinaErrors += $NewError
+            Throw
+        }
+        $PVWATokenIsValid = ($pvwaTokenResponse.Response -match "[0-9a-zA-Z]{200,256}")
+        if ($false -eq $PVWATokenIsValid) {
+            # If we get here, it means we got a 200 response from the server, but the data it returned was not a valid token.
+            # In this case, we display the response we got from the server to aid troubleshooting.
+            $NewError = ""
+            $NewError += "Response from server was not a valid token:"
+            $NewError += $pvwaTokenResponse.Response
+            $ArrayOfTinaErrors += $NewError
+            Throw
+        }
+        # If we get here, the token was retrieved successfully and looks valid. We'll still test it though.
 
-            $PvwaTokenTestResponse = Test-PvwaToken -Token $pvwaTokenResponse.Response -pvwaAddress $PrivilegeCloudUrl
-            if (($true -ne $InstallUserError) -and ($PvwaTokenTestResponse.ErrorCode -eq "Success")) {
-                $pvwaToken = $pvwaTokenResponse.Response
-            }
-            else {
-                $NewError = ""
-                $NewError += "PVWA Token validation failed. Result:"
-                $NewError += $PvwaTokenTestResponse.Response
-                $ArrayOfTinaErrors += $NewError
-                Throw
+        $PvwaTokenTestResponse = Test-PvwaToken -Token $pvwaTokenResponse.Response -pvwaAddress $PrivilegeCloudUrl
+        if ($PvwaTokenTestResponse.ErrorCode -eq "Success") {
+            $pvwaToken = $pvwaTokenResponse.Response
+        }
+        else {
+            $NewError = ""
+            $NewError += "PVWA Token validation failed. Result:"
+            $NewError += $PvwaTokenTestResponse.Response
+            $ArrayOfTinaErrors += $NewError
+            Throw
             }
             $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input InstallUser -Value $InstallUser
         }
