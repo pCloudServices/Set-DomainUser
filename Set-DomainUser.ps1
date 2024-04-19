@@ -781,24 +781,24 @@ Function Update-PSMConfig {
         $PSMAdminConnectAccountName
     )
     try {
-        #PSMHardening
-        #-------------------------
-        $psmHardeningContent = Get-Content -Path $psmRootInstallLocation\Hardening\PSMHardening.ps1
-
-        $newPsmHardeningContent = $psmHardeningContent -replace '^(\$(Global:)?PSM_CONNECT_USER\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmConnectUsername)
-        $newPsmHardeningContent = $newPsmHardeningContent -replace '^(\$(Global:)?PSM_ADMIN_CONNECT_USER\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmAdminUsername)
-        $newPsmHardeningContent | Set-Content -Path "$psmRootInstallLocation\Hardening\test-psmhardening.ps1"
-
-        #PSMApplocker
-        #-------------------------
-
-
-        $psmApplockerContent = Get-Content -Path $psmRootInstallLocation\Hardening\PSMConfigureApplocker.ps1
-
-        $newPsmApplockerContent = $psmApplockerContent -replace '^(\$(Global:)?PSM_CONNECT\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmConnectUsername)
-        $newPsmApplockerContent = $newPsmApplockerContent -replace '^(\$(Global:)?PSM_ADMIN_CONNECT\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmAdminUsername)
-
-        $newPsmApplockerContent | Set-Content -Path "$psmRootInstallLocation\Hardening\test-psm-applocker.ps1"
+#        #PSMHardening
+#        #-------------------------
+#        $psmHardeningContent = Get-Content -Path $psmRootInstallLocation\Hardening\PSMHardening.ps1
+#
+#        $newPsmHardeningContent = $psmHardeningContent -replace '^(\$(Global:)?PSM_CONNECT_USER\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmConnectUsername)
+#        $newPsmHardeningContent = $newPsmHardeningContent -replace '^(\$(Global:)?PSM_ADMIN_CONNECT_USER\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmAdminUsername)
+#        $newPsmHardeningContent | Set-Content -Path "$psmRootInstallLocation\Hardening\test-psmhardening.ps1"
+#
+#        #PSMApplocker
+#        #-------------------------
+#
+#
+#        $psmApplockerContent = Get-Content -Path $psmRootInstallLocation\Hardening\PSMConfigureApplocker.ps1
+#
+#        $newPsmApplockerContent = $psmApplockerContent -replace '^(\$(Global:)?PSM_CONNECT\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmConnectUsername)
+#        $newPsmApplockerContent = $newPsmApplockerContent -replace '^(\$(Global:)?PSM_ADMIN_CONNECT\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmAdminUsername)
+#
+#        $newPsmApplockerContent | Set-Content -Path "$psmRootInstallLocation\Hardening\test-psm-applocker.ps1"
 
 
         #basic_psm.ini
@@ -837,13 +837,22 @@ Function Invoke-PSMHardening {
     #>
     param (
         [Parameter(Mandatory = $true)]
+        $PSMConnectUsername,
+
+        [Parameter(Mandatory = $true)]
+        $PSMAdminConnectUsername,
+
+        [Parameter(Mandatory = $true)]
+        $DomainNetbiosName,
+
+        [Parameter(Mandatory = $true)]
         $psmRootInstallLocation
     )
     Write-Verbose "Starting PSM Hardening"
     $hardeningScriptRoot = "$psmRootInstallLocation\Hardening"
     $CurrentLocation = Get-Location
     Set-Location $hardeningScriptRoot
-    & "$hardeningScriptRoot\PSMHardening.ps1"
+    & "$hardeningScriptRoot\PSMHardening.ps1" -ArgumentList "-connectionUserDomain",$DomainNetbiosName,"-connectionUserName",$PSMConnectUsername,"-connectionAdminUserDomain",$DomainNetbiosName,"-connectionAdminUserName",$PSMAdminConnectUsername
     Set-Location $CurrentLocation
 }
 
@@ -858,13 +867,22 @@ Function Invoke-PSMConfigureAppLocker {
     #>
     param (
         [Parameter(Mandatory = $true)]
+        $PSMConnectUsername,
+
+        [Parameter(Mandatory = $true)]
+        $PSMAdminConnectUsername,
+
+        [Parameter(Mandatory = $true)]
+        $DomainNetbiosName,
+
+        [Parameter(Mandatory = $true)]
         $psmRootInstallLocation
     )
     Write-Verbose "Starting PSMConfigureAppLocker"
     $hardeningScriptRoot = "$psmRootInstallLocation\Hardening"
     $CurrentLocation = Get-Location
     Set-Location $hardeningScriptRoot
-    & "$hardeningScriptRoot\PSMConfigureAppLocker.ps1"
+    & "$hardeningScriptRoot\PSMConfigureAppLocker.ps1" -ArgumentList "-connectionUserDomain",$DomainNetbiosName,"-connectionUserName",$PSMConnectUsername,"-connectionAdminUserDomain",$DomainNetbiosName,"-connectionAdminUserName",$PSMAdminConnectUsername
     Set-Location $CurrentLocation
 }
 
@@ -2916,7 +2934,7 @@ If ($OperationsToPerform.PsmConfiguration) {
 If ($OperationsToPerform.Hardening) {
     Write-LogMessage -Type Info -MSG "Running PSM Hardening script"
     Write-LogMessage -Type Info -MSG "---"
-    Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation
+    Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation -DomainNetbiosName $DomainNetbiosName -PSMConnectUsername $PSMConnectUsername -PSMAdminConnectUsername $PSMAdminConnectUsername
     Write-LogMessage -Type Info -MSG "---"
     Write-LogMessage -Type Info -MSG "End of PSM Hardening script output"
 }
@@ -2930,7 +2948,7 @@ else {
 If ($OperationsToPerform.ConfigureAppLocker) {
     Write-LogMessage -Type Info -MSG "Running PSM Configure AppLocker script"
     Write-LogMessage -Type Info -MSG "---"
-    Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation
+    Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation -DomainNetbiosName $DomainNetbiosName -PSMConnectUsername $PSMConnectUsername -PSMAdminConnectUsername $PSMAdminConnectUsername
     Write-LogMessage -Type Info -MSG "---"
     Write-LogMessage -Type Info -MSG "End of PSM Configure AppLocker script output"
 }
