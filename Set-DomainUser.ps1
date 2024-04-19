@@ -1806,36 +1806,6 @@ function Get-UserProperty {
     return $Result
 }
 
-function Update-ValidatedInputs {
-    param (
-        [Parameter(Mandatory = $True)]
-        [hashtable]$Object,
-
-        [Parameter(Mandatory = $True)]
-        [string]$InputName,
-
-        [Parameter(Mandatory = $False)]
-        $Value
-
-    )
-    If ($Value) {
-        # Value is set so update or add a value
-        If ($Object.$InputName) {
-            $Object.$InputName = $Value
-        }
-        else {
-            $Object += @{
-                $InputName = $Value
-            }
-        }
-    }
-    else {
-        # Value is empty so remove a value instead
-        $Object.Remove($InputName)
-    }
-    return $Object
-}
-
 Function Set-PSMServerObject {
     param (
         [Parameter(Mandatory = $True)]
@@ -2212,10 +2182,6 @@ If ($DomainNameAutodetected) {
     $DomainPromptSelection = $Host.UI.PromptForChoice("", $DomainInfo, $PromptOptions, 1)
     If ($DomainPromptSelection -eq 0) {
         Write-LogMessage -Type Info "Domain details confirmed"
-        $ValidatedInputs += @{
-            DomainDNSName     = $DomainDNSName
-            DomainNetbiosName = $DomainNetbiosName
-        }
     }
     Else {
         Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct domain DNS and NETBIOS names on the command line."
