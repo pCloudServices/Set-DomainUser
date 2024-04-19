@@ -2357,6 +2357,7 @@ If ($UserConfigurationErrors) {
         # Output simple misconfigurations in table format
         $ErrorTableSettings = $UserConfigurationErrors | Where-Object UserName -eq $user | Where-Object SettingType -in "Value", "LogOnTo"
         If ($ErrorTableSettings) {
+            $NewError += "---------`n"
             $NewError += "Settings:`n"
             $NewError += "---------`n"
             $NewError += (
@@ -2365,20 +2366,25 @@ If ($UserConfigurationErrors) {
                 @{Name = "Expected"; Expression = { $_.Expected }; Alignment = "Left" }, `
                 @{Name = "Current"; Expression = { $_.Current }; Alignment = "Left" } | Out-String
             ).Trim()
-            $NewError += "`n"
+            $NewError += "`n`n"
         }
         $ListUserConfigurationErrors = $UserConfigurationErrors | Where-Object UserName -eq $user | Where-Object SettingType -eq "StringCompare" # for more complex misconfigurations (strings), capture them separately
         If ($ListUserConfigurationErrors) {
+            $NewError += "------`n"
             $NewError += "Paths:`n"
             $NewError += "------`n"
             foreach ($ConfigErrorSetting in $ListUserConfigurationErrors) {
                 # and for each misconfiguration, ...
                 $NewError += ("Setting: {0}`n" -f $ConfigErrorSetting.SettingName)
                 $NewError += ("Expected value: `"{0}`"`n" -f $ConfigErrorSetting.Expected)
-                $NewError += ("Detected value: `"{0}`"`n" -f $ConfigErrorSetting.Current)
-                If ($ConfigErrorSetting.Current -ne "Unset") {
+                If ($ConfigErrorSetting.Current -eq "Unset") {
+                    $NewError += ("Detected value: Unset`n" -f $ConfigErrorSetting.Current)
+                }
+                else {
                     $DifferencePosition = Get-DifferencePosition -String1 $ConfigErrorSetting.Expected -String2 $ConfigErrorSetting.Current # get the location of the first difference
+                    $NewError += ("Detected value: `"{0}`"`n" -f $ConfigErrorSetting.Current)
                     $NewError += ("                ` {0}^`n" -f (" " * $DifferencePosition)) # and display the position of the first difference
+                    $NewError += ("`n`n")
                 }
             }
         }
@@ -2413,7 +2419,6 @@ If ($ArrayOfUserOnboardingConflictErrors) {
         Write-LogMessage -type Error -MSG $StandardSeparator
         Write-LogMessage -type Error -MSG $UserConflict
     }
-    Write-LogMessage -type Error -MSG "This check can be skipped with the -SkipExistingAccountCheck parameter, or"
     Write-LogMessage -type Error -MSG "Use -PSMConnectAccountName, -PSMAdminConnectAccountName and -Safe parameters"
     Write-LogMessage -type Error -MSG "to provide alternative details for this environment."
 }
