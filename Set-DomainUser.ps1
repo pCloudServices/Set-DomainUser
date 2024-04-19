@@ -1930,16 +1930,8 @@ $OperationsToPerform = @{
 
 # Determine what operations need to be performed
 switch ($PSBoundParameters) {
-    { $_.SkipExistingAccountCheck } {
-        $OperationsToPerform.ExistingAccountCheck = $false
-    }
-    { $_.psmConnectCredentials } {
-        $OperationsToPerform.GetPSMConnectUserCredentials = $false
-    }
-    { $_.psmAdminCredentials } {
-        $OperationsToPerform.GetPSMAdminConnectUserCredentials = $false
-    }
     { $_.NotFirstRun } {
+        Write-LogMessage -type Warning -MSG "-NotFirstRun is no longer recommended, as Set-DomainUser will automatically detect and skip redundant steps."
         $OperationsToPerform.UserTests = $false
         $OperationsToPerform.CreateSafePlatformAndAccounts = $false
     }
@@ -1961,7 +1953,6 @@ switch ($PSBoundParameters) {
         $OperationsToPerform.UserTests = $false
         $OperationsToPerform.GetInstallerUserCredentials = $false
         $OperationsToPerform.TestInstallerUserCredentials = $false
-        $OperationsToPerform.ExistingAccountCheck = $false
     }
     { $_.DoNotHarden } {
         $OperationsToPerform.Hardening = $false
@@ -1978,15 +1969,10 @@ switch ($PSBoundParameters) {
     { $_.DoNotConfigureAppLocker } {
         $OperationsToPerform.ConfigureAppLocker = $false
     }
-    { $_.Proxy } {
-        $OperationsToPerform.DetectProxy = $false
-    }
 }
 
-# If not doing any remote work, skip proxy detection
-If (!($OperationsToPerform.CreateSafePlatformAndAccounts -or $OperationsToPerform.ServerObjectConfiguration)) {
-    $OperationsToPerform.DetectProxy = $false
-    $Proxy = "None"
+If ($InstallUser) {
+    $OperationsToPerform.GetInstallerUserCredentials = $false
 }
 
 # Initialise variables
@@ -2001,12 +1987,8 @@ $REGKEY_PSMSERVICE = $PsmService.Name
 $psmRootInstallLocation = ($(Get-ServiceInstallPath $REGKEY_PSMSERVICE)).Replace("CAPSM.exe", "").Replace('"', "").Trim()
 $BackupSubDirectory = (Get-Date).ToString('yyyMMdd-HHmmss')
 $BackupPath = "$psmRootInstallLocation\Backup\Set-DomainUser\$BackupSubDirectory"
-$ValidatedInputFileName = "_Set-DomainUserValidatedInputs.xml"
-$ValidatedInputFile = "$ScriptLocation\$ValidatedInputFileName"
 $ValidationFailed = $false
 $PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
-$PSMConnectUserName = ""
-$PSMAdminConnectUserName = ""
 $pvwaToken = ""
 $TasksTop = @()
 
@@ -2014,57 +1996,6 @@ $TasksTop = @()
 
 Write-Host ""
 Write-LogMessage -type Info -MSG "Gathering information"
-
-# Initialise the variable to store inputs as they are validated
-$ValidatedInputs = @{}
-
-## Import previously validated inputs, if available, and not provided on command line (command-line parameters take precedence)
-If (Test-Path $ValidatedInputFile) {
-    # For credentials:
-    # If user names present in validated inputs, remember them for later
-    $RawValidatedInputs = Import-Clixml -Path $ValidatedInputFile
-    If (($null -eq $psmConnectCredentials) -and ($RawValidatedInputs.PSMConnectUserName)) {
-        # If PSMConnectUserName has been validated previously
-        $ValidatedInputs += @{ PSMConnectUserName = $RawValidatedInputs.PSMConnectUserName }
-        $PSMConnectUserName = $RawValidatedInputs.PSMConnectUserName
-        # Store it for later
-    }
-
-    If (($null -eq $psmAdminCredentials) -and ($RawValidatedInputs.PSMAdminConnectUserName)) {
-        # If PSMAdminConnectUserName has been validated previously
-        $ValidatedInputs += @{ PSMAdminConnectUserName = $RawValidatedInputs.PSMAdminConnectUserName }
-        $PSMAdminConnectUserName = $RawValidatedInputs.PSMAdminConnectUserName
-        # Store it for later
-    }
-
-    If (($null -eq $InstallUser) -and ($RawValidatedInputs.InstallUserName)) {
-        # If InstallUserName has been validated previously
-        $ValidatedInputs += @{ InstallUserName = $RawValidatedInputs.InstallUserName }
-        $InstallUserName = $RawValidatedInputs.InstallUserName
-        # Store it for later
-    }
-
-    # For domain details:
-    ## Take from command line parameters
-    ## if not provided in parameters, take from import
-    ## if not present in import, do nothing
-    If (([String]::IsNullOrWhiteSpace($DomainDNSName)) -and ($RawValidatedInputs.DomainDNSName)) {
-        $ValidatedInputs += @{ DomainDNSName = $RawValidatedInputs.DomainDNSName }
-        $DomainDNSName = $RawValidatedInputs.DomainDNSName
-        $OperationsToPerform.DomainDNSNameDetection = $false
-    }
-
-    If (([String]::IsNullOrWhiteSpace($DomainNetbiosName)) -and ($RawValidatedInputs.DomainNetbiosName)) {
-        $ValidatedInputs += @{ DomainNetbiosName = $RawValidatedInputs.DomainNetbiosName }
-        $DomainNetbiosName = $RawValidatedInputs.DomainNetbiosName
-        $OperationsToPerform.DomainNETBIOSNameDetection = $false
-    }
-    Write-LogMessage -type Info -MSG "Imported the following details from $ValidatedInputFileName`:"
-    Write-LogMessage -type Info -MSG $StandardSeparator
-    $MessageString = ($ValidatedInputs | Out-String).Trim()
-    Write-LogMessage -type Info -MSG $MessageString
-    Write-LogMessage -type Info -MSG $StandardSeparator
-}
 
 # Perform initial checks
 If (Test-UM -psmRootInstallLocation $psmRootInstallLocation) {
@@ -2075,57 +2006,14 @@ else {
 }
 
 ## Proxy configuration
-If ($OperationsToPerform.DetectProxy) {
-    # Get proxy details from user profile
-    Write-LogMessage -type Verbose -MSG "Detecting proxy from user profile"
-    $DetectedProxy = Get-ProxyDetails
+Write-LogMessage -type Verbose -MSG "Detecting proxy from user profile"
+$Proxy = Get-ProxyDetails
 
-    If ($DetectedProxy) {
-        $ProxyInfo = ""
-        $ProxyInfo += ("--------------------------------------------------------`n")
-        $ProxyInfo += ("Detected the following proxy details:`n")
-        $ProxyInfo += ("  Proxy Address:     {0}`n" -f $DetectedProxy)
-        $ProxyInfo += ("Is this correct?")
-
-        $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
-        $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the proxy details are correct"))
-        $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct proxy details can be provided"))
-
-        $ProxyPromptSelection = $Host.UI.PromptForChoice("", $ProxyInfo, $PromptOptions, 1)
-        If ($ProxyPromptSelection -eq 0) {
-            Write-LogMessage -Type Verbose "Proxy details confirmed"
-            $Proxy = $DetectedProxy
-            $ValidatedInputs += @{
-                Proxy = $Proxy
-            }
-        }
-        Else {
-            Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct proxy details on the command line."
-            exit 1
-        }
-    }
-    else {
-        $Proxy = "None"
-    }
-}
-Write-LogMessage -type Verbose -MSG "Creating WebRequestSession object"
-$Global:WebRequestSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-Write-LogMessage -type Verbose -MSG "Creating proxy object"
-$ProxyObject = New-Object System.Net.WebProxy
-
-If ("None" -ne $Proxy) {
-    try {
-        Write-LogMessage -type Verbose -MSG "Setting web requests to use proxy $Proxy"
-        $ProxyObject.Address = "http://$Proxy"
-    }
-    catch {
-        Write-LogMessage -type Error -MSG "Failed to configure proxy. Please ensure it is provided in address:port format."
-        exit 1
-    }
+If (!($Proxy)) {
+    $Proxy = "None"
 }
 
-Write-LogMessage -type Verbose -MSG "Setting proxy on WebRequestSession object"
-$Global:WebRequestSession.Proxy = $ProxyObject
+Write-LogMessage -type Verbose -MSG "Detected proxy: $Proxy"
 
 ## Check if domain user
 Write-LogMessage -Type Verbose -MSG "Checking if user is a domain user"
