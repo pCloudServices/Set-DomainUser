@@ -1692,6 +1692,7 @@ function Test-PSMUserConfiguration {
             SettingType   = "LogOnTo"
         }
     )
+    $AllUserConfigurationErrors = @()
     $UserName = $UserObject.Name
     $SettingsToCheck | ForEach-Object { # For each aspect of the configuration
         $SettingName = $_.Name
@@ -1726,7 +1727,7 @@ function Test-PSMUserConfiguration {
                     # but for Log On To, it's the other way round - the expected value must be in the current value (or be empty - "all workstations")
                 )
             ) {
-                $ThisUserConfigurationError = [PSCustomObject]@{ # add it to the array containing the list of misconfigurations
+                $ThisUserConfigurationError = [PSCustomObject]@{ # Store the details of this misconfiguration
                     Username    = $Username
                     User        = $UserType
                     SettingName = $SettingDisplayName
@@ -1737,16 +1738,13 @@ function Test-PSMUserConfiguration {
                 if ($SettingType -eq "LogOnTo") {
                     $ThisUserConfigurationError.Expected = "Must include `"$SettingExpectedValue`""
                 }
-                return @{
-                    Result = "Error"
-                    Errors = $ThisUserConfigurationError
-                }
-            }
-            return @{
-                Result = "Success"
+                # and add it to the array containing the list of misconfigurations
+                $AllUserConfigurationErrors += $ThisUserConfigurationError
             }
         }
     }
+    Write-LogMessage -type Verbose -MSG ($AllUserConfigurationErrors | out-string)
+    return $AllUserConfigurationErrors
 }
 
 function Test-PasswordCharactersValid {
@@ -2442,13 +2440,9 @@ foreach ($CurrentUser in $PSMAccountDetailsArray) {
             # Test PSM user configuration
             $PSMUserConfigTestResult = Test-PSMUserConfiguration -UserType $UserType -UserObject $UserObject -PSMInstallLocation $psmRootInstallLocation
             Write-LogMessage -Type Verbose -MSG "Successfully checked user configuration"
-            If ($PSMUserConfigTestResult.Result -ne "Success") {
-                $UserConfigurationErrors += $PSMUserConfigTestResult.Errors
-                Throw
+            If ($PSMUserConfigTestResult) {
+                $UserConfigurationErrors += $PSMUserConfigTestResult
             }
-        }
-        catch {
-            $ValidationFailed = $true
         }
     }
 }
