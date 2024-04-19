@@ -2424,15 +2424,6 @@ If ($ArrayOfUserOnboardingConflictErrors) {
     Write-LogMessage -type Error -MSG "to provide alternative details for this environment."
 }
 
-# Save validated inputs
-$ValidationSaveResult = Set-ValidatedInputs -Data $ValidatedInputs -OutputFile $ValidatedInputFile
-If ($ValidationSaveResult) {
-    Write-LogMessage -type Verbose -MSG ("Confirmed details saved to {0}." -f $ValidatedInputFileName)
-}
-else {
-    Write-LogMessage -type Verbose -MSG ("An error occurred while saving confirmed details to {0}." -f $ValidatedInputFileName)
-}
-
 If ($ValidationFailed) {
     Write-LogMessage -type Info -MSG "Some tests failed, and details are shown above. Please correct these and rerun Set-DomainUser."
     exit 1
