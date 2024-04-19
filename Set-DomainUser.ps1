@@ -2086,8 +2086,8 @@ If ($OperationsToPerform.GetInstallerUserCredentials) {
 }
 
 ## Test InstallerUser/Tina user credentials
-$ArrayOfTinaErrors = @()
 If ($OperationsToPerform.TestInstallerUserCredentials) {
+    $ArrayOfTinaErrors = @()
     Write-LogMessage -type Info -MSG "Validating Installer user details"
     try {
         If ($true -ne $InstallUserError) {
