@@ -726,20 +726,10 @@ Function Backup-PSMConfig {
         If (!(Test-Path -Path $BackupPath -PathType Container)) {
             $null = New-Item -ItemType Directory -Path $BackupPath
         }
-        $PSMHardeningBackupFileName = ("{0}\PSMHardening.ps1" -f $BackupPath)
-        $PSMConfigureAppLockerBackupFileName = ("{0}\PSMConfigureAppLocker.ps1" -f $BackupPath)
         $BasicPSMBackupFileName = ("{0}\basic_psm.ini" -f $BackupPath)
 
-        Copy-Item -path "$psmRootInstallLocation\Hardening\PSMHardening.ps1" -Destination $PSMHardeningBackupFileName
-        Copy-Item -path "$psmRootInstallLocation\Hardening\PSMConfigureAppLocker.ps1" -Destination $PSMConfigureAppLockerBackupFileName
         Copy-Item -Path "$psmRootInstallLocation\basic_psm.ini" -Destination $BasicPSMBackupFileName
 
-        If (!(Test-Path $PSMHardeningBackupFileName)) {
-            Write-LogMessage -Type Error -MSG "Failed to backup PSMHardening.ps1" -ErrorAction Stop
-        }
-        ElseIf (!(Test-Path $PSMConfigureAppLockerBackupFileName)) {
-            Write-LogMessage -Type Error -MSG "Failed to backup PSMConfigureAppLocker.ps1" -ErrorAction Stop
-        }
         ElseIf (!(Test-Path $BasicPSMBackupFileName )) {
             Write-LogMessage -Type Error -MSG "Failed to backup basic_psm.ini" -ErrorAction Stop
         }
@@ -795,8 +785,6 @@ Function Update-PSMConfig {
 
         # Write corrected contents out to correct file(s)
         #-------------------------
-        Copy-Item -Path "$psmRootInstallLocation\Hardening\test-psm-applocker.ps1" -Destination "$psmRootInstallLocation\Hardening\PSMConfigureApplocker.ps1" -Force
-        Copy-Item -Path "$psmRootInstallLocation\Hardening\test-psmhardening.ps1" -Destination "$psmRootInstallLocation\Hardening\PSMHardening.ps1" -Force
         Copy-Item -Path "$psmRootInstallLocation\test_basic_psm.ini" -Destination "$psmRootInstallLocation\basic_psm.ini" -Force
     }
     catch {
