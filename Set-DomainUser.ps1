@@ -2005,6 +2005,7 @@ else {
     $UM = $false
 }
 
+# Gather information from user
 ## Proxy configuration
 Write-LogMessage -type Verbose -MSG "Detecting proxy from user profile"
 $Proxy = Get-ProxyDetails
@@ -2477,13 +2478,6 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
         # Get platform info again so we can ensure it's activated
         $platformStatus = Get-PlatformStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId $PlatformName
     }
-    #    else {
-    #        Write-LogMessage -Type Verbose -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
-    #        $TasksTop += @{
-    #            Message  = ("Enable automatic password management for the PSM accounts")
-    #            Priority = "Recommended"
-    #        }
-    #    }
     if ($platformStatus.Active -eq $false) {
         Write-LogMessage -Type Verbose -MSG "Platform is deactivated. Activating."
         Enable-Platform -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -Platform $platformStatus.Id
@@ -2502,14 +2496,6 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
             exit 1
         }
     }
-    #    If (!($safeStatus.managingCpm)) {
-    #        # Safe exists but no CPM assigned
-    #        Write-LogMessage -Type Verbose -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
-    #        $TasksTop += @{
-    #            Message  = ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
-    #            Priority = "Recommended"
-    #        }
-    #    }
     # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
     If ($UM) {
         $SafePermissions = Get-SafePermissions -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $safe -safeMember "Vault Admins"
@@ -2522,7 +2508,7 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
 
     foreach ($AccountToOnboard in $AccountsToOnboard) {
         $NewCredentials = $AccountToOnboard.Credentials
-        $NewUserName = $NewCredentials.UserName
+        $NewUserName = $AccountToOnboard.UserName
         $NewAccountName = $AccountToOnboard.AccountName
         Write-LogMessage -type Verbose -MSG ("Onboarding {0}" -f $NewUserName)
         Write-LogMessage -Type Verbose -MSG "Onboarding Account"
@@ -2707,7 +2693,7 @@ else {
 # End group membership and security policy changes
 
 # Perform local configuration
-If ($OperationsToPerform.PsmConfiguration) {
+If ($OperationsToPerform.PsmLocalConfiguration) {
     Write-LogMessage -Type Info -MSG "Performing local configuration and restarting service"
 
     Write-LogMessage -Type Verbose -MSG "Stopping CyberArk Privileged Session Manager Service"
