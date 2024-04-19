@@ -730,7 +730,7 @@ Function Backup-PSMConfig {
 
         Copy-Item -Path "$psmRootInstallLocation\basic_psm.ini" -Destination $BasicPSMBackupFileName
 
-        ElseIf (!(Test-Path $BasicPSMBackupFileName )) {
+        If (!(Test-Path $BasicPSMBackupFileName )) {
             Write-LogMessage -Type Error -MSG "Failed to backup basic_psm.ini" -ErrorAction Stop
         }
     }
