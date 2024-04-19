@@ -41,11 +41,7 @@
  Do not update Local Security Policy to allow PSM users to log on with Remote Desktop
 .PARAMETER SkipAddingUsersToRduGroup
  Do not add PSM users to the Remote Desktop Users group
-.PARAMETER SkipExistingAccountCheck
- Do not check whether PSM users already exist in the vault
-.PARAMETER NotFirstRun
- This script is being run on additional servers following the first. Skip platform and safe creation and account onboarding.
-.VERSION 14.1.1
+.VERSION 14.2.0
 .AUTHOR CyberArk
 #>
 
@@ -152,18 +148,14 @@ param(
 
     [Parameter(
         Mandatory = $false,
-        HelpMessage = "Do not check whether PSM users already exist in the vault")]
-    [switch]$SkipExistingAccountCheck,
+        HelpMessage = "Do not restart PSM")]
+    [switch]$NoPSMRestart,
 
     [Parameter(
         Mandatory = $false,
         HelpMessage = "Safe and platform configuration and account onboarding should be skipped as the script is being run on subsequent PSM servers.")]
-    [switch]$NotFirstRun,
+    [switch]$NotFirstRun
 
-    [Parameter(
-        Mandatory = $false,
-        HelpMessage = "Proxy Server in address:port format or `"none`" for no proxy")]
-    [string]$Proxy
 )
 
 <#
