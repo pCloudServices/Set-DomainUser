@@ -2960,7 +2960,9 @@ else {
     }
 }
 Write-LogMessage -Type Verbose -MSG "Restarting CyberArk Privileged Session Manager Service"
-Restart-Service $REGKEY_PSMSERVICE
+If (!($NoPSMRestart)) {
+    Restart-Service $REGKEY_PSMSERVICE
+}
 
 Write-LogMessage -Type Success -MSG "All tasks completed."
 
