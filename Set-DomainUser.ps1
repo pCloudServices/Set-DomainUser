@@ -2144,140 +2144,197 @@ If ($ValidationFailed) {
     exit 1
 }
 
-## PSMConnect user
-Write-LogMessage -Type Verbose -MSG "Getting PSMConnect user details if required"
-if ($OperationsToPerform.GetPSMConnectUserCredentials) {
-    $psmConnectCredentials = Get-Credential -Message "Please enter PSMConnect domain user credentials" -UserName $PSMConnectUserName
-    if (!($psmConnectCredentials)) {
-        Write-LogMessage -Type Error -MSG "No PSMConnect user credentials provided. Exiting."
-        exit 1
-    }
-    $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input "PSMConnectUserName" -Value $psmConnectCredentials.UserName
-}
-
-## PSMAdminConnect user
-Write-LogMessage -Type Verbose -MSG "Getting PSMAdminConnect user details if required"
-if ($OperationsToPerform.GetPSMAdminConnectUserCredentials) {
-    $psmAdminCredentials = Get-Credential -Message "Please enter PSMAdminConnect domain user credentials" -UserName $PSMAdminConnectUserName
-    if (!($psmAdminCredentials)) {
-        Write-LogMessage -Type Error -MSG "No PSMAdminConnect user credentials provided. Exiting."
-        exit 1
-    }
-    $ValidatedInputs = Update-ValidatedInputs -Object $ValidatedInputs -Input "PSMAdminConnectUserName" -Value $psmAdminCredentials.UserName
-}
-
-# Test users
-Write-LogMessage -type Info -MSG "Validating PSM and install user details"
-$PSMAccountDetailsArray = @(
+Write-LogMessage -type Info -MSG "Validating PSM user details"
+# Create array containing PSM user details we can iterate through
+$PSMAccountSearchPropertiesArray = @(
     @{
-        Credentials = $psmConnectCredentials
         AccountName = $PSMConnectAccountName
         UserType    = "PSMConnect"
     },
     @{
-        Credentials = $psmAdminCredentials
         AccountName = $PSMAdminConnectAccountName
         UserType    = "PSMAdminConnect"
     }
 )
 
+# If possible, search backend for account details using the AccountName property
+## If accounts exist, check whether the address matches
+### If address matches, use these accounts
+### If address does not match, log and display mismatch and fail validation
+## If accounts do not exist, ask the user for credentials or get them from parameters
+# If not possible to search backend because PVWA Token not set, it means we're running with LocalConfigurationOnly, so ask the user for usernames
+If ($pvwaToken) {
+    $ArrayOfUserOnboardingConflictErrors = @()
+    $PSMAccountDetailsArray = @()
+    Write-LogMessage -Type Verbose -MSG "Retrieving stored accounts in `"$safe`" safe from vault"
+    $ExistingAccountsObj = Get-VaultAccountDetails -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $Safe
+    # Narrow results to accounts with account names matching the account names we're searching for
+    $MatchingAccounts = $ExistingAccountsObj | Where-Object name -in $PSMAccountSearchPropertiesArray.AccountName
+    Write-LogMessage -type Verbose -MSG ("Found the following existing accounts in the backend: {0}" -f ($MatchingAccounts | Out-String))
+    # For each account, check whether it has the correct address property
+    Write-LogMessage -Type Verbose -MSG "Checking if the found accounts have the correct details"
+    foreach ($AccountToCheck in $PSMAccountSearchPropertiesArray) {
+        $AccountObj = $null
+        $AccountType = $AccountToCheck.UserType
+        $AccountName = $AccountToCheck.AccountName
+        $VaultedAccount = $MatchingAccounts | Where-Object name -eq $AccountName
+        If ($VaultedAccount) {
+            # an account with this account name exists; look into it
+            $VaultedAccountUsername = $VaultedAccount.userName
+            $VaultedAccountAddress = $VaultedAccount.address
+            If ($DomainDNSName -eq $VaultedAccountAddress) {
+                # the address of the account is the same as the domain DNS name we're setting up, so store its details for further configuration
+                # Note we don't need its actual password as it's already onboarded.
+                $VaultedAccountPassword = ConvertTo-SecureString -String "" -AsPlainText -Force
+                $AccountObj = [PSCustomObject]@{
+                    AccountName = $AccountName
+                    UserType    = $AccountType
+                    Credentials = New-Object System.Management.Automation.PSCredential($VaultedAccount.userName, $VaultedAccountPassword)
+                    Onboard     = $false
+                }
+            }
+            else {
+                # the address of the account is NOT the same as the domain DNS name we're setting up; this is a fatal error.
+                Write-LogMessage -type Verbose -MSG "Account with name $AccountName does not have the correct address"
+                $NewError = ""
+                $NewError += ("An object with Account Name `"{0}`" already exists in the safe `"{1}`" and `n" -f $AccountName, $Safe)
+                $NewError += ("  its details do not match the specified user details. Its details are shown below.`n")
+                $ExistingAccountObj = @(
+                    [PSCustomObject]@{
+                        AccountName = $AccountName
+                        Username    = $VaultedAccountUsername
+                        Address     = $VaultedAccountAddress
+                    }
+                )
+                $NewError += ($ExistingAccountObj | Format-List | Out-String).Trim()
+                $NewError += "`n"
+                $ArrayOfUserOnboardingConflictErrors += $NewError
+                $ValidationFailed = $true
+            }
+        }
+        else {
+            # No account found; get details from parameter or from user and add to onboarding queue
+            If (($AccountType -eq "PSMConnect") -and ($psmConnectCredentials)) {
+                $Credentials = $psmConnectCredentials
+            }
+            ElseIf (($AccountType -eq "PSMAdminConnect") -and ($psmAdminCredentials)) {
+                $Credentials = $psmAdminCredentials
+            }
+            Else {
+                $Credentials = Get-Credential -Message "$AccountType account"
+            }
+            If (!($Credentials)) {
+                Write-LogMessage -type Error -MSG "No $AccountType credentials provided. Exiting."
+                exit 1
+            }
+            $AccountObj = [PSCustomObject]@{
+                AccountName = $AccountName
+                UserType    = $AccountType
+                Credentials = $Credentials
+                Onboard     = $true
+            }
+        }
+        If ($AccountObj) {
+            $PSMAccountDetailsArray += $AccountObj
+        }
+    }
+}
+
+If (!($pvwaToken)) {
+    # No PVWA Token, which means we're doing LocalConfigurationOnly. In that case we only need usernames, not passwords
+    $PSMAccountSearchPropertiesArray | ForEach-Object {
+        $UserType = $_.UserType
+        $AccountName = $_.AccountName
+        $Username = Read-Host -Prompt "Please provide the pre-Windows 2000 username of the $UserType account"
+        $Password = ConvertTo-SecureString -String "" -AsPlainText -Force
+        $AccountObj = [PSCustomObject]@{
+            AccountName = $AccountName
+            UserType    = $UserType
+            Credentials = New-Object System.Management.Automation.PSCredential($userName, $Password)
+            Onboard     = $false
+        }
+        If (-not ($AccountObj.Username)) {
+            Write-LogMessage -type Error -MSG "$UserType username not provided. Exiting."
+            exit 1
+        }
+        $PSMAccountDetailsArray += $AccountObj
+    }
+}
+
+# Test users
 # Test PSM user configuration
 #Initialise array which will capture detected misconfigurations
 $UserConfigurationErrors = @()
 $ArrayOfUserErrors = @()
 
+# For each user in $PSMAccountDetailsArray
+## Check username format
+## Check password format
+## If UserTests enabled
+### Check credentials
+### Search for user
+### ONLY IF FOUND, check user configuration
+###
 ## Test PSM user credential format
 foreach ($CurrentUser in $PSMAccountDetailsArray) {
-    $Credential = $CurrentUser.Credentials
-    $Username = $Credential.UserName
+    $Username = $CurrentUser.UserName
     $UserType = $CurrentUser.UserType
+    $Credential = $CurrentUser.Credentials
     Write-LogMessage -type Verbose -MSG "Testing $UserType credential format"
-    try {
-        Write-LogMessage -Type Verbose -MSG "Verifying PSM credentials were provided in expected format"
-        If (!(Test-CredentialFormat -Credential $Credential)) {
-            $NewError = ""
-            $NewError += "Username provided for PSMConnect user contained invalid characters or is too long.`n"
-            $NewError += "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain, and ensure"
-            $NewError += "the username is no more than 20 characters long"
-            $ArrayOfUserErrors += $NewError
-            Throw
-        }
+    Write-LogMessage -Type Verbose -MSG "Verifying PSM credentials were provided in expected format"
 
-        If (!(Test-PasswordCharactersValid -Credential $Credential)) {
-            $NewError = ""
-            $NewError += "Password provided for $Username user contained invalid characters.`n"
-            $NewError += '  Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
-            $ArrayOfUserErrors += $NewError
-            Write-Host ""
-            Throw
-        }
+    # Check for invalid username format
+    If (!(Test-CredentialFormat -Credential $Credential)) {
+        $NewError = ""
+        $NewError += "Username provided for PSMConnect user contained invalid characters or is too long.`n"
+        $NewError += "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain, and ensure"
+        $NewError += "the username is no more than 20 characters long"
+        $ArrayOfUserErrors += $NewError
     }
-    catch {
-        $ValidationFailed = $true
+
+    # Check for invalid characters in password
+    If (!(Test-PasswordCharactersValid -Credential $Credential)) {
+        $NewError = ""
+        $NewError += "Password provided for $Username user contained invalid characters.`n"
+        $NewError += '  Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
+        $ArrayOfUserErrors += $NewError
+        Write-Host ""
+        Throw
     }
 }
 
-## Test PSM user credentials
-foreach ($CurrentUser in $PSMAccountDetailsArray) {
-    $Credential = $CurrentUser.Credentials
-    $UserName = $Credential.UserName
-    $UserType = $CurrentUser.UserType
-    Write-LogMessage -type Verbose -MSG "Testing $Username credentials"
-    try {
-        if ($OperationsToPerform.UserTests) {
-            # Test PSM credentials
-            if (ValidateCredentials -domain $DomainDNSName -Credential $Credential) {
-                $InputName = ($UserType + "UserName")
-                Write-LogMessage -Type Verbose -MSG "$UserName user credentials validated"
-            }
-            else {
-                $NewError = ""
-                $NewError += "An attempt to authenticate to the domain using the $Username username and password failed."
-                $ArrayOfUserErrors += $NewError
-                Throw
-            }
+$AccountsToOnboard = $PSMAccountDetailsArray | Where-Object Onboard -eq $true
+# If accounts are to be onboarded, check them first
+If (($AccountsToOnboard) -and ($OperationsToPerform.UserTests)) {
+    foreach ($Account in $AccountsToOnboard) {
+        $UserType = $Account.UserType
+        $Credential = $Account.Credentials
+        $Username = $Credential.Username
+        # If performing user tests
+        Write-LogMessage -type Verbose -MSG "Testing $Username credentials"
+        # User has a password set, so it can be tested
+        # Test PSM credentials
+        if (ValidateCredentials -domain $DomainDNSName -Credential $Credential) {
+            Write-LogMessage -Type Verbose -MSG "$Username user credentials validated"
         }
-    }
-    catch {
-        $ValidationFailed = $true
-    }
-}
-
-## Test PSM user configuration
-foreach ($CurrentUser in $PSMAccountDetailsArray) {
-    $FailedToSearchAD = $false
-    Write-LogMessage -type Verbose -MSG "Testing $UserType configuration"
-    $Credential = $CurrentUser.Credentials
-    $Username = $Credential.UserName
-    $UserType = $CurrentUser.UserType
-    if ($OperationsToPerform.UserTests) {
-        try {
-            # Search for user by name
-            $UserDN = Get-UserDNFromSamAccountName -Username $Username
-            If ($UserDN) {
-                $UserObject = Get-UserObjectFromDN $UserDN # Search for the user
-            }
-            else {
-                # If user was not found throw error
-                $NewError = ""
-                $NewError += ("User {0} not found in the domain. Please ensure the user exists and`n" -f $Username)
-                $NewError += ("  that you have provided the pre-Windows 2000 logon name.")
-                $ArrayOfUserErrors += $NewError
-            }
-        }
-        catch {
-            # Failed to search AD
+        else {
             $NewError = ""
-            $NewError += ("Failed to retrieve {0} user details from Active Directory." -f $Username)
-            $NewError += ("Please ensure the user exists and is configured correctly and")
+            $NewError += "An attempt to authenticate to the domain using the $Username username and password failed."
+            $ArrayOfUserErrors += $NewError
+        }
+        # Search for user by name
+        $UserDN = Get-UserDNFromSamAccountName -Username $Username
+        If ($UserDN) {
+            $UserObject = Get-UserObjectFromDN $UserDN # Search for the user
+        }
+        else {
+            # If user was not found throw error
+            $NewError = ""
+            $NewError += ("User {0} not found in the domain. Please ensure the user exists and`n" -f $Username)
             $NewError += ("  that you have provided the pre-Windows 2000 logon name.")
             $ArrayOfUserErrors += $NewError
-            $FailedToSearchAD = $true
-            $ValidationFailed = $true
         }
-    }
-    if (($OperationsToPerform.UserTests) -and ($true -ne $FailedToSearchAD)) {
-        try {
+        If ($UserObject) {
             # Test PSM user configuration
             $PSMUserConfigTestResult = Test-PSMUserConfiguration -UserType $UserType -UserObject $UserObject -PSMInstallLocation $psmRootInstallLocation
             Write-LogMessage -Type Verbose -MSG "Successfully checked user configuration"
@@ -2335,68 +2392,8 @@ If ($UserConfigurationErrors) {
     $ValidationFailed = $true
 }
 
-# Remote Configuration
 
-$ArrayOfUserOnboardingConflictErrors = @()
-If ($OperationsToPerform.ExistingAccountCheck) {
-    $AccountsToOnboard = @()
-    If ($false -eq [string]::IsNullOrEmpty($pvwaToken)) { # double negative; read: "if $pvwaToken is set"
-        Write-LogMessage -Type Verbose -MSG "Retrieving PSM user details from vault"
-        $ExistingAccountsObj = Get-VaultAccountDetails -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $Safe
-        Write-LogMessage -Type Verbose -MSG "Checking if the found accounts have the correct details"
-        foreach ($AccountToCheck in $PSMAccountDetailsArray) {
-            $ReqCredentials = $AccountToCheck.Credentials
-            $ReqUserName = $ReqCredentials.UserName
-            $ReqAccountName = $AccountToCheck.AccountName
-            Write-LogMessage -type Verbose -MSG ("Checking if {0} exists in vault" -f $ReqUserName)
-            $ExistingAccountObj = $ExistingAccountsObj | Where-Object name -eq $ReqAccountName
-            If ($ExistingAccountObj) {
-                Write-LogMessage -Type Verbose -MSG "Existing account found. Checking if it has the correct details."
-                # an account with the same name already exists in the safe. Checking if the username and domain match
-                $ExistingAccountAddress = $ExistingAccountObj.address
-                $ExistingAccountUsername = $ExistingAccountObj.userName
-                If (($ExistingAccountAddress -ne $DomainDNSName) -or ($ExistingAccountUsername -ne $ReqUserName)) {
-                    $NewError = ""
-                    $NewError += ("An object with Account Name `"{0}`" already exists in the safe `"{1}`" and `n" -f $ReqAccountName, $Safe)
-                    $NewError += ("  its details do not match the specified user details. A comparison is below.`n" -f $ReqAccountName, $Safe)
-                    $Comparison = @(
-                        [PSCustomObject]@{
-                            Account  = "Existing user"
-                            Username = $ExistingAccountUsername
-                            Address  = $ExistingAccountAddress
-                        },
-                        [PSCustomObject]@{
-                            Account  = "New user"
-                            Username = $ReqUserName
-                            Address  = $DomainDNSName
-                        }
-                    )
-                    $NewError += ($Comparison | Out-String).Trim()
-                    $NewError += "`n"
-                    $ArrayOfUserOnboardingConflictErrors += $NewError
-                    $ValidationFailed = $true
-                }
-                else {
-                    Write-LogMessage -Type Verbose -MSG "Existing account has the correct details. Will skip onboarding."
-                }
-            }
-            else {
-                # Account not found, will be onboarded
-                Write-LogMessage -type Verbose -MSG "Account does not exist yet."
-                $AccountsToOnboard += $AccountToCheck
-            }
-        }
-    }
-    else {
-        Write-LogMessage -type Verbose -MSG "Skipping user onboarding conflict check as we have not authenticated to backend."
-    }
-}
-else {
-    Write-LogMessage -type Verbose -MSG "Skipping existing vaulted accounted check"
-    $AccountsToOnboard = $PSMAccountDetailsArray
-}
-
-Write-LogMessage -type Verbose -MSG "Completed validation steps"
+Write-LogMessage -type Verbose -MSG "Completed validation of PSM user configuration"
 
 If ($ArrayOfUserErrors) {
     Write-LogMessage -type Error -MSG $SectionSeparator
@@ -2434,7 +2431,16 @@ If ($ValidationFailed) {
     Write-LogMessage -type Info -MSG "Some tests failed, and details are shown above. Please correct these and rerun Set-DomainUser."
     exit 1
 }
-#Write-LogMessage -type Info -MSG "Please resolve any errors and run Set-DomainUser again to try again."
+
+Write-LogMessage -type Verbose -MSG "All inputs successfully passed validation"
+
+$psmConnectCredentials = ($PSMAccountDetailsArray | Where-Object UserType -eq "PSMConnect").Credentials
+$PSMConnectUsername = $psmConnectCredentials.UserName
+$PSMConnectDomainBSUser = ("{0}\{1}" -f $DomainNetbiosName, $psmConnectCredentials.UserName)
+
+$psmAdminCredentials = ($PSMAccountDetailsArray | Where-Object UserType -eq "PSMAdminConnect").Credentials
+$PSMAdminConnectUsername = $psmAdminCredentials.UserName
+$PSMAdminConnectDomainBSUser = ("{0}\{1}" -f $DomainNetbiosName, $psmAdminCredentials.UserName)
 
 # Remote Configuration
 If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
@@ -2615,10 +2621,8 @@ If ($OperationsToPerform.ServerObjectConfiguration) {
 ## End Remote Configuration Block
 
 # Perform local configuration
-# Group membership and security policy changes
-$PsmConnectUser = ("{0}\{1}" -f $DomainNetbiosName, $psmConnectCredentials.UserName)
-$PsmAdminConnectUser = ("{0}\{1}" -f $DomainNetbiosName, $psmAdminCredentials.UserName)
 
+# Group membership and security policy changes
 If ($OperationsToPerform.SecurityPolicyConfiguration) {
     If (!(Test-Path -Path $BackupPath -PathType Container)) {
         $null = New-Item -ItemType Directory -Path $BackupPath
@@ -2638,7 +2642,7 @@ If ($OperationsToPerform.SecurityPolicyConfiguration) {
         $null = $Content | Where-Object { $_ -match "^SeRemoteInteractiveLogonRight = (.*)" }
         $SecPolCurrentUsersString = $Matches[1]
         $SecPolUsersArray = ($SecPolCurrentUsersString -split ",")
-        $SecPolUsersArray += @($PsmConnectUser, $PsmAdminConnectUser)
+        $SecPolUsersArray += @($PSMConnectDomainBSUser, $PSMAdminConnectDomainBSUser)
         $SecPolNewUsersString = $SecPolUsersArray -join ","
         $null = New-Item -Path "$BackupPath\newsecpol.cfg" -ItemType File -Force
         Add-Content -Path "$BackupPath\newsecpol.cfg" -Value '[Version]'
@@ -2672,11 +2676,11 @@ $TasksTop += @{
 If ($OperationsToPerform.RemoteDesktopUsersGroupAddition) {
     try {
         $Members = (Get-LocalGroupMember -Group "Remote Desktop Users").Name
-        If ($PsmConnectUser -notin $Members) {
-            Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PsmConnectUser
+        If ($PSMConnectDomainBSUser -notin $Members) {
+            Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PSMConnectDomainBSUser
         }
-        If ($PsmAdminConnectUser -notin $Members) {
-            Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PsmAdminConnectUser
+        If ($PSMAdminConnectDomainBSUser -notin $Members) {
+            Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PSMAdminConnectDomainBSUser
         }
     }
     catch {
