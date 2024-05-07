@@ -2068,7 +2068,60 @@ If ($DomainNameAutodetected) {
     }
 }
 
-## InstallerUser/Tina
+# Confirm VaultOperationsTester is present, and install VS redist
+If ($OperationsToPerform.ServerObjectConfiguration) {
+    $PossibleVaultOperationsTesterLocations = @(
+        "$ScriptLocation\VaultOperationsTester\VaultOperationsTester.exe",
+        "$ScriptLocation\..\VaultOperationsTester\VaultOperationsTester.exe",
+        "$ScriptLocation\..\..\VaultOperationsTester\VaultOperationsTester.exe"
+    )
+    foreach ($Possibility in $PossibleVaultOperationsTesterLocations) {
+        If (Test-Path -PathType Leaf -Path $Possibility) {
+            $VaultOperationsTesterExe = Get-Item $Possibility
+            break
+        }
+    }
+
+    If ($null -eq $VaultOperationsTesterExe) {
+        Write-LogMessage -type Error -MSG "VaultOperationsTester.exe not found. Please ensure it's present in one of the following locations:"
+        Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation\..\..).FullName) + "\VaultOperationsTester"))
+        Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation\..).FullName) + "\VaultOperationsTester"))
+        Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation).FullName) + "\VaultOperationsTester"))
+        Write-LogMessage -type Error -MSG ("  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually.")
+        exit 1
+    }
+
+    If ("Valid" -ne (Get-AuthenticodeSignature $VaultOperationsTesterExe).Status) {
+        Write-LogMessage -type Error -MSG "VaultOperationsTester.exe signature validation failed. Please replace with a correctly signed version"
+        Write-LogMessage -type Error -MSG ("  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually.")
+        exit 1
+    }
+
+    $VaultOperationsTesterDir = (Get-Item $VaultOperationsTesterExe).Directory
+    # Check that VaultOperationsTester is available
+    # Check for and install C++ Redistributable
+    if ($false -eq (Test-Path -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\12.0\VC\Runtimes\x86" -PathType Container)) {
+        $CppRedis = "$VaultOperationsTesterDir\vcredist_x86.exe"
+        If ($false -eq (Test-Path -PathType Leaf -Path $CppRedis)) {
+            Write-LogMessage -type Error -MSG "File not found: $CppRedis"
+            Write-LogMessage -type Error -MSG "Visual Studio 2013 x86 Runtime not installed and redistributable not found. Please resolve the issue, install manually"
+            Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+            exit 1
+        }
+        Write-LogMessage -type Info -MSG "Installing Visual Studio 2013 (VC++ 12.0) x86 Runtime from $CppRedis..."
+        try {
+            $null = Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
+        }
+        catch {
+            Write-LogMessage -type Error -MSG "Failed to install Visual Studio 2013 x86 Redistributable. Resolve the error"
+            Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
+            exit 1
+        }
+    }
+}
+
+
+# Gather Install User information from user
 Write-LogMessage -Type Verbose -MSG "Getting Tina user details if required"
 If ($OperationsToPerform.GetInstallerUserCredentials) {
     $InstallUser = Get-Credential -Message ("Please enter installer user credentials")
@@ -2525,56 +2578,6 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
 If ($OperationsToPerform.ServerObjectConfiguration) {
     Write-LogMessage -type Verbose -MSG "Configuring backend PSM server objects"
     $VaultAddress = Get-VaultAddress -psmRootInstallLocation $psmRootInstallLocation
-    $PossibleVaultOperationsTesterLocations = @(
-        "$ScriptLocation\VaultOperationsTester\VaultOperationsTester.exe",
-        "$ScriptLocation\..\VaultOperationsTester\VaultOperationsTester.exe",
-        "$ScriptLocation\..\..\VaultOperationsTester\VaultOperationsTester.exe"
-    )
-    foreach ($Possibility in $PossibleVaultOperationsTesterLocations) {
-        If (Test-Path -PathType Leaf -Path $Possibility) {
-            $VaultOperationsTesterExe = Get-Item $Possibility
-            break
-        }
-    }
-
-    If ($null -eq $VaultOperationsTesterExe) {
-        Write-LogMessage -type Error -MSG "VaultOperationsTester.exe not found. Please ensure it's present in one of the following locations:"
-        Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation\..\..).FullName) + "\VaultOperationsTester"))
-        Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation\..).FullName) + "\VaultOperationsTester"))
-        Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation).FullName) + "\VaultOperationsTester"))
-        Write-LogMessage -type Error -MSG ("  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually.")
-        exit 1
-    }
-
-    If ("Valid" -ne (Get-AuthenticodeSignature $VaultOperationsTesterExe).Status) {
-        Write-LogMessage -type Error -MSG "VaultOperationsTester.exe signature validation failed. Please replace with a correctly signed version"
-        Write-LogMessage -type Error -MSG ("  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually.")
-        exit 1
-    }
-
-    $VaultOperationsTesterDir = (Get-Item $VaultOperationsTesterExe).Directory
-    # Check that VaultOperationsTester is available
-    # Check for and install C++ Redistributable
-    if ($false -eq (Test-Path -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\12.0\VC\Runtimes\x86" -PathType Container)) {
-        $CppRedis = "$VaultOperationsTesterDir\vcredist_x86.exe"
-        If ($false -eq (Test-Path -PathType Leaf -Path $CppRedis)) {
-            Write-LogMessage -type Error -MSG "File not found: $CppRedis"
-            Write-LogMessage -type Error -MSG "Visual Studio 2013 x86 Runtime not installed and redistributable not found. Please resolve the issue, install manually"
-            Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
-            exit 1
-        }
-        Write-LogMessage -type Info -MSG "Installing Visual Studio 2013 (VC++ 12.0) x86 Runtime from $CppRedis..."
-        try {
-            $null = Start-Process -FilePath $CppRedis -ArgumentList "/install /passive /norestart" -Wait
-        }
-        catch {
-            Write-LogMessage -type Error -MSG "Failed to install Visual Studio 2013 x86 Redistributable. Resolve the error"
-            Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
-            exit 1
-        }
-    }
-
-    # after C++ redistributable install
     try {
         $VotProcess = Set-PSMServerObject -VaultAddress $VaultAddress `
             -VaultCredentials $InstallUser `
