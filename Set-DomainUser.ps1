@@ -160,36 +160,42 @@ param(
 
 <#
 Script Order of Operations (search for a comment to find the relevant script section)
-# Functions
-# Determine what operations need to be performed
-# Initialise variables
-## Import previously validated inputs, if available
-# Perform initial checks
-## Proxy configuration
-## Check if domain user
-## Get Privilege Cloud URL
-## Identify AD domain
-# Gather information from user
-## PSMConnect user
-## PSMAdminConnect user
-## InstallerUser/Tina
-# Validate detected AD domain details
-# Test users
-## Test PSM user credential format
-## Test PSM user credentials
-## Test PSM user configuration
-## Test InstallerUser/Tina user credentials
-# List detected PSM user configuration errors
-# Save validated inputs
-# Remote Configuration
-# Perform local configuration
-# Post-configuration
-## Group membership and security policy changes
-## Invoke hardening scripts and restart service
-# Display summary and additional tasks
+Function Definitions
+Determine what operations need to be performed
+Initialise variables
+Perform initial checks
+    Proxy configuration
+    Check if domain user
+    Get Privilege Cloud URL
+    Identify AD domain
+    Confirm VaultOperationsTester is present, and install VS redist
+Validate detected AD domain details
+Gather Install User information from user
+Test InstallerUser/Tina user credentials
+If online, search backend for PSM user details and request credentials as required
+    or, if offline
+        Request user details if running in LocalConfigurationOnly mode
+Test users
+    Test PSM user credential format
+    Test PSM user credentials
+    Test PSM user configuration before onboarding
+List detected PSM user configuration errors
+Perform Remote Configuration
+    Create platform if required
+    Create safe if required
+    Onboard PSM users
+    Configure PSMServer object
+    Group membership and security policy changes
+Perform local configuration
+    Backup files
+    Update PSM configuration and scripts
+    Adding PSMAdminConnect user to Terminal Services configuration
+Post-configuration
+    Invoke hardening scripts and restart service
+    Display summary and additional tasks
 #>
 
-# Functions
+# Function Definitions
 Function Get-RestMethodError {
     <# Invoke-RestMethod can have several different possible results
     Connection failure: The connection error will be contained in $_.Exception.Message
@@ -2207,13 +2213,9 @@ $PSMAccountSearchPropertiesArray = @(
     }
 )
 
-# If possible, search backend for account details using the AccountName property
-## If accounts exist, check whether the address matches
-### If address matches, use these accounts
-### If address does not match, log and display mismatch and fail validation
-## If accounts do not exist, ask the user for credentials or get them from parameters
-# If not possible to search backend because PVWA Token not set, it means we're running with LocalConfigurationOnly, so ask the user for usernames
+# If online, search backend for PSM user details and request credentials as required
 If ($pvwaToken) {
+    # Search backend for account details using the AccountName property
     $ArrayOfUserOnboardingConflictErrors = @()
     $PSMAccountDetailsArray = @()
     Write-LogMessage -Type Verbose -MSG "Retrieving stored accounts in `"$safe`" safe from vault"
@@ -2229,12 +2231,12 @@ If ($pvwaToken) {
         $AccountName = $AccountToCheck.AccountName
         $VaultedAccount = $MatchingAccounts | Where-Object name -eq $AccountName
         If ($VaultedAccount) {
-            # an account with this account name exists; look into it
+            # If accounts exist, check whether the address matches
             $VaultedAccountUsername = $VaultedAccount.userName
             $VaultedAccountAddress = $VaultedAccount.address
             If ($DomainDNSName -eq $VaultedAccountAddress) {
-                # the address of the account is the same as the domain DNS name we're setting up, so store its details for further configuration
-                # Note we don't need its actual password as it's already onboarded.
+                ### If address matches, use these accounts
+                # As the account is already onboarded we don't need its password
                 $VaultedAccountPassword = ConvertTo-SecureString -String "NoPassword" -AsPlainText -Force
                 $AccountObj = [PSCustomObject]@{
                     AccountName = $AccountName
@@ -2244,7 +2246,7 @@ If ($pvwaToken) {
                 }
             }
             else {
-                # the address of the account is NOT the same as the domain DNS name we're setting up; this is a fatal error.
+                ### If address does not match, log and display mismatch and fail validation. This is a fatal error.
                 Write-LogMessage -type Verbose -MSG "Account with name $AccountName does not have the correct address"
                 $NewError = ""
                 $NewError += ("An object with Account Name `"{0}`" already exists in the safe `"{1}`" and `n" -f $AccountName, $Safe)
@@ -2255,18 +2257,18 @@ If ($pvwaToken) {
                         Username    = $VaultedAccountUsername
                         Address     = $VaultedAccountAddress
                     }
-                )
-                $NewError += ($ExistingAccountObj | Format-List | Out-String).Trim()
-                $NewError += "`n"
-                $ArrayOfUserOnboardingConflictErrors += $NewError
-                $ValidationFailed = $true
+                    )
+                    $NewError += ($ExistingAccountObj | Format-List | Out-String).Trim()
+                    $NewError += "`n"
+                    $ArrayOfUserOnboardingConflictErrors += $NewError
+                    $ValidationFailed = $true
+                }
             }
-        }
-        else {
-            # No account found; get details from parameter or from user and add to onboarding queue
-            If (($AccountType -eq "PSMConnect") -and ($psmConnectCredentials)) {
-                $Credentials = $psmConnectCredentials
-            }
+            else {
+                ## If accounts do not exist, ask the user for credentials or get them from parameters
+                If (($AccountType -eq "PSMConnect") -and ($psmConnectCredentials)) {
+                    $Credentials = $psmConnectCredentials
+                }
             ElseIf (($AccountType -eq "PSMAdminConnect") -and ($psmAdminCredentials)) {
                 $Credentials = $psmAdminCredentials
             }
@@ -2290,8 +2292,9 @@ If ($pvwaToken) {
     }
 }
 
+# Request user details if running in LocalConfigurationOnly mode
 If (!($pvwaToken)) {
-    # No PVWA Token, which means we're doing LocalConfigurationOnly. In that case we only need usernames, not passwords
+    # If running offline, ask the user for usernames
     $PSMAccountSearchPropertiesArray | ForEach-Object {
         $UserType = $_.UserType
         $AccountName = $_.AccountName
@@ -2324,7 +2327,6 @@ $ArrayOfUserErrors = @()
 ### Check credentials
 ### Search for user
 ### ONLY IF FOUND, check user configuration
-###
 ## Test PSM user credential format
 foreach ($CurrentUser in $PSMAccountDetailsArray) {
     $Username = $CurrentUser.UserName
@@ -2353,6 +2355,7 @@ foreach ($CurrentUser in $PSMAccountDetailsArray) {
     }
 }
 
+# Test PSM user configuration before onboarding
 $AccountsToOnboard = $PSMAccountDetailsArray | Where-Object Onboard -eq $true
 # If accounts are to be onboarded, check them first
 If (($AccountsToOnboard) -and ($OperationsToPerform.UserTests)) {
@@ -2491,10 +2494,10 @@ $psmAdminCredentials = ($PSMAccountDetailsArray | Where-Object UserType -eq "PSM
 $PSMAdminConnectUsername = $psmAdminCredentials.UserName
 $PSMAdminConnectDomainBSUser = ("{0}\{1}" -f $DomainNetbiosName, $psmAdminCredentials.UserName)
 
-# Remote Configuration
+# Perform Remote Configuration
 If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
     Write-LogMessage -type Info -MSG "Starting backend configuration"
-
+    # Create platform if required
     # Get platform info
     Write-LogMessage -Type Verbose -MSG "Checking current platform status"
     $platformStatus = Get-PlatformStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId $PlatformName
@@ -2525,6 +2528,7 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
         Write-LogMessage -Type Verbose -MSG "Platform is deactivated. Activating."
         Enable-Platform -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -Platform $platformStatus.Id
     }
+    # Create safe if required
     Write-LogMessage -Type Verbose -MSG "Checking current safe status"
     $safeStatus = Get-SafeStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -SafeName $Safe
     if ($safeStatus -eq $false) {
@@ -2575,6 +2579,7 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
     }
 }
 
+# Configure PSMServer object
 If ($OperationsToPerform.ServerObjectConfiguration) {
     Write-LogMessage -type Verbose -MSG "Configuring backend PSM server objects"
     $VaultAddress = Get-VaultAddress -psmRootInstallLocation $psmRootInstallLocation
@@ -2691,11 +2696,12 @@ If ($OperationsToPerform.PsmLocalConfiguration) {
 
     Write-LogMessage -Type Verbose -MSG "Stopping CyberArk Privileged Session Manager Service"
     Stop-Service $REGKEY_PSMSERVICE
+    # Backup files
     Write-LogMessage -Type Verbose -MSG "Backing up PSM configuration files and scripts"
     Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupPath $BackupPath
+    # Update PSM configuration and scripts
     Write-LogMessage -Type Verbose -MSG "Updating PSM configuration files and scripts"
     Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $DomainDNSName -PSMAdminConnectAccountName $PSMAdminConnectAccountName -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
-    #TODO: Update Basic_ini
     Write-LogMessage -Type Verbose -MSG "Adding PSMAdminConnect user to Terminal Services configuration"
     # Adding PSMAdminConnect user to Terminal Services configuration
     $AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $DomainNetbiosName -Credentials $psmAdminCredentials
