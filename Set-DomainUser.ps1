@@ -2043,7 +2043,7 @@ If ($DomainNameAutodetected) {
 ## InstallerUser/Tina
 Write-LogMessage -Type Verbose -MSG "Getting Tina user details if required"
 If ($OperationsToPerform.GetInstallerUserCredentials) {
-    $InstallUser = Get-Credential -Message ("Please enter installer user credentials") -UserName $InstallUserName
+    $InstallUser = Get-Credential -Message ("Please enter installer user credentials")
     if (!($InstallUser)) {
         Write-LogMessage -Type Error -MSG "No install user credentials provided. Exiting."
         exit 1
