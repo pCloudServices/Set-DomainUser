@@ -747,7 +747,7 @@ Function Backup-PSMConfig {
         If (!(Test-Path $PSMHardeningBackupFileName)) {
             Write-LogMessage -Type Error -MSG "Failed to backup PSMHardening.ps1" -ErrorAction Stop
         }
-        ElseIf (!(Test-Path $PSMConfigureAppLockerBackupFileName)) {
+        If (!(Test-Path $PSMConfigureAppLockerBackupFileName)) {
             Write-LogMessage -Type Error -MSG "Failed to backup PSMConfigureAppLocker.ps1" -ErrorAction Stop
         }
         If (!(Test-Path $BasicPSMBackupFileName )) {
