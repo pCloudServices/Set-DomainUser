@@ -177,15 +177,15 @@ If online, search backend for PSM user details and request credentials as requir
         Request user details if running in LocalConfigurationOnly mode
 Test users
     Test PSM user credential format
+    Test PSM user configuration
     Test PSM user credentials
-    Test PSM user configuration before onboarding
 List detected PSM user configuration errors
 Perform Remote Configuration
     Create platform if required
     Create safe if required
     Onboard PSM users
     Configure PSMServer object
-    Group membership and security policy changes
+Group membership and security policy changes
 Perform local configuration
     Backup files
     Update PSM configuration and scripts
@@ -2010,7 +2010,6 @@ else {
     $UM = $false
 }
 
-# Gather information from user
 ## Proxy configuration
 Write-LogMessage -type Verbose -MSG "Detecting proxy from user profile"
 $Proxy = Get-ProxyDetails
@@ -2051,30 +2050,6 @@ if ($OperationsToPerform.DomainDNSNameDetection) {
 if ($OperationsToPerform.DomainNetbiosNameDetection) {
     $DomainNameAutodetected = $true
     $DomainNetbiosName = Get-DomainNetbiosName
-}
-
-# Validate detected AD domain details
-If ($DomainNameAutodetected) {
-    Write-LogMessage -Type Verbose -MSG "Confirming auto-detected domain details"
-    $DomainInfo = ""
-    $DomainInfo += ("--------------------------------------------------------`n")
-    $DomainInfo += ("Detected the following domain names:`n")
-    $DomainInfo += ("  DNS name:     {0}`n" -f $DomainDNSName)
-    $DomainInfo += ("  NETBIOS name: {0}`n" -f $DomainNetbiosName)
-    $DomainInfo += ("Is this correct?")
-
-    $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
-    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the domain details are correct"))
-    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct domain details can be provided"))
-
-    $DomainPromptSelection = $Host.UI.PromptForChoice("", $DomainInfo, $PromptOptions, 1)
-    If ($DomainPromptSelection -eq 0) {
-        Write-LogMessage -Type Info "Domain details confirmed"
-    }
-    Else {
-        Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct domain DNS and NETBIOS names on the command line."
-        $ValidationFailed = $true
-    }
 }
 
 # Confirm VaultOperationsTester is present, and install VS redist
@@ -2129,6 +2104,29 @@ If ($OperationsToPerform.ServerObjectConfiguration) {
     }
 }
 
+# Validate detected AD domain details
+If ($DomainNameAutodetected) {
+    Write-LogMessage -Type Verbose -MSG "Confirming auto-detected domain details"
+    $DomainInfo = ""
+    $DomainInfo += ("--------------------------------------------------------`n")
+    $DomainInfo += ("Detected the following domain names:`n")
+    $DomainInfo += ("  DNS name:     {0}`n" -f $DomainDNSName)
+    $DomainInfo += ("  NETBIOS name: {0}`n" -f $DomainNetbiosName)
+    $DomainInfo += ("Is this correct?")
+
+    $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
+    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the domain details are correct"))
+    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct domain details can be provided"))
+
+    $DomainPromptSelection = $Host.UI.PromptForChoice("", $DomainInfo, $PromptOptions, 1)
+    If ($DomainPromptSelection -eq 0) {
+        Write-LogMessage -Type Info "Domain details confirmed"
+    }
+    Else {
+        Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct domain DNS and NETBIOS names on the command line."
+        $ValidationFailed = $true
+    }
+}
 
 # Gather Install User information from user
 Write-LogMessage -Type Verbose -MSG "Getting Tina user details if required"
@@ -2318,8 +2316,7 @@ If (!($pvwaToken)) {
 }
 
 # Test users
-# Test PSM user configuration
-#Initialise array which will capture detected misconfigurations
+#Initialise arrays which will capture detected misconfigurations
 $UserConfigurationErrors = @()
 $ArrayOfUserErrors = @()
 
@@ -2330,6 +2327,7 @@ $ArrayOfUserErrors = @()
 ### Check credentials
 ### Search for user
 ### ONLY IF FOUND, check user configuration
+
 ## Test PSM user credential format
 foreach ($CurrentUser in $PSMAccountDetailsArray) {
     $Username = $CurrentUser.UserName
@@ -2371,7 +2369,7 @@ If (($AccountsToOnboard) -and ($OperationsToPerform.UserTests)) {
         # If performing user tests
         Write-LogMessage -type Verbose -MSG "Testing $Username credentials"
         # User has a password set, so it can be tested
-        # Test PSM credentials
+        # Test PSM user credentials
         $TestResult = ValidateCredentials -domain $DomainDNSName -Credential $Credential
         if ("Success" -eq $TestResult) {
             Write-LogMessage -Type Verbose -MSG "$Username user credentials validated"
@@ -2471,7 +2469,6 @@ If ($UserConfigurationErrors) {
     $ValidationFailed = $true
 }
 
-
 Write-LogMessage -type Verbose -MSG "Completed validation of PSM user configuration"
 
 If ($ArrayOfUserErrors) {
@@ -2570,6 +2567,7 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
         }
     }
 
+    # Onboard PSM users
     foreach ($AccountToOnboard in $AccountsToOnboard) {
         $NewCredentials = $AccountToOnboard.Credentials
         $NewUserName = $AccountToOnboard.UserName
@@ -2625,8 +2623,6 @@ If ($OperationsToPerform.ServerObjectConfiguration) {
 }
 
 ## End Remote Configuration Block
-
-# Perform local configuration
 
 # Group membership and security policy changes
 If ($OperationsToPerform.SecurityPolicyConfiguration) {
@@ -2806,7 +2802,7 @@ else {
     }
 }
 Write-LogMessage -Type Verbose -MSG "Restarting CyberArk Privileged Session Manager Service"
-If (!($NoPSMRestart)) {
+If ($false -eq $NoPSMRestart) {
     Restart-Service $REGKEY_PSMSERVICE
 }
 
