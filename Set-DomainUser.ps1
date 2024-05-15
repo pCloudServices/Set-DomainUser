@@ -561,10 +561,14 @@ Function ValidateCredentials {
         try {
             Add-Type -AssemblyName System.DirectoryServices.AccountManagement
             $Directory = New-Object System.DirectoryServices.AccountManagement.PrincipalContext([System.DirectoryServices.AccountManagement.ContextType]::Domain, $domain)
-            return $Directory.ValidateCredentials($Credential.UserName, $Credential.GetNetworkCredential().Password)
+            if ($Directory.ValidateCredentials($Credential.UserName, $Credential.GetNetworkCredential().Password)) {
+                return "Success"
+            } else {
+                return "InvalidCredentials"
+            }
         }
         catch {
-            return $false
+            return ("ErrorOccurred:" + $_.Exception.Message)
         }
     }
 }
@@ -1745,7 +1749,6 @@ function Test-PSMUserConfiguration {
             }
         }
     }
-    Write-LogMessage -type Verbose -MSG ($AllUserConfigurationErrors | out-string)
     return $AllUserConfigurationErrors
 }
 
@@ -2369,31 +2372,45 @@ If (($AccountsToOnboard) -and ($OperationsToPerform.UserTests)) {
         Write-LogMessage -type Verbose -MSG "Testing $Username credentials"
         # User has a password set, so it can be tested
         # Test PSM credentials
-        if (ValidateCredentials -domain $DomainDNSName -Credential $Credential) {
+        $TestResult = ValidateCredentials -domain $DomainDNSName -Credential $Credential
+        if ("Success" -eq $TestResult) {
             Write-LogMessage -Type Verbose -MSG "$Username user credentials validated"
         }
-        else {
+        elseIf ("InvalidCredentials" -eq $TestResult) {
+            Write-LogMessage -Type Verbose -MSG "$Username user credentials incorrect"
             $NewError = ""
-            $NewError += "An attempt to authenticate to the domain using the $Username username and password failed."
+            $NewError += "Incorrect credentials provided for $Username."
+            $ArrayOfUserErrors += $NewError
+            $ValidationFailed = $true
+        }
+        elseIf ($TestResult -match "ErrorOccurred.*") {
+            $CaughtError = $TestResult -replace "^ErrorOccurred:",""
+            Write-LogMessage -Type Verbose -MSG ("Error occurred while validating $Username user credentials: {0}" -f $CaughtError)
+            $NewError = ""
+            $NewError += ("The following error occurred while validating credentials for $Username against the domain: {0}" -f $CaughtError)
             $ArrayOfUserErrors += $NewError
             $ValidationFailed = $true
         }
         # Search for user by name
+        Write-LogMessage -Type Verbose -MSG ("Searching AD for $Username")
         $UserDN = Get-UserDNFromSamAccountName -Username $Username
         If ($UserDN) {
+            Write-LogMessage -Type Verbose -MSG ("Getting $Username user object")
             $UserObject = Get-UserObjectFromDN $UserDN # Search for the user
         }
         else {
             # If user was not found throw error
+            Write-LogMessage -Type Verbose -MSG ("$Username was not found on the domain")
             $NewError = ""
             $NewError += ("User {0} not found in the domain. Please ensure the user exists and`n" -f $Username)
             $NewError += ("  that you have provided the pre-Windows 2000 logon name.")
             $ArrayOfUserErrors += $NewError
         }
         If ($UserObject) {
+            Write-LogMessage -Type Verbose -MSG ("Checking $Username user configuration")
             # Test PSM user configuration
             $PSMUserConfigTestResult = Test-PSMUserConfiguration -UserType $UserType -UserObject $UserObject -PSMInstallLocation $psmRootInstallLocation
-            Write-LogMessage -Type Verbose -MSG "Successfully checked user configuration"
+            Write-LogMessage -Type Verbose -MSG "Successfully checked $Username user configuration"
             If ($PSMUserConfigTestResult) {
                 $UserConfigurationErrors += $PSMUserConfigTestResult
             }
@@ -2658,7 +2675,7 @@ else {
 }
 
 $TasksTop += @{
-    Message  = "Ensure domain GPOs allow PSM users to log on to PSM servers with Remote Desktop"
+    Message  = "Configure domain GPOs to allow PSM users to log on to PSM servers with Remote Desktop"
     Priority = "Required"
 }
 
@@ -2814,7 +2831,7 @@ If ($SkipPSMObjectUpdate -or $LocalConfigurationOnly) {
 }
 
 $TasksTop += @{
-    Message  = ("Ensure automatic password management is configured for the PSM accounts")
+    Message  = ("Enable automatic password management for the PSM accounts")
     Priority = "Recommended"
 }
 
