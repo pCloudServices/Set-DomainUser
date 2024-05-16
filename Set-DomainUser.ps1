@@ -1,51 +1,49 @@
 <#
 .SYNOPSIS
-This script will update the connector server to a domain user setup. It will also onboard the domain users into the portal inside the PSM safe.
+ This script will update the connector server to a domain user setup. It will also onboard the domain users into the portal inside the PSM safe.
 .DESCRIPTION
-Does the Domain User for PSM setup.
+ Configures PSM to use domain-based PSMConnect and PSMAdminConnect users instead of the default local users.
 .PARAMETER PrivilegeCloudUrl
-The PVWA Address (e.g. https://tenant.privilegecloud.cyberark.cloud, or on-prem URL)
+ The PVWA Address (e.g. https://tenant.privilegecloud.cyberark.cloud, or on-prem URL)
 .PARAMETER VaultAddress
-The Vault Address (e.g. vault-SUBDOMAIN.privilegecloud.cyberark.cloud)
+ The Vault Address (e.g. vault-SUBDOMAIN.privilegecloud.cyberark.cloud)
 .PARAMETER DomainDNSName
-The fully qualified domain name of the domain user account(s).
+ The fully qualified domain name of the domain user account(s).
 .PARAMETER DomainNetbiosName
-The NETBIOS name for the domain user account(s).
+ The NETBIOS name for the domain user account(s).
 .PARAMETER Safe
-The safe in which to store PSM user credentials
+ The safe in which to store PSM user credentials
 .PARAMETER InstallUser
-Tenant Administrator/InstallerUser credentials
+ Tenant Administrator/InstallerUser credentials
 .PARAMETER psmConnectCredentials
-PSMConnect domain user credentials
+ PSMConnect domain user credentials
 .PARAMETER psmAdminCredentials
-PSMAdminConnect domain user credentials
+ PSMAdminConnect domain user credentials
 .PARAMETER IgnoreShadowPermissionErrors
-Ignore errors while granting PSMAdminConnect user shadow permissions
+ Ignore errors while granting PSMAdminConnect user shadow permissions
 .PARAMETER PlatformName
-The name of the platform to be created for the PSM accounts
+ The name of the platform to be created for the PSM accounts
 .PARAMETER PSMConnectAccountName
-The Account Name for the object in the vault which will contain the PSMConnect account. Defaults to "PSMConnect".
+ The Account Name for the object in the vault which will contain the PSMConnect account. Defaults to "PSMConnect".
 .PARAMETER PSMAdminConnectAccountName
-The Account Name for the object in the vault which will contain the PSMAdminConnect account. Defaults to "PSMAdminConnect".
+ The Account Name for the object in the vault which will contain the PSMAdminConnect account. Defaults to "PSMAdminConnect".
 .PARAMETER DoNotHarden
-Skip running the PSMHardening.ps1 script to speed up execution if step has already been completed.
+ Skip running the PSMHardening.ps1 script to speed up execution if step has already been completed.
 .PARAMETER DoNotConfigureAppLocker
-Skip running the PSMConfigureAppLocker.ps1 script to speed up execution if step has already been completed.
+ Skip running the PSMConfigureAppLocker.ps1 script to speed up execution if step has already been completed.
 .PARAMETER LocalConfigurationOnly
-Do not onboard accounts in Privilege Cloud. Use on subsequent servers after first run.
+ Do not onboard accounts in Privilege Cloud. Use on subsequent servers after first run.
 .PARAMETER SkipPSMUserTests
-Do not check the configuration of the PSM domain users for errors
+ Do not check the configuration of the PSM domain users for errors
 .PARAMETER SkipPSMObjectUpdate
-Do not update the PSM server object in backend
+ Do not update the PSM server object in backend
 .PARAMETER SkipSecurityPolicyConfiguration
-Do not update Local Security Policy to allow PSM users to log on with Remote Desktop
+ Do not update Local Security Policy to allow PSM users to log on with Remote Desktop
 .PARAMETER SkipAddingUsersToRduGroup
-Do not add PSM users to the Remote Desktop Users group
-.PARAMETER NotFirstRun
-This script is being run on additional servers following the first. Skip platform and safe creation and account onboarding.
+ Do not add PSM users to the Remote Desktop Users group
+.VERSION 14.2.0
+.AUTHOR CyberArk
 #>
-
-# Version: 14.0.0
 
 [CmdletBinding()]
 param(
@@ -150,16 +148,54 @@ param(
 
     [Parameter(
         Mandatory = $false,
-        HelpMessage = "Safe and platform configuration and account onboarding should be skipped as the script is being run on subsequent PSM servers.")]
-    [switch]$NotFirstRun,
+        HelpMessage = "Do not restart PSM")]
+    [switch]$NoPSMRestart,
 
     [Parameter(
         Mandatory = $false,
-        HelpMessage = "Proxy Server in address:port format or `"none`" for no proxy")]
-    [string]$Proxy
+        HelpMessage = "Safe and platform configuration and account onboarding should be skipped as the script is being run on subsequent PSM servers.")]
+    [switch]$NotFirstRun
+
 )
 
-#Functions
+<#
+Script Order of Operations (search for a comment to find the relevant script section)
+Function Definitions
+Determine what operations need to be performed
+Initialise variables
+Perform initial checks
+    Proxy configuration
+    Check if domain user
+    Get Privilege Cloud URL
+    Identify AD domain
+    Confirm VaultOperationsTester is present, and install VS redist
+Validate detected AD domain details
+Gather Install User information from user
+Test InstallerUser/Tina user credentials
+If online, search backend for PSM user details and request credentials as required
+    or, if offline
+        Request user details if running in LocalConfigurationOnly mode
+Test users
+    Test PSM user credential format
+    Test PSM user configuration
+    Test PSM user credentials
+List detected PSM user configuration errors
+Perform Remote Configuration
+    Create platform if required
+    Create safe if required
+    Onboard PSM users
+    Configure PSMServer object
+Group membership and security policy changes
+Perform local configuration
+    Backup files
+    Update PSM configuration and scripts
+    Adding PSMAdminConnect user to Terminal Services configuration
+Post-configuration
+    Invoke hardening scripts and restart service
+    Display summary and additional tasks
+#>
+
+# Function Definitions
 Function Get-RestMethodError {
     <# Invoke-RestMethod can have several different possible results
     Connection failure: The connection error will be contained in $_.Exception.Message
@@ -201,6 +237,26 @@ Function Get-RestMethodError {
             ErrorMessage = $ErrorRecord.Exception.Message
         }
     }
+}
+
+Function Get-DifferencePosition {
+    param(
+        [Parameter(Mandatory = $true)][string]$String1,
+        [Parameter(Mandatory = $true)][string]$String2
+    )
+    $DifferencePosition = $( # work out the position where the current value differs from the expected value by comparing them 1 character at a time ...
+        $ExpectedValueLength = $String1.length
+        $i = 0
+        While ($i -le $ExpectedValueLength) {
+            If ($String1[$i] -eq $String2[$i]) {
+                $i++
+            }
+            else {
+                $DifferencePosition = $i
+                return $DifferencePosition
+            }
+        }
+    )
 }
 
 Function Write-LogMessage {
@@ -435,7 +491,6 @@ Function Set-CurrentSecurityPolicy {
 }
 
 Function Get-ProxyDetails {
-    Write-LogMessage -type Verbose -MSG "Detecting proxy from user profile"
     try {
         $ProxyStatus = (Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings').ProxyEnable
         If ($ProxyStatus -eq 1) {
@@ -489,7 +544,6 @@ Function Get-VaultAddress {
     }
 }
 
-
 Function ValidateCredentials {
     <#
     .SYNOPSIS
@@ -507,10 +561,14 @@ Function ValidateCredentials {
         try {
             Add-Type -AssemblyName System.DirectoryServices.AccountManagement
             $Directory = New-Object System.DirectoryServices.AccountManagement.PrincipalContext([System.DirectoryServices.AccountManagement.ContextType]::Domain, $domain)
-            return $Directory.ValidateCredentials($Credential.UserName, $Credential.GetNetworkCredential().Password)
+            if ($Directory.ValidateCredentials($Credential.UserName, $Credential.GetNetworkCredential().Password)) {
+                return "Success"
+            } else {
+                return "InvalidCredentials"
+            }
         }
         catch {
-            return $false
+            return ("ErrorOccurred:" + $_.Exception.Message)
         }
     }
 }
@@ -564,6 +622,10 @@ Function Get-ServiceInstallPath {
             If ($Null -ne $regPath) {
                 $retInstallPath = $regPath.ImagePath.Substring($regPath.ImagePath.IndexOf('"'), $regPath.ImagePath.LastIndexOf('"') + 1)
             }
+            else {
+                Write-LogMessage -type Error -MSG "Could not find PSM installation. Exiting."
+                exit 1
+            }
         }
         catch {
             Throw $(New-Object System.Exception ("Cannot get Service Install path for $ServiceName", $_.Exception))
@@ -606,7 +668,7 @@ Function New-ConnectionToRestAPI {
     }
     $json = $body | ConvertTo-Json
     Try {
-        $Result = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -ContentType 'application/json' -WebSession $WebRequestSession
+        $Result = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -ContentType 'application/json'
         return @{
             ErrorCode = "Success"
             Response  = $Result
@@ -641,7 +703,7 @@ Function Test-PvwaToken {
         Authorization = $Token
     }
     try {
-        $testToken = Invoke-RestMethod -Method 'Get' -Uri $url -Headers $Headers -ContentType 'application/json' -WebSession $Global:WebRequestSession
+        $testToken = Invoke-RestMethod -Method 'Get' -Uri $url -Headers $Headers -ContentType 'application/json'
         if ($testToken) {
             return @{
                 ErrorCode = "Success"
@@ -685,10 +747,10 @@ Function Backup-PSMConfig {
         If (!(Test-Path $PSMHardeningBackupFileName)) {
             Write-LogMessage -Type Error -MSG "Failed to backup PSMHardening.ps1" -ErrorAction Stop
         }
-        ElseIf (!(Test-Path $PSMConfigureAppLockerBackupFileName)) {
+        If (!(Test-Path $PSMConfigureAppLockerBackupFileName)) {
             Write-LogMessage -Type Error -MSG "Failed to backup PSMConfigureAppLocker.ps1" -ErrorAction Stop
         }
-        ElseIf (!(Test-Path $BasicPSMBackupFileName )) {
+        If (!(Test-Path $BasicPSMBackupFileName )) {
             Write-LogMessage -Type Error -MSG "Failed to backup basic_psm.ini" -ErrorAction Stop
         }
     }
@@ -739,8 +801,6 @@ Function Update-PSMConfig {
 
         #PSMApplocker
         #-------------------------
-
-
         $psmApplockerContent = Get-Content -Path $psmRootInstallLocation\Hardening\PSMConfigureApplocker.ps1
 
         $newPsmApplockerContent = $psmApplockerContent -replace '^(\$(Global:)?PSM_CONNECT\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmConnectUsername)
@@ -751,8 +811,6 @@ Function Update-PSMConfig {
 
         #basic_psm.ini
         #-------------------------
-
-
         $psmBasicPSMContent = Get-Content -Path $psmRootInstallLocation\basic_psm.ini
 
         $psmBasicPSMAdminLine = "PSMServerAdminId=`"$PSMAdminConnectAccountName`""
@@ -785,13 +843,24 @@ Function Invoke-PSMHardening {
     #>
     param (
         [Parameter(Mandatory = $true)]
+        $PSMConnectUsername,
+
+        [Parameter(Mandatory = $true)]
+        $PSMAdminConnectUsername,
+
+        [Parameter(Mandatory = $true)]
+        $DomainNetbiosName,
+
+        [Parameter(Mandatory = $true)]
         $psmRootInstallLocation
     )
     Write-Verbose "Starting PSM Hardening"
     $hardeningScriptRoot = "$psmRootInstallLocation\Hardening"
     $CurrentLocation = Get-Location
     Set-Location $hardeningScriptRoot
+    Set-PSDebug -Strict:$False
     & "$hardeningScriptRoot\PSMHardening.ps1"
+    Set-PSDebug -Strict:$False
     Set-Location $CurrentLocation
 }
 
@@ -806,13 +875,24 @@ Function Invoke-PSMConfigureAppLocker {
     #>
     param (
         [Parameter(Mandatory = $true)]
+        $PSMConnectUsername,
+
+        [Parameter(Mandatory = $true)]
+        $PSMAdminConnectUsername,
+
+        [Parameter(Mandatory = $true)]
+        $DomainNetbiosName,
+
+        [Parameter(Mandatory = $true)]
         $psmRootInstallLocation
     )
     Write-Verbose "Starting PSMConfigureAppLocker"
     $hardeningScriptRoot = "$psmRootInstallLocation\Hardening"
     $CurrentLocation = Get-Location
     Set-Location $hardeningScriptRoot
+    Set-PSDebug -Strict:$False
     & "$hardeningScriptRoot\PSMConfigureAppLocker.ps1"
+    Set-PSDebug -Strict:$False
     Set-Location $CurrentLocation
 }
 
@@ -868,7 +948,7 @@ Function New-VaultAdminObject {
     $json = $body | ConvertTo-Json
     try {
         $result = Invoke-RestMethod -Method POST -Uri $url -Body $json -Headers @{ "Authorization" = $pvwaToken } `
-            -ContentType "application/json" -ErrorVariable ResultError -WebSession $Global:WebRequestSession
+            -ContentType "application/json" -ErrorVariable ResultError
         return $result
     }
     catch {
@@ -878,6 +958,87 @@ Function New-VaultAdminObject {
         }
         catch {
             Write-LogMessage -Type Error -MSG ("Error creating user: {0}" -f $ResultError.Message)
+            exit 1
+        }
+    }
+}
+
+Function Get-VaultAccountDetails {
+    <#
+    .SYNOPSIS
+    Onboards an account in the vault
+    .DESCRIPTION
+    Onboards an account in the vault
+    .PARAMETER pvwaAddress
+    Address of the PVWA
+    .PARAMETER pvwaToken
+    Token to log into PVWA using APIs
+    .PARAMETER safe
+    Safe to search
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $pvwaAddress,
+        [Parameter(Mandatory = $true)]
+        $pvwaToken,
+        [Parameter(Mandatory = $false)]
+        $safe = "PSM"
+    )
+
+    $url = ("{0}/PasswordVault/api/Accounts?filter=safename eq {1}" -f $pvwaAddress, $safe)
+    try {
+        $result = Invoke-RestMethod -Method GET -Uri $url -Headers @{ "Authorization" = $pvwaToken } `
+            -ContentType "application/json" -ErrorVariable ResultError
+        $Accounts = $result.value
+        return $Accounts
+    }
+    catch {
+        try {
+            $ErrorMessage = $ResultError.Message | ConvertFrom-Json
+            return $ErrorMessage
+        }
+        catch {
+            Write-LogMessage -Type Error -MSG ("Error retrieving account details: {0}" -f $ResultError.Message)
+            exit 1
+        }
+    }
+}
+
+Function Get-VaultAccountPassword {
+    <#
+    .SYNOPSIS
+    Onboards an account in the vault
+    .DESCRIPTION
+    Onboards an account in the vault
+    .PARAMETER pvwaAddress
+    Address of the PVWA
+    .PARAMETER pvwaToken
+    Token to log into PVWA using APIs
+    .PARAMETER safe
+    Safe to search
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $pvwaAddress,
+        [Parameter(Mandatory = $true)]
+        $pvwaToken,
+        [Parameter(Mandatory = $true)]
+        $AccountId
+    )
+
+    $url = ("{0}/PasswordVault/API/Accounts/{1}/Password/Retrieve/" -f $pvwaAddress, $AccountId)
+    try {
+        $result = Invoke-RestMethod -Method POST -Uri $url -Headers @{ "Authorization" = $pvwaToken } `
+            -ContentType "application/json" -ErrorVariable ResultError
+        return $result
+    }
+    catch {
+        try {
+            $ErrorMessage = $ResultError.Message | ConvertFrom-Json
+            return $ErrorMessage
+        }
+        catch {
+            Write-LogMessage -Type Error -MSG ("Error retrieving account password: {0}" -f $ResultError.Message)
             exit 1
         }
     }
@@ -945,7 +1106,7 @@ Function Add-AdminUserTSShadowPermission {
     }
 }
 
-Function Duplicate-Platform {
+Function Copy-Platform {
     <#
     .SYNOPSIS
     Duplicating the windows domain user platform so we can onboard the accounts into that platform
@@ -975,7 +1136,7 @@ Function Duplicate-Platform {
             Description = $NewPlatformDescription
         }
         $json = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
+        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
     }
     catch {
         Write-LogMessage -Type Error -MSG "Error duplicating platform"
@@ -1008,7 +1169,7 @@ Function Get-PlatformStatus {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Platforms/targets?search=" + $PlatformId
-        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError -WebSession $Global:WebRequestSession
+        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError
         # This query returns a list of platforms where the name contains the search string. Find and return just the one with an exactly matching name.
         $TargetPlatform = $Getresult.Platforms | Where-Object Name -eq $PlatformId
         if ($TargetPlatform) {
@@ -1049,7 +1210,7 @@ Function Get-PlatformStatusById {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Platforms/targets"
-        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError -WebSession $Global:WebRequestSession
+        $Getresult = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -ErrorVariable GetPlatformError
         # This query returns a list of platforms where the name contains the search string. Find and return just the one with an exactly matching name.
         $TargetPlatform = $Getresult.Platforms | Where-Object PlatformID -eq $PlatformId
         if ($TargetPlatform) {
@@ -1090,7 +1251,7 @@ Function Get-SafeStatus {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/safes?search=$SafeName"
-        $SafeRequest = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue -WebSession $Global:WebRequestSession
+        $SafeRequest = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue
         # This query returns a list of safes where the name contains the search string. Find and return just the one with an exactly matching name.
         $Safe = $SafeRequest.Value | Where-Object safeName -eq $SafeName
         if ($Safe) {
@@ -1107,7 +1268,7 @@ Function Get-SafeStatus {
     }
 }
 
-Function Activate-Platform {
+Function Enable-Platform {
     <#
     .SYNOPSIS
     Activate the required platform
@@ -1130,7 +1291,7 @@ Function Activate-Platform {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Platforms/Targets/$PlatformNumId/activate"
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
+        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
     }
     catch {
         Write-LogMessage -Type Error -MSG "Error activating platform"
@@ -1139,7 +1300,7 @@ Function Activate-Platform {
     }
 }
 
-Function Create-PSMSafe {
+Function New-PSMSafe {
     <#
     .SYNOPSIS
     Creates a new PSM Safe with correct permissions
@@ -1169,7 +1330,7 @@ Function Create-PSMSafe {
             description = $description
         }
         $json = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
+        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
         #Permissions for the needed accounts
         #PSMMaster full permissions
         New-SafePermissions -pvwaAddress $pvwaAddress -pvwaToken $pvwaToken -safe $safe -safeMember "PSMMaster"
@@ -1292,7 +1453,7 @@ Function Set-SafePermissions {
             permissions = $safePermissions
         }
         $json = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Method 'Put' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
+        $null = Invoke-RestMethod -Method 'Put' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
     }
     catch {
         Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
@@ -1332,7 +1493,7 @@ Function Get-SafePermissions {
     )
     try {
         $url = $pvwaAddress + "/PasswordVault/api/Safes/$safe/members/$safeMember/"
-        $result = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
+        $result = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
         if ($result) {
             return $result.permissions
         }
@@ -1410,14 +1571,14 @@ Function New-SafePermissions {
             permissions = $safePermissions
         }
         $json = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json' -WebSession $Global:WebRequestSession
+        $null = Invoke-RestMethod -Method 'Post' -Uri $url -Body $json -Headers @{ 'Authorization' = $pvwaToken } -ContentType 'application/json'
     }
     catch {
         Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
     }
 }
 
-Function Check-UM {
+Function Test-UM {
     <#
     .SYNOPSIS
     Checks to see if tenant is UM or not (from the connector server)
@@ -1463,6 +1624,136 @@ function Test-CredentialFormat {
         return $false
     }
     return $true
+}
+
+function Test-PSMUserConfiguration {
+    param (
+        [Parameter(Mandatory = $true)][System.DirectoryServices.DirectoryEntry]$UserObject,
+        [Parameter(Mandatory = $true)][string]$UserType,
+        [Parameter(Mandatory = $true)][string]$PSMInstallLocation
+
+    )
+    # Define the settings we'll be comparing against
+    $PSMComponentsPath = $PSMInstallLocation + "Components"
+    $PSMInitSessionPath = $PSMComponentsPath + "\PSMInitSession.exe"
+    $SettingsToCheck = @(
+        @{
+            UserType      = "All"
+            Name          = "TerminalServicesInitialProgram"
+            DisplayName   = "Initial Program"
+            ExpectedValue = $PSMInitSessionPath
+            SettingType   = "StringCompare"
+        },
+        @{
+            UserType      = "All"
+            Name          = "TerminalServicesWorkDirectory"
+            DisplayName   = "Working Directory"
+            ExpectedValue = $PSMComponentsPath
+            Path          = $true
+            SettingType   = "StringCompare"
+        },
+        @{
+            UserType      = "All"
+            Name          = "ConnectClientDrivesAtLogon"
+            DisplayName   = "Connect client drives at logon"
+            ExpectedValue = 0
+            SettingType   = "Value"
+        },
+        @{
+            UserType      = "All"
+            Name          = "ConnectClientPrintersAtLogon"
+            DisplayName   = "Connect client printers at logon"
+            ExpectedValue = 0
+            SettingType   = "Value"
+        },
+        @{
+            UserType      = "All"
+            Name          = "DefaultToMainPrinter"
+            DisplayName   = "Default to main client printer"
+            ExpectedValue = 0
+            SettingType   = "Value"
+        },
+        @{
+            UserType      = "All"
+            Name          = "EnableRemoteControl"
+            DisplayName   = "Enable remote control"
+            ExpectedValue = 2, 4
+            SettingType   = "Value"
+        },
+        @{
+            UserType      = "PSMConnect"
+            Name          = "MaxDisconnectionTime"
+            DisplayName   = "End a disconnected session"
+            ExpectedValue = 1
+            SettingType   = "Value"
+        },
+        @{
+            UserType      = "PSMConnect"
+            Name          = "ReconnectionAction"
+            DisplayName   = "Allow reconnection"
+            ExpectedValue = 1
+            SettingType   = "Value"
+        },
+        @{
+            UserType      = "All"
+            Name          = "userWorkstations"
+            DisplayName   = "`"Log On To`" Restrictions"
+            ExpectedValue = $env:computername
+            SettingType   = "LogOnTo"
+        }
+    )
+    $AllUserConfigurationErrors = @()
+    $UserName = $UserObject.Name
+    $SettingsToCheck | ForEach-Object { # For each aspect of the configuration
+        $SettingName = $_.Name
+        $SettingUserType = $_.UserType
+        $SettingDisplayName = $_.DisplayName
+        $SettingExpectedValue = $_.ExpectedValue
+        $SettingCurrentValue = Get-UserProperty -UserObject $UserObject -Property $SettingName
+        $SettingType = $_.SettingType
+
+        If ($_.Path) {
+            # If the value we're checking is a directory, trim training backslashes as they don't matter
+            $SettingCurrentValue = ($SettingCurrentValue -replace "\\*$", "")
+        }
+
+        if ($SettingUserType -in "All", $UserType) {
+            # If the setting that we are checking applies to the user we're checking, or all users
+            If ($SettingType -eq "LogOnTo") {
+                # split $SettingCurrentValue into an array
+                $SettingCurrentValue = $SettingCurrentValue -split ","
+            }
+            If (
+                (
+                ($SettingType -in "Value", "StringCompare") -and
+                ($SettingCurrentValue -notin $SettingExpectedValue)
+                    # For Value and StringCompare setting types, we check if the current value is one of the expected values
+                ) -or
+                (
+                ($SettingType -eq "LogOnTo") -and (
+                    ($SettingCurrentValue) -and
+                    ($SettingExpectedValue -notin $SettingCurrentValue)
+                    )
+                    # but for Log On To, it's the other way round - the expected value must be in the current value (or be empty - "all workstations")
+                )
+            ) {
+                $ThisUserConfigurationError = [PSCustomObject]@{ # Store the details of this misconfiguration
+                    Username    = $Username
+                    User        = $UserType
+                    SettingName = $SettingDisplayName
+                    Current     = $SettingCurrentValue
+                    Expected    = $SettingExpectedValue
+                    SettingType = $SettingType
+                }
+                if ($SettingType -eq "LogOnTo") {
+                    $ThisUserConfigurationError.Expected = "Must include `"$SettingExpectedValue`""
+                }
+                # and add it to the array containing the list of misconfigurations
+                $AllUserConfigurationErrors += $ThisUserConfigurationError
+            }
+        }
+    }
+    return $AllUserConfigurationErrors
 }
 
 function Test-PasswordCharactersValid {
@@ -1585,7 +1876,7 @@ Function Set-PSMServerObject {
     $VaultPass = $VaultCredentials.GetNetworkCredential().Password
     $Operation = "EditConfigNode"
     $ConfigString = ("//PSMServer[@ID='{0}']/ConnectionDetails/Server Safe={1},Object={2},AdminObject={3}" `
-            -f $PSMServerId, $Safe, $PSMConnectAccountName, $PSMAdminConnectAccountName)
+            -f $PSMServerId, $PSMSafe, $PSMConnectAccountName, $PSMAdminConnectAccountName)
     try {
         $VaultOperationsTesterProcess = $VaultOperationsTesterProcess = Start-Process -FilePath $VaultOperationsExe `
             -WorkingDirectory "$VaultOperationsFolder" -NoNewWindow -PassThru -Wait -RedirectStandardOutput $stdoutFile `
@@ -1627,36 +1918,31 @@ Function Set-PSMServerObject {
     }
 }
 
-#Running Set-DomainUser script
+# End of function definitions
 
+# Running Set-DomainUser script
 $OperationsToPerform = @{
-    GetInstallerUserCredentials       = $true
-    GetPSMConnectUserCredentials      = $true
-    GetPSMAdminConnectUserCredentials = $true
-    UserTests                         = $true
-    GetPrivilegeCloudUrl              = $true
-    DomainNetbiosNameDetection        = $true
-    DomainDNSNameDetection            = $true
-    PsmConfiguration                  = $true
-    SecurityPolicyConfiguration       = $true
-    RemoteDesktopUsersGroupAddition   = $true
-    RemoteConfiguration               = $true
-    ServerObjectConfiguration         = $true
-    Hardening                         = $true
-    ConfigureAppLocker                = $true
-    DetectProxy                       = $true
+    GetInstallerUserCredentials     = $true
+    TestInstallerUserCredentials    = $true
+    UserTests                       = $true
+    GetPrivilegeCloudUrl            = $true
+    DomainNetbiosNameDetection      = $true
+    DomainDNSNameDetection          = $true
+    PsmLocalConfiguration           = $true
+    SecurityPolicyConfiguration     = $true
+    RemoteDesktopUsersGroupAddition = $true
+    CreateSafePlatformAndAccounts   = $true
+    ServerObjectConfiguration       = $true
+    Hardening                       = $true
+    ConfigureAppLocker              = $true
 }
 
+# Determine what operations need to be performed
 switch ($PSBoundParameters) {
-    { $_.psmConnectCredentials } {
-        $OperationsToPerform.GetPSMConnectUserCredentials = $false
-    }
-    { $_.psmAdminCredentials } {
-        $OperationsToPerform.GetPSMAdminConnectUserCredentials = $false
-    }
     { $_.NotFirstRun } {
+        Write-LogMessage -type Warning -MSG "-NotFirstRun is no longer recommended, as Set-DomainUser will automatically detect and skip redundant steps."
         $OperationsToPerform.UserTests = $false
-        $OperationsToPerform.RemoteConfiguration = $false
+        $OperationsToPerform.CreateSafePlatformAndAccounts = $false
     }
     { $_.SkipPSMUserTests } {
         $OperationsToPerform.UserTests = $false
@@ -1671,9 +1957,11 @@ switch ($PSBoundParameters) {
         $OperationsToPerform.DomainDNSNameDetection = $false
     }
     { $_.LocalConfigurationOnly } {
-        $OperationsToPerform.RemoteConfiguration = $false
+        $OperationsToPerform.CreateSafePlatformAndAccounts = $false
         $OperationsToPerform.ServerObjectConfiguration = $false
         $OperationsToPerform.UserTests = $false
+        $OperationsToPerform.GetInstallerUserCredentials = $false
+        $OperationsToPerform.TestInstallerUserCredentials = $false
     }
     { $_.DoNotHarden } {
         $OperationsToPerform.Hardening = $false
@@ -1690,56 +1978,53 @@ switch ($PSBoundParameters) {
     { $_.DoNotConfigureAppLocker } {
         $OperationsToPerform.ConfigureAppLocker = $false
     }
-    { $_.Proxy } {
-        $OperationsToPerform.DetectProxy = $false
-    }
 }
 
-# If not doing any remote work, skip proxy detection
-If (!($OperationsToPerform.RemoteConfiguration -or $OperationsToPerform.ServerObjectConfiguration)) {
-    $OperationsToPerform.DetectProxy = $false
-    $Proxy = "None"
+If ($InstallUser) {
+    $OperationsToPerform.GetInstallerUserCredentials = $false
 }
 
+# Initialise variables
+$StandardSeparator = ("-" * 50)
+$SectionSeparator = ("#" * 50)
 $global:InVerbose = $PSBoundParameters.Verbose.IsPresent
 $ScriptLocation = Split-Path -Parent $MyInvocation.MyCommand.Path
 $global:LOG_FILE_PATH = "$ScriptLocation\_Set-DomainUser.log"
-
-if ($OperationsToPerform.GetPSMConnectUserCredentials) {
-    $psmConnectCredentials = Get-Credential -Message "Please enter PSMConnect domain user credentials"
-    if (!($psmConnectCredentials)) {
-        Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
-        exit 1
-    }
-}
-
-if ($OperationsToPerform.GetPSMAdminConnectUserCredentials) {
-    $psmAdminCredentials = Get-Credential -Message "Please enter PSMAdminConnect domain user credentials"
-    if (!($psmAdminCredentials)) {
-        Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
-        exit 1
-    }
-}
-
 $PsmServiceNames = "Cyber-Ark Privileged Session Manager", "CyberArk Privileged Session Manager"
 $PsmService = Get-Service | Where-Object Name -in $PsmServiceNames
 $REGKEY_PSMSERVICE = $PsmService.Name
 $psmRootInstallLocation = ($(Get-ServiceInstallPath $REGKEY_PSMSERVICE)).Replace("CAPSM.exe", "").Replace('"', "").Trim()
+$BackupSubDirectory = (Get-Date).ToString('yyyMMdd-HHmmss')
+$BackupPath = "$psmRootInstallLocation\Backup\Set-DomainUser\$BackupSubDirectory"
+$ValidationFailed = $false
+$PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
+$pvwaToken = ""
+$TasksTop = @()
 
-If (Check-UM -psmRootInstallLocation $psmRootInstallLocation) {
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+Write-Host ""
+Write-LogMessage -type Info -MSG "Gathering information"
+
+# Perform initial checks
+If (Test-UM -psmRootInstallLocation $psmRootInstallLocation) {
     $UM = $true
 }
 else {
     $UM = $false
 }
 
-$BackupSubDirectory = (Get-Date).ToString('yyyMMdd-HHmmss')
-$BackupPath = "$psmRootInstallLocation\Backup\Set-DomainUser\$BackupSubDirectory"
+## Proxy configuration
+Write-LogMessage -type Verbose -MSG "Detecting proxy from user profile"
+$Proxy = Get-ProxyDetails
 
-$TasksTop = @()
+If (!($Proxy)) {
+    $Proxy = "None"
+}
 
-Write-LogMessage -Type Info -MSG "Gathering information"
+Write-LogMessage -type Verbose -MSG "Detected proxy: $Proxy"
 
+## Check if domain user
 Write-LogMessage -Type Verbose -MSG "Checking if user is a domain user"
 if (IsUserDomainJoined) {
     Write-LogMessage -Type Verbose -MSG "User is a domain user"
@@ -1749,40 +2034,7 @@ else {
     exit 1
 }
 
-# Test if PSM credentials were entered in the right format
-
-Write-LogMessage -Type Verbose -MSG "Verifying PSM credentials were provided in expected format"
-If (!(Test-CredentialFormat -Credential $psmConnectCredentials)) {
-    Write-LogMessage -Type Error -MSG "Username provided for PSMConnect user contained invalid characters or is too long."
-    Write-LogMessage -Type Error -MSG "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain, and ensure"
-    Write-LogMessage -Type Error -MSG "the username is no more than 20 characters long"
-    exit 1
-}
-
-If (!(Test-CredentialFormat -Credential $psmAdminCredentials)) {
-    Write-LogMessage -Type Error -MSG "Username provided for PSMAdminConnect user contained invalid characters or is too long."
-    Write-LogMessage -Type Error -MSG "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain, and ensure"
-    Write-LogMessage -Type Error -MSG "the username is no more than 20 characters long"
-    exit 1
-}
-
-if ($OperationsToPerform.UserTests) {
-    If (!(Test-PasswordCharactersValid -Credential $psmConnectCredentials)) {
-        Write-LogMessage -Type Error -MSG "Password provided for PSMConnect user contained invalid characters."
-        Write-LogMessage -Type Error -MSG 'Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
-        exit 1
-    }
-
-
-    If (!(Test-PasswordCharactersValid -Credential $psmAdminCredentials)) {
-        Write-LogMessage -Type Error -MSG "Password provided for PSMAdminConnect user contained invalid characters."
-        Write-LogMessage -Type Error -MSG 'Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
-        exit 1
-    }
-}
-
-
-# Get-Variables
+## Get Privilege Cloud URL
 if ($OperationsToPerform.GetPrivilegeCloudUrl) {
     Write-LogMessage -Type Verbose -MSG "Getting PVWA address"
     $PrivilegeCloudUrl = Get-PvwaAddress -psmRootInstallLocation $psmRootInstallLocation
@@ -1792,8 +2044,8 @@ If ($false -eq $PrivilegeCloudUrl) {
     exit 1
 }
 
+## Identify AD domain
 $DomainNameAutodetected = $false
-
 Write-LogMessage -Type Verbose -MSG "Getting domain details"
 if ($OperationsToPerform.DomainDNSNameDetection) {
     $DomainNameAutodetected = $true
@@ -1803,356 +2055,9 @@ if ($OperationsToPerform.DomainNetbiosNameDetection) {
     $DomainNameAutodetected = $true
     $DomainNetbiosName = Get-DomainNetbiosName
 }
-If ($DomainNameAutodetected) {
 
-    $DomainInfo = ("--------------------------------------------------------`nDetected the following domain names:`n  DNS name:     {0}`n  NETBIOS name: {1}`nIs this correct?" -f $DomainDNSName, $DomainNetbiosName)
-
-    $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
-    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the domain details are correct"))
-    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct domain details can be provided"))
-
-    $DomainPromptSelection = $Host.UI.PromptForChoice("", $DomainInfo, $PromptOptions, 1)
-    If ($DomainPromptSelection -eq 0) {
-        Write-LogMessage -Type Info "Domain details confirmed"
-    }
-    Else {
-        Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct domain DNS and NETBIOS names on the command line."
-        exit 1
-    }
-}
-
-If ($OperationsToPerform.DetectProxy) {
-    # Get proxy details from user profile
-    $DetectedProxy = Get-ProxyDetails
-
-    If ($DetectedProxy) {
-        $ProxyInfo = ("--------------------------------------------------------`nDetected the following proxy details:`n  Proxy Address:     {0}`nIs this correct?" -f $DetectedProxy)
-
-        $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
-        $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the proxy details are correct"))
-        $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct proxy details can be provided"))
-
-        $ProxyPromptSelection = $Host.UI.PromptForChoice("", $ProxyInfo, $PromptOptions, 1)
-        If ($ProxyPromptSelection -eq 0) {
-            Write-LogMessage -Type Info "Proxy details confirmed"
-            $Proxy = $DetectedProxy
-        }
-        Else {
-            Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct proxy details on the command line."
-            exit 1
-        }
-    }
-    else {
-        $Proxy = "None"
-    }
-}
-
-$Global:WebRequestSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-$ProxyObject = New-Object System.Net.WebProxy
-
-If ("None" -ne $Proxy) {
-    try {
-        Write-LogMessage -type Verbose -MSG "Setting web requests to use proxy $Proxy"
-        $ProxyObject.Address = "http://$Proxy"
-    }
-    catch {
-        Write-LogMessage -type Error -MSG "Failed to configure proxy. Please ensure it is provided in address:port format."
-        exit 1
-    }
-}
-
-$Global:WebRequestSession.Proxy = $ProxyObject
-
-if ($OperationsToPerform.UserTests) {
-    # Gather the information we'll be comparing
-    $PSMComponentsPath = $psmRootInstallLocation + "Components"
-    $PSMInitSessionPath = $PSMComponentsPath + "\PSMInitSession.exe"
-
-    # Get PSMConnect user information
-    $UsersToCheck = @(
-        @{
-            UserType = "PSMConnect"
-            Username = $psmConnectCredentials.UserName
-        },
-        @{
-            UserType = "PSMAdminConnect"
-            Username = $psmAdminCredentials.UserName
-        }
-    )
-    $SettingsToCheck = @(
-        @{
-            UserType      = "All"
-            Name          = "TerminalServicesInitialProgram"
-            DisplayName   = "Initial Program"
-            ExpectedValue = $PSMInitSessionPath
-        },
-        @{
-            UserType      = "All"
-            Name          = "TerminalServicesWorkDirectory"
-            DisplayName   = "Working Directory"
-            ExpectedValue = $PSMComponentsPath
-        },
-        @{
-            UserType      = "All"
-            Name          = "ConnectClientDrivesAtLogon"
-            DisplayName   = "Connect client drives at logon"
-            ExpectedValue = 0
-        },
-        @{
-            UserType      = "All"
-            Name          = "ConnectClientPrintersAtLogon"
-            DisplayName   = "Connect client drives at logon"
-            ExpectedValue = 0
-        },
-        @{
-            UserType      = "All"
-            Name          = "DefaultToMainPrinter"
-            DisplayName   = "Default to main client printer"
-            ExpectedValue = 0
-        },
-        @{
-            UserType      = "All"
-            Name          = "EnableRemoteControl"
-            DisplayName   = "Enable remote control"
-            ExpectedValue = 2, 4
-        },
-        @{
-            UserType      = "PSMConnect"
-            Name          = "MaxDisconnectionTime"
-            DisplayName   = "End a disconnected session"
-            ExpectedValue = 1
-        },
-        @{
-            UserType      = "PSMConnect"
-            Name          = "ReconnectionAction"
-            DisplayName   = "Allow reconnection"
-            ExpectedValue = 1
-        }
-    )
-
-    # Initialise array containing issues
-    $UserConfigurationErrors = @()
-    $UsersToCheck | ForEach-Object {
-        $UserType = $_.UserType
-        $Username = $_.Username
-
-        # Initialise array containing issues
-        try {
-            $UserDN = Get-UserDNFromSamAccountName -Username $Username
-            If ($UserDN) {
-                $UserObject = Get-UserObjectFromDN $UserDN
-            }
-            else {
-                Write-LogMessage -type Error -MSG ("User {0} not found on domain {1}. Please ensure the user exists, or" -f $Username, $DomainDNSName)
-                Write-LogMessage -type Error -MSG ("run this script with the -SkipPSMUserConfigureCheck option to skip")
-                Write-LogMessage -type Error -MSG ("this check.")
-            }
-        }
-        catch {
-            Write-LogMessage -type Error -MSG ("Failed to retrieve {0} user details from Active Directory." -f $UserType)
-            Write-LogMessage -type Error -MSG ("Please ensure the user exists and is configured correctly")
-            Write-LogMessage -type Error -MSG ("  and run this script again, or run the script with the ")
-            Write-LogMessage -type Error -MSG ("  -SkipPSMUserTests flag to skip this check.")
-            exit 1
-        }
-
-        $SettingsToCheck | ForEach-Object {
-            $SettingName = $_.Name
-            $SettingUserType = $_.UserType
-            $SettingDisplayName = $_.DisplayName
-            $SettingExpectedValue = $_.ExpectedValue
-            $SettingCurrentValue = Get-UserProperty -UserObject $UserObject -Property $SettingName
-
-
-            if ($SettingUserType -in "All", $UserType) {
-                # If the setting that we are checking applies to the user we're checking, or all users
-                If ($SettingCurrentValue -notin $SettingExpectedValue) {
-                    $UserConfigurationErrors += [PSCustomObject]@{
-                        Username    = $Username
-                        User        = $UserType
-                        SettingName = $SettingDisplayName
-                        Current     = $SettingCurrentValue
-                        Expected    = $SettingExpectedValue
-                    }
-                }
-            }
-        }
-    }
-
-    If ($UserConfigurationErrors) {
-        $UsersWithConfigurationErrors = $UserConfigurationErrors.User | Select-Object -Unique
-        $UsersWithConfigurationErrors | ForEach-Object {
-            $User = $_
-            Write-LogMessage -Type Error -MSG ("Configuration errors for {0}:" -f $User)
-            $UserConfigurationErrors | Where-Object User -eq $user | Select-Object Username, SettingName, Expected, Current | Format-Table -Wrap
-        }
-        If ("Unset" -in $UserConfigurationErrors.Current) {
-            Write-LogMessage -type Error -MSG "Errors occurred while retrieving some user properties, which usually means they do not exist. These will show as `"Unset`" above."
-        }
-        Write-LogMessage -type Error -MSG "Please resolve the issues above or rerun this script with -SkipPSMUserTests to ignore these errors."
-        exit 1
-    }
-
-    # Test PSM credentials
-    if (ValidateCredentials -domain $DomainDNSName -Credential $psmConnectCredentials) {
-        Write-LogMessage -Type Verbose -MSG "PSMConnect user credentials validated"
-    }
-    else {
-        Write-LogMessage -Type Error -MSG "PSMConnect user validation failed. Please validate PSMConnect user name and password or run script with -SkipPSMUserTests to skip this test"
-        exit 1
-    }
-    if (ValidateCredentials -domain $DomainDNSName -Credential $psmAdminCredentials) {
-        Write-LogMessage -Type Verbose -MSG "PSMAdminConnect user credentials validated"
-    }
-    else {
-        Write-LogMessage -Type Error -MSG "PSMAdminConnect user validation failed. Please validate PSMAdminConnect user name and password or run script with -SkipPSMUserTests to skip this test."
-        exit 1
-    }
-}
-
-# Reverse logic on script invocation setting because double negatives suck
-$PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
-
-## Remote Configuration Block
-If ($OperationsToPerform.GetInstallerUserCredentials) {
-    if ($null -eq $InstallUser) {
-        if ($UM) {
-            $TinaUserType = "installer user"
-        }
-        else {
-            $TinaUserType = "tenant administrator"
-        }
-        $InstallUser = Get-Credential -Message ("Please enter {0} credentials" -f $TinaUserType)
-        if (!($InstallUser)) {
-            Write-LogMessage -Type Error -MSG "No credentials provided. Exiting."
-            exit 1
-        }
-    }
-}
-If ($OperationsToPerform.RemoteConfiguration) {
-    Write-LogMessage -type Info -MSG "Starting backend configuration"
-
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-    $pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $PrivilegeCloudUrl -InstallUser $InstallUser
-    if ($pvwaTokenResponse.ErrorCode -ne "Success") {
-        # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
-        # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.
-        # The error message shown could be from a JSON response, e.g. wrong password, or a connection error.
-        Write-LogMessage -Type Error "Logon to PVWA failed. Result:"
-        Write-LogMessage -Type Error ("Error code: {0}" -f $pvwaTokenResponse.ErrorCode)
-        Write-LogMessage -Type Error ("Error message: {0}" -f $pvwaTokenResponse.ErrorMessage)
-        exit 1
-    }
-    if (!($pvwaTokenResponse.Response -match "[0-9a-zA-Z]{200,256}")) {
-        # If we get here, it means we got a 200 response from the server, but the data it returned was not a valid token.
-        # In this case, we display the response we got from the server to aid troubleshooting.
-        Write-LogMessage -Type Error "Response from server was not a valid token:"
-        Write-LogMessage -Type Error $pvwaTokenResponse.Response
-        exit 1
-    }
-    # If we get here, the token was retrieved successfully and looks valid. We'll still test it though.
-    $PvwaTokenTestResponse = Test-PvwaToken -Token $pvwaTokenResponse.Response -pvwaAddress $PrivilegeCloudUrl
-    if ($PvwaTokenTestResponse.ErrorCode -eq "Success") {
-        $pvwaToken = $pvwaTokenResponse.Response
-    }
-    else {
-        Write-LogMessage -Type Error -MSG "PVWA Token validation failed. Result:"
-        Write-LogMessage -Type Error -MSG $PvwaTokenTestResponse.Response
-        exit 1
-    }
-    # Get platform info
-    Write-LogMessage -Type Verbose -MSG "Checking current platform status"
-    $platformStatus = Get-PlatformStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId $PlatformName
-    if ($platformStatus -eq $false) {
-        # function returns false if platform does not exist
-        # Get Platform ID for duplication
-        $WinDomainPlatform = Get-PlatformStatusById -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId WinDomain
-        If ($WinDomainPlatform) {
-            Write-LogMessage -Type Verbose -MSG "Checking Windows Domain platform status"
-            $WinDomainPlatformId = $WinDomainPlatform.Id
-        }
-        else {
-            # Get-PlatformStatus returns false if platform not found
-            Write-LogMessage -type Error -MSG "Could not find Windows Domain platform to duplicate. Please import it from the marketplace."
-            exit 1
-        }
-        # Creating Platform
-        Write-LogMessage -Type Verbose -MSG "Creating new platform"
-        Duplicate-Platform -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -CurrentPlatformId $WinDomainPlatformId -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
-        $TasksTop += ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
-        # Get platform info again so we can ensure it's activated
-        $platformStatus = Get-PlatformStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId $PlatformName
-    }
-    else {
-        Write-LogMessage -Type Warning -MSG ('Platform {0} already exists. Please verify it meets requirements.' -f $PlatformName)
-        $TasksTop += ("Verify that the existing platform `"{0}`" is configured correctly" -f $PlatformName)
-    }
-    if ($platformStatus.Active -eq $false) {
-        Write-LogMessage -Type Verbose -MSG "Platform is deactivated. Activating."
-        Activate-Platform -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -Platform $platformStatus.Id
-    }
-    Write-LogMessage -Type Verbose -MSG "Checking current safe status"
-    $safeStatus = Get-SafeStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -SafeName $Safe
-    if ($safeStatus -eq $false) {
-        # function returns false if safe does not exist
-        Write-LogMessage -Type Verbose -MSG "Safe $Safe does not exist. Creating the safe now"
-        $CreateSafeResult = Create-PSMSafe -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $Safe
-        If ($CreateSafeResult) {
-            Write-LogMessage -type Verbose "Successfully created safe $safe"
-        }
-        else {
-            Write-LogMessage -Type Error -MSG "Creating PSM safe $Safe failed. Please resolve the error and try again."
-            exit 1
-        }
-    }
-    If (!($safeStatus.managingCpm)) {
-        # Safe exists but no CPM assigned
-        Write-LogMessage -Type Warning -MSG ("There is no Password Manager (CPM) assigned to safe `"{0}`"" -f $Safe)
-        $TasksTop += ("Assign a Password Manager (CPM) to safe `"{0}`"" -f $Safe)
-    }
-    # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
-    If ($UM) {
-        $SafePermissions = Get-SafePermissions -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $safe -safeMember "Vault Admins"
-        If ($false -eq $SafePermissions) {
-            # Vault Admins does not appear to be a member of the safe. Adding.
-            Write-LogMessage -Type Verbose -MSG "Granting administrators access to PSM safe"
-            New-SafePermissions -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $safe -safeMember "Vault Admins"
-        }
-    }
-    # Creating PSMConnect, We can now add a safe need as well for the below line if we have multiple domains
-    Write-LogMessage -Type Verbose -MSG "Onboarding PSMConnect Account"
-    $OnboardResult = New-VaultAdminObject -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -name $PSMConnectAccountName -domain $DomainDNSName -Credentials $psmConnectCredentials -platformID $PlatformName -safe $safe
-    If ($OnboardResult.name) {
-        Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
-    }
-    ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
-        Write-LogMessage -Type Warning -MSG "Object with name $PSMConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
-        $TasksTop += "Verify that the $PSMConnectAccountName object in $safe safe contains correct PSMConnect user details"
-    }
-    Else {
-        Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
-        exit 1
-    }
-    # Creating PSMAdminConnect
-    Write-LogMessage -Type Verbose -MSG "Onboarding PSMAdminConnect Account"
-    $OnboardResult = New-VaultAdminObject -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -name $PSMAdminConnectAccountName -domain $DomainDNSName -Credentials $psmAdminCredentials -platformID $PlatformName -safe $safe
-    If ($OnboardResult.name) {
-        Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
-    }
-    ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
-        Write-LogMessage -Type Warning -MSG "Object with name $PSMAdminConnectAccountName already exists. Please verify that it contains correct account details, or specify an alternative account name."
-        $TasksTop += "Verify that the $PSMAdminConnectAccountName object in $safe safe contains correct PSMAdminConnect user details"
-    }
-    Else {
-        Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
-        exit 1
-    }
-}
-
+# Confirm VaultOperationsTester is present, and install VS redist
 If ($OperationsToPerform.ServerObjectConfiguration) {
-    Write-LogMessage -type Verbose -MSG "Configuring backend PSM server objects"
-    $VaultAddress = Get-VaultAddress -psmRootInstallLocation $psmRootInstallLocation
     $PossibleVaultOperationsTesterLocations = @(
         "$ScriptLocation\VaultOperationsTester\VaultOperationsTester.exe",
         "$ScriptLocation\..\VaultOperationsTester\VaultOperationsTester.exe",
@@ -2201,8 +2106,502 @@ If ($OperationsToPerform.ServerObjectConfiguration) {
             exit 1
         }
     }
+}
 
-    # after C++ redistributable install
+# Validate detected AD domain details
+If ($DomainNameAutodetected) {
+    Write-LogMessage -Type Verbose -MSG "Confirming auto-detected domain details"
+    $DomainInfo = ""
+    $DomainInfo += ("--------------------------------------------------------`n")
+    $DomainInfo += ("Detected the following domain names:`n")
+    $DomainInfo += ("  DNS name:     {0}`n" -f $DomainDNSName)
+    $DomainInfo += ("  NETBIOS name: {0}`n" -f $DomainNetbiosName)
+    $DomainInfo += ("Is this correct?")
+
+    $PromptOptions = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
+    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes", "Confirm the domain details are correct"))
+    $PromptOptions.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&No", "Exit the script so correct domain details can be provided"))
+
+    $DomainPromptSelection = $Host.UI.PromptForChoice("", $DomainInfo, $PromptOptions, 1)
+    If ($DomainPromptSelection -eq 0) {
+        Write-LogMessage -Type Info "Domain details confirmed"
+    }
+    Else {
+        Write-LogMessage -Type Error -MSG "Please rerun the script and provide the correct domain DNS and NETBIOS names on the command line."
+        $ValidationFailed = $true
+    }
+}
+
+# Gather Install User information from user
+Write-LogMessage -Type Verbose -MSG "Getting Tina user details if required"
+If ($OperationsToPerform.GetInstallerUserCredentials) {
+    $InstallUser = Get-Credential -Message ("Please enter installer user credentials")
+    if (!($InstallUser)) {
+        Write-LogMessage -Type Error -MSG "No install user credentials provided. Exiting."
+        exit 1
+    }
+}
+
+## Test InstallerUser/Tina user credentials
+If ($OperationsToPerform.TestInstallerUserCredentials) {
+    $ArrayOfTinaErrors = @()
+    Write-LogMessage -type Info -MSG "Validating Installer user details"
+    try {
+        # for each section, check that the previous section succeeded.
+        Write-LogMessage -type Verbose -MSG "Testing install user credentials"
+        $pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $PrivilegeCloudUrl -InstallUser $InstallUser
+        if ($pvwaTokenResponse.ErrorCode -ne "Success") {
+            # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
+            # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.
+            # The error message shown could be from a JSON response, e.g. wrong password, or a connection error.
+            $NewError = ""
+            $NewError += "Logon to PVWA failed. Result:`n"
+            $NewError += ("Error code: {0}`n" -f $pvwaTokenResponse.ErrorCode)
+            $NewError += ("Error message: {0}" -f $pvwaTokenResponse.ErrorMessage)
+            $ArrayOfTinaErrors += $NewError
+            Throw
+        }
+        $PVWATokenIsValid = ($pvwaTokenResponse.Response -match "[0-9a-zA-Z]{200,256}")
+        if ($false -eq $PVWATokenIsValid) {
+            # If we get here, it means we got a 200 response from the server, but the data it returned was not a valid token.
+            # In this case, we display the response we got from the server to aid troubleshooting.
+            $NewError = ""
+            $NewError += "Response from server was not a valid token:"
+            $NewError += $pvwaTokenResponse.Response
+            $ArrayOfTinaErrors += $NewError
+            Throw
+        }
+        # If we get here, the token was retrieved successfully and looks valid. We'll still test it though.
+
+        $PvwaTokenTestResponse = Test-PvwaToken -Token $pvwaTokenResponse.Response -pvwaAddress $PrivilegeCloudUrl
+        if ($PvwaTokenTestResponse.ErrorCode -eq "Success") {
+            $pvwaToken = $pvwaTokenResponse.Response
+        }
+        else {
+            $NewError = ""
+            $NewError += "PVWA Token validation failed. Result:"
+            $NewError += $PvwaTokenTestResponse.Response
+            $ArrayOfTinaErrors += $NewError
+            Throw
+        }
+    }
+    catch {
+        $ValidationFailed = $true
+    }
+}
+
+If ($ArrayOfTinaErrors) {
+    Write-LogMessage -type Error -MSG $SectionSeparator
+    Write-LogMessage -type Error -MSG "The following errors occurred while validating the install user details:"
+    Write-LogMessage -type Error -MSG $StandardSeparator
+    foreach ($TinaError in $ArrayOfTinaErrors) {
+        Write-LogMessage -type Error -MSG $TinaError
+        Write-LogMessage -type Error -MSG $StandardSeparator
+    }
+}
+
+If ($ValidationFailed) {
+    Write-LogMessage -type Info -MSG "Some tests failed, and details are shown above. Please correct these and rerun Set-DomainUser."
+    exit 1
+}
+
+Write-LogMessage -type Info -MSG "Validating PSM user details"
+# Create array containing PSM user details we can iterate through
+$PSMAccountSearchPropertiesArray = @(
+    @{
+        AccountName = $PSMConnectAccountName
+        UserType    = "PSMConnect"
+    },
+    @{
+        AccountName = $PSMAdminConnectAccountName
+        UserType    = "PSMAdminConnect"
+    }
+)
+
+# If online, search backend for PSM user details and request credentials as required
+If ($pvwaToken) {
+    # Search backend for account details using the AccountName property
+    $ArrayOfUserOnboardingConflictErrors = @()
+    $PSMAccountDetailsArray = @()
+    Write-LogMessage -Type Verbose -MSG "Retrieving stored accounts in `"$safe`" safe from vault"
+    $ExistingAccountsObj = Get-VaultAccountDetails -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $Safe
+    # Narrow results to accounts with account names matching the account names we're searching for
+    $MatchingAccounts = $ExistingAccountsObj | Where-Object name -in $PSMAccountSearchPropertiesArray.AccountName
+    Write-LogMessage -type Verbose -MSG ("Found the following existing accounts in the backend: {0}" -f ($MatchingAccounts | Out-String))
+    # For each account, check whether it has the correct address property
+    Write-LogMessage -Type Verbose -MSG "Checking if the found accounts have the correct details"
+    foreach ($AccountToCheck in $PSMAccountSearchPropertiesArray) {
+        $AccountObj = $null
+        $AccountType = $AccountToCheck.UserType
+        $AccountName = $AccountToCheck.AccountName
+        $VaultedAccount = $MatchingAccounts | Where-Object name -eq $AccountName
+        If ($VaultedAccount) {
+            # If accounts exist, check whether the address matches
+            $VaultedAccountUsername = $VaultedAccount.userName
+            $VaultedAccountAddress = $VaultedAccount.address
+            If ($DomainDNSName -eq $VaultedAccountAddress) {
+                ### If address matches, use these accounts
+                # As the account is already onboarded we don't need its password
+                $VaultedAccountPassword = ConvertTo-SecureString -String "NoPassword" -AsPlainText -Force
+                $AccountObj = [PSCustomObject]@{
+                    AccountName = $AccountName
+                    UserType    = $AccountType
+                    Credentials = New-Object System.Management.Automation.PSCredential($VaultedAccount.userName, $VaultedAccountPassword)
+                    Onboard     = $false
+                }
+            }
+            else {
+                ### If address does not match, log and display mismatch and fail validation. This is a fatal error.
+                Write-LogMessage -type Verbose -MSG "Account with name $AccountName does not have the correct address"
+                $NewError = ""
+                $NewError += ("An object with Account Name `"{0}`" already exists in the safe `"{1}`" and `n" -f $AccountName, $Safe)
+                $NewError += ("  its details do not match the specified user details. Its details are shown below.`n")
+                $ExistingAccountObj = @(
+                    [PSCustomObject]@{
+                        AccountName = $AccountName
+                        Username    = $VaultedAccountUsername
+                        Address     = $VaultedAccountAddress
+                    }
+                    )
+                    $NewError += ($ExistingAccountObj | Format-List | Out-String).Trim()
+                    $NewError += "`n"
+                    $ArrayOfUserOnboardingConflictErrors += $NewError
+                    $ValidationFailed = $true
+                }
+            }
+            else {
+                ## If accounts do not exist, ask the user for credentials or get them from parameters
+                If (($AccountType -eq "PSMConnect") -and ($psmConnectCredentials)) {
+                    $Credentials = $psmConnectCredentials
+                }
+            ElseIf (($AccountType -eq "PSMAdminConnect") -and ($psmAdminCredentials)) {
+                $Credentials = $psmAdminCredentials
+            }
+            Else {
+                $Credentials = Get-Credential -Message "$AccountType account"
+            }
+            If (!($Credentials)) {
+                Write-LogMessage -type Error -MSG "No $AccountType credentials provided. Exiting."
+                exit 1
+            }
+            $AccountObj = [PSCustomObject]@{
+                AccountName = $AccountName
+                UserType    = $AccountType
+                Credentials = $Credentials
+                Onboard     = $true
+            }
+        }
+        If ($AccountObj) {
+            $PSMAccountDetailsArray += $AccountObj
+        }
+    }
+}
+
+# Request user details if running in LocalConfigurationOnly mode
+If (!($pvwaToken)) {
+    # If running offline, ask the user for usernames
+    $PSMAccountSearchPropertiesArray | ForEach-Object {
+        $UserType = $_.UserType
+        $AccountName = $_.AccountName
+        $Username = Read-Host -Prompt "Please provide the pre-Windows 2000 username of the $UserType account"
+        $Password = ConvertTo-SecureString -String "NoPassword" -AsPlainText -Force
+        $AccountObj = [PSCustomObject]@{
+            AccountName = $AccountName
+            UserType    = $UserType
+            Credentials = New-Object System.Management.Automation.PSCredential($userName, $Password)
+            Onboard     = $false
+        }
+        If (-not ($AccountObj.Username)) {
+            Write-LogMessage -type Error -MSG "$UserType username not provided. Exiting."
+            exit 1
+        }
+        $PSMAccountDetailsArray += $AccountObj
+    }
+}
+
+# Test users
+#Initialise arrays which will capture detected misconfigurations
+$UserConfigurationErrors = @()
+$ArrayOfUserErrors = @()
+
+# For each user in $PSMAccountDetailsArray
+## Check username format
+## Check password format
+## If UserTests enabled
+### Check credentials
+### Search for user
+### ONLY IF FOUND, check user configuration
+
+## Test PSM user credential format
+foreach ($CurrentUser in $PSMAccountDetailsArray) {
+    $Username = $CurrentUser.UserName
+    $UserType = $CurrentUser.UserType
+    $Credential = $CurrentUser.Credentials
+    Write-LogMessage -type Verbose -MSG "Testing $UserType credential format"
+    Write-LogMessage -Type Verbose -MSG "Verifying PSM credentials were provided in expected format"
+
+    # Check for invalid username format
+    If (!(Test-CredentialFormat -Credential $Credential)) {
+        $NewError = ""
+        $NewError += "Username provided for PSMConnect user contained invalid characters or is too long.`n"
+        $NewError += "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain, and ensure"
+        $NewError += "the username is no more than 20 characters long"
+        $ArrayOfUserErrors += $NewError
+    }
+
+    # Check for invalid characters in password
+    If (!(Test-PasswordCharactersValid -Credential $Credential)) {
+        $NewError = ""
+        $NewError += "Password provided for $Username user contained invalid characters.`n"
+        $NewError += '  Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
+        $ArrayOfUserErrors += $NewError
+        Write-Host ""
+        Throw
+    }
+}
+
+# Test PSM user configuration before onboarding
+$AccountsToOnboard = $PSMAccountDetailsArray | Where-Object Onboard -eq $true
+# If accounts are to be onboarded, check them first
+If (($AccountsToOnboard) -and ($OperationsToPerform.UserTests)) {
+    foreach ($Account in $AccountsToOnboard) {
+        $UserDN = $false
+        $UserObject = $false
+        $UserType = $Account.UserType
+        $Credential = $Account.Credentials
+        $Username = $Credential.Username
+        # If performing user tests
+        Write-LogMessage -type Verbose -MSG "Testing $Username credentials"
+        # User has a password set, so it can be tested
+        # Test PSM user credentials
+        $TestResult = ValidateCredentials -domain $DomainDNSName -Credential $Credential
+        if ("Success" -eq $TestResult) {
+            Write-LogMessage -Type Verbose -MSG "$Username user credentials validated"
+        }
+        elseIf ("InvalidCredentials" -eq $TestResult) {
+            Write-LogMessage -Type Verbose -MSG "$Username user credentials incorrect"
+            $NewError = ""
+            $NewError += "Incorrect credentials provided for $Username."
+            $ArrayOfUserErrors += $NewError
+            $ValidationFailed = $true
+        }
+        elseIf ($TestResult -match "ErrorOccurred.*") {
+            $CaughtError = $TestResult -replace "^ErrorOccurred:",""
+            Write-LogMessage -Type Verbose -MSG ("Error occurred while validating $Username user credentials: {0}" -f $CaughtError)
+            $NewError = ""
+            $NewError += ("The following error occurred while validating credentials for $Username against the domain: {0}" -f $CaughtError)
+            $ArrayOfUserErrors += $NewError
+            $ValidationFailed = $true
+        }
+        # Search for user by name
+        Write-LogMessage -Type Verbose -MSG ("Searching AD for $Username")
+        $UserDN = Get-UserDNFromSamAccountName -Username $Username
+        If ($UserDN) {
+            Write-LogMessage -Type Verbose -MSG ("Getting $Username user object")
+            $UserObject = Get-UserObjectFromDN $UserDN # Search for the user
+        }
+        else {
+            # If user was not found throw error
+            Write-LogMessage -Type Verbose -MSG ("$Username was not found on the domain")
+            $NewError = ""
+            $NewError += ("User {0} not found in the domain. Please ensure the user exists and`n" -f $Username)
+            $NewError += ("  that you have provided the pre-Windows 2000 logon name.")
+            $ArrayOfUserErrors += $NewError
+        }
+        If ($UserObject) {
+            Write-LogMessage -Type Verbose -MSG ("Checking $Username user configuration")
+            # Test PSM user configuration
+            $PSMUserConfigTestResult = Test-PSMUserConfiguration -UserType $UserType -UserObject $UserObject -PSMInstallLocation $psmRootInstallLocation
+            Write-LogMessage -Type Verbose -MSG "Successfully checked $Username user configuration"
+            If ($PSMUserConfigTestResult) {
+                $UserConfigurationErrors += $PSMUserConfigTestResult
+            }
+        }
+    }
+}
+
+# List detected PSM user configuration errors
+Write-LogMessage -Type Verbose -MSG "Checking for user configuration errors"
+If ($UserConfigurationErrors) {
+    Write-LogMessage -Type Verbose -MSG "Listing detected user configuration errors"
+    # Misconfigurations have been detected and will be listed by the following section
+    $UsersWithConfigurationErrors = $UserConfigurationErrors.UserName | Select-Object -Unique # Get a list of the affected users
+    $UsersWithConfigurationErrors | ForEach-Object { # For each user
+        $User = $_
+        $NewError = ("Configuration errors for {0} in Active Directory user properties:`n" -f $User)
+        # Output simple misconfigurations in table format
+        $ErrorTableSettings = $UserConfigurationErrors | Where-Object UserName -eq $user | Where-Object SettingType -in "Value", "LogOnTo"
+        If ($ErrorTableSettings) {
+            $NewError += "---------`n"
+            $NewError += "Settings:`n"
+            $NewError += "---------`n"
+            $NewError += (
+                $ErrorTableSettings | Select-Object Username, SettingName, Expected, Current | Format-Table -Wrap -Property `
+                @{Name = "SettingName"; Expression = { $_.SettingName }; Alignment = "Left" }, `
+                @{Name = "Expected"; Expression = { $_.Expected }; Alignment = "Left" }, `
+                @{Name = "Current"; Expression = { $_.Current }; Alignment = "Left" } | Out-String
+            ).Trim()
+            $NewError += "`n`n"
+        }
+        $ListUserConfigurationErrors = $UserConfigurationErrors | Where-Object UserName -eq $user | Where-Object SettingType -eq "StringCompare" # for more complex misconfigurations (strings), capture them separately
+        If ($ListUserConfigurationErrors) {
+            $NewError += "------`n"
+            $NewError += "Paths:`n"
+            $NewError += "------`n"
+            foreach ($ConfigErrorSetting in $ListUserConfigurationErrors) {
+                # and for each misconfiguration, ...
+                $NewError += ("Setting: {0}`n" -f $ConfigErrorSetting.SettingName)
+                $NewError += ("Expected value: `"{0}`"`n" -f $ConfigErrorSetting.Expected)
+                If ($ConfigErrorSetting.Current -eq "Unset") {
+                    $NewError += ("Detected value: Unset`n" -f $ConfigErrorSetting.Current)
+                }
+                else {
+                    $DifferencePosition = Get-DifferencePosition -String1 $ConfigErrorSetting.Expected -String2 $ConfigErrorSetting.Current # get the location of the first difference
+                    $NewError += ("Detected value: `"{0}`"`n" -f $ConfigErrorSetting.Current)
+                    $NewError += ("                ` {0}^`n" -f (" " * $DifferencePosition)) # and display the position of the first difference
+                    $NewError += ("`n`n")
+                }
+            }
+        }
+        $ArrayOfUserErrors += $NewError.trim()
+    }
+    If ("Unset" -in $UserConfigurationErrors.Current) {
+        $NewError = "Errors occurred while retrieving some user properties, which usually means they do not exist. These will show as `"Unset`" above.`n"
+        $ArrayOfUserErrors += $NewError
+    }
+    #    Write-LogMessage -type Error -MSG "Please resolve the issues above or rerun this script with -SkipPSMUserTests to ignore these errors."
+    $ValidationFailed = $true
+}
+
+Write-LogMessage -type Verbose -MSG "Completed validation of PSM user configuration"
+
+If ($ArrayOfUserErrors) {
+    Write-LogMessage -type Error -MSG $SectionSeparator
+    Write-LogMessage -type Error -MSG "The following errors occurred while validating the PSM user details."
+    Write-LogMessage -type Error -MSG "These tests may be skipped by running Set-DomainUser with the -SkipPSMUserTests parameter."
+    foreach ($UserError in $ArrayOfUserErrors) {
+        Write-LogMessage -type Error -MSG $StandardSeparator
+        Write-LogMessage -type Error -MSG $UserError
+    }
+}
+
+If ($ArrayOfUserOnboardingConflictErrors) {
+    Write-LogMessage -type Error -MSG $SectionSeparator
+    Write-LogMessage -type Error -MSG "PSM users exist in the vault with details that do not match this environment."
+    Write-LogMessage -type Error -MSG "See below for comparisons of the conflicting users."
+    foreach ($UserConflict in $ArrayOfUserOnboardingConflictErrors) {
+        Write-LogMessage -type Error -MSG $StandardSeparator
+        Write-LogMessage -type Error -MSG $UserConflict
+    }
+    Write-LogMessage -type Error -MSG "Use -PSMConnectAccountName, -PSMAdminConnectAccountName and -Safe parameters"
+    Write-LogMessage -type Error -MSG "to provide alternative details for this environment."
+}
+
+If ($ValidationFailed) {
+    Write-LogMessage -type Info -MSG "Some tests failed, and details are shown above. Please correct these and rerun Set-DomainUser."
+    exit 1
+}
+
+Write-LogMessage -type Verbose -MSG "All inputs successfully passed validation"
+
+$psmConnectCredentials = ($PSMAccountDetailsArray | Where-Object UserType -eq "PSMConnect").Credentials
+$PSMConnectUsername = $psmConnectCredentials.UserName
+$PSMConnectDomainBSUser = ("{0}\{1}" -f $DomainNetbiosName, $psmConnectCredentials.UserName)
+
+$psmAdminCredentials = ($PSMAccountDetailsArray | Where-Object UserType -eq "PSMAdminConnect").Credentials
+$PSMAdminConnectUsername = $psmAdminCredentials.UserName
+$PSMAdminConnectDomainBSUser = ("{0}\{1}" -f $DomainNetbiosName, $psmAdminCredentials.UserName)
+
+# Perform Remote Configuration
+If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
+    Write-LogMessage -type Info -MSG "Starting backend configuration"
+    # Create platform if required
+    # Get platform info
+    Write-LogMessage -Type Verbose -MSG "Checking current platform status"
+    $platformStatus = Get-PlatformStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId $PlatformName
+    if ($platformStatus -eq $false) {
+        # function returns false if platform does not exist
+        # Get Platform ID for duplication
+        $WinDomainPlatform = Get-PlatformStatusById -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId WinDomain
+        If ($WinDomainPlatform) {
+            Write-LogMessage -Type Verbose -MSG "Checking Windows Domain platform status"
+            $WinDomainPlatformId = $WinDomainPlatform.Id
+        }
+        else {
+            # Get-PlatformStatus returns false if platform not found
+            Write-LogMessage -type Error -MSG "Could not find Windows Domain platform to duplicate. Please import it from the marketplace."
+            exit 1
+        }
+        # Creating Platform
+        Write-LogMessage -Type Verbose -MSG "Creating new platform"
+        Copy-Platform -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -CurrentPlatformId $WinDomainPlatformId -NewPlatformName $PlatformName -NewPlatformDescription "Platform for PSM accounts"
+        $TasksTop += @{
+            Message  = ("Set appropriate policies and settings on platform `"{0}`"" -f $PlatformName)
+            Priority = "Recommended"
+        }
+        # Get platform info again so we can ensure it's activated
+        $platformStatus = Get-PlatformStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -PlatformId $PlatformName
+    }
+    if ($platformStatus.Active -eq $false) {
+        Write-LogMessage -Type Verbose -MSG "Platform is deactivated. Activating."
+        Enable-Platform -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -Platform $platformStatus.Id
+    }
+    # Create safe if required
+    Write-LogMessage -Type Verbose -MSG "Checking current safe status"
+    $safeStatus = Get-SafeStatus -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -SafeName $Safe
+    if ($safeStatus -eq $false) {
+        # function returns false if safe does not exist
+        Write-LogMessage -Type Verbose -MSG "Safe $Safe does not exist. Creating the safe now"
+        $CreateSafeResult = New-PSMSafe -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $Safe
+        If ($CreateSafeResult) {
+            Write-LogMessage -type Verbose "Successfully created safe $safe"
+        }
+        else {
+            Write-LogMessage -Type Error -MSG "Creating PSM safe $Safe failed. Please resolve the error and try again."
+            exit 1
+        }
+    }
+    # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
+    If ($UM) {
+        $SafePermissions = Get-SafePermissions -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $safe -safeMember "Vault Admins"
+        If ($false -eq $SafePermissions) {
+            # Vault Admins does not appear to be a member of the safe. Adding.
+            Write-LogMessage -Type Verbose -MSG "Granting administrators access to PSM safe"
+            New-SafePermissions -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $safe -safeMember "Vault Admins"
+        }
+    }
+
+    # Onboard PSM users
+    foreach ($AccountToOnboard in $AccountsToOnboard) {
+        $NewCredentials = $AccountToOnboard.Credentials
+        $NewUserName = $AccountToOnboard.UserName
+        $NewAccountName = $AccountToOnboard.AccountName
+        Write-LogMessage -type Verbose -MSG ("Onboarding {0}" -f $NewUserName)
+        Write-LogMessage -Type Verbose -MSG "Onboarding Account"
+        $OnboardResult = New-VaultAdminObject -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -name $NewAccountName -domain $DomainDNSName -Credentials $NewCredentials -platformID $PlatformName -safe $safe
+        If ($OnboardResult.name) {
+            Write-LogMessage -Type Verbose -MSG "User successfully onboarded"
+        }
+        ElseIf ($OnboardResult.ErrorCode -eq "PASWS027E") {
+            $UserType = $AccountToOnboard.UserType
+            Write-LogMessage -Type Warning -MSG "Object with name $NewAccountName already exists. Please verify that it contains correct"
+            Write-LogMessage -Type Warning -MSG "  $UserType account details, or specify an alternative account name."
+            $TasksTop += @{
+                Message  = ("Verify that the {0} object in {1} safe contains correct {2} user details" -f $NewAccountName, $safe, $UserType)
+                Priority = "Required"
+            }
+        }
+        Else {
+            Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
+            exit 1
+        }
+    }
+}
+
+# Configure PSMServer object
+If ($OperationsToPerform.ServerObjectConfiguration) {
+    Write-LogMessage -type Verbose -MSG "Configuring backend PSM server objects"
+    $VaultAddress = Get-VaultAddress -psmRootInstallLocation $psmRootInstallLocation
     try {
         $VotProcess = Set-PSMServerObject -VaultAddress $VaultAddress `
             -VaultCredentials $InstallUser `
@@ -2230,10 +2629,6 @@ If ($OperationsToPerform.ServerObjectConfiguration) {
 ## End Remote Configuration Block
 
 # Group membership and security policy changes
-
-$PsmConnectUser = ("{0}\{1}" -f $DomainNetbiosName, $psmConnectCredentials.UserName)
-$PsmAdminConnectUser = ("{0}\{1}" -f $DomainNetbiosName, $psmAdminCredentials.UserName)
-
 If ($OperationsToPerform.SecurityPolicyConfiguration) {
     If (!(Test-Path -Path $BackupPath -PathType Container)) {
         $null = New-Item -ItemType Directory -Path $BackupPath
@@ -2241,16 +2636,19 @@ If ($OperationsToPerform.SecurityPolicyConfiguration) {
     $CurrentSecurityPolicyFile = "$BackupPath\CurrentSecurityPolicy.cfg"
     $GetSecPolResult = Get-CurrentSecurityPolicy -OutFile $CurrentSecurityPolicyFile -LogFile $BackupPath\SeceditExport.log
     If ($false -eq $GetSecPolResult) {
-        Write-LogMessage -type Warning -MSG "Security policy export failed, so the current policy will not be modified."
-        Write-LogMessage -type Warning -MSG "Please edit local security policy manually to allow PSM users to log on with Remote Desktop."
-        $TasksTop += "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+        Write-LogMessage -type Verbose -MSG "Security policy export failed, so the current policy will not be modified."
+        Write-LogMessage -type Verbose -MSG "Please edit local security policy manually to allow PSM users to log on with Remote Desktop."
+        $TasksTop += @{
+            Message  = "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+            Priority = "Required"
+        }
     }
     If ($GetSecPolResult) {
         $Content = Get-Content $CurrentSecurityPolicyFile
         $null = $Content | Where-Object { $_ -match "^SeRemoteInteractiveLogonRight = (.*)" }
         $SecPolCurrentUsersString = $Matches[1]
         $SecPolUsersArray = ($SecPolCurrentUsersString -split ",")
-        $SecPolUsersArray += @($PsmConnectUser, $PsmAdminConnectUser)
+        $SecPolUsersArray += @($PSMConnectDomainBSUser, $PSMAdminConnectDomainBSUser)
         $SecPolNewUsersString = $SecPolUsersArray -join ","
         $null = New-Item -Path "$BackupPath\newsecpol.cfg" -ItemType File -Force
         Add-Content -Path "$BackupPath\newsecpol.cfg" -Value '[Version]'
@@ -2263,48 +2661,64 @@ If ($OperationsToPerform.SecurityPolicyConfiguration) {
     If ($false -eq $SetSecPolResult) {
         Write-LogMessage -type Error -MSG "Failed to configure local security policy."
         Write-LogMessage -type Warning -MSG "Please edit local security policy manually to allow PSM users to log on with Remote Desktop."
-        $TasksTop += "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+        $TasksTop += @{
+            Message  = "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+            Priority = "Required"
+        }
     }
 }
 else {
-    $TasksTop += "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+    $TasksTop += @{
+        Message  = "Configure Local Security Policy to allow PSM users to log on with Remote Desktop"
+        Priority = "Required"
+    }
 }
-$TasksTop += "Ensure domain GPOs allow PSM users to log on to PSM servers with Remote Desktop"
+
+$TasksTop += @{
+    Message  = "Configure domain GPOs to allow PSM users to log on to PSM servers with Remote Desktop"
+    Priority = "Required"
+}
 
 If ($OperationsToPerform.RemoteDesktopUsersGroupAddition) {
     try {
         $Members = (Get-LocalGroupMember -Group "Remote Desktop Users").Name
-        If ($PsmConnectUser -notin $Members) {
-            Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PsmConnectUser
+        If ($PSMConnectDomainBSUser -notin $Members) {
+            Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PSMConnectDomainBSUser
         }
-        If ($PsmAdminConnectUser -notin $Members) {
-            Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PsmAdminConnectUser
+        If ($PSMAdminConnectDomainBSUser -notin $Members) {
+            Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PSMAdminConnectDomainBSUser
         }
     }
     catch {
         Write-Host $_.Exception
         Write-LogMessage -type Error -MSG "Failed to add PSM users to Remote Desktop Users group. Please add these users manually."
-        $TasksTop += "Add PSM users to Remote Desktop Users group"
+        $TasksTop += @{
+            Message  = "Add PSM users to Remote Desktop Users group"
+            Priority = "Required"
+        }
     }
 }
 else {
-    $TasksTop += "Add PSM users to Remote Desktop Users group"
+    $TasksTop += @{
+        Message  = "Add PSM users to Remote Desktop Users group"
+        Priority = "Required"
+    }
 }
-
 
 # End group membership and security policy changes
 
-## Local Configuration Block
-If ($OperationsToPerform.PsmConfiguration) {
+# Perform local configuration
+If ($OperationsToPerform.PsmLocalConfiguration) {
     Write-LogMessage -Type Info -MSG "Performing local configuration and restarting service"
 
     Write-LogMessage -Type Verbose -MSG "Stopping CyberArk Privileged Session Manager Service"
     Stop-Service $REGKEY_PSMSERVICE
+    # Backup files
     Write-LogMessage -Type Verbose -MSG "Backing up PSM configuration files and scripts"
     Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupPath $BackupPath
+    # Update PSM configuration and scripts
     Write-LogMessage -Type Verbose -MSG "Updating PSM configuration files and scripts"
     Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $DomainDNSName -PSMAdminConnectAccountName $PSMAdminConnectAccountName -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
-    #TODO: Update Basic_ini
     Write-LogMessage -Type Verbose -MSG "Adding PSMAdminConnect user to Terminal Services configuration"
     # Adding PSMAdminConnect user to Terminal Services configuration
     $AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $DomainNetbiosName -Credentials $psmAdminCredentials
@@ -2317,7 +2731,10 @@ If ($OperationsToPerform.PsmConfiguration) {
             Write-LogMessage -Type Warning -MSG $AddAdminUserToTSResult.Error
             Write-LogMessage -Type Warning -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration."
             Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
-            $TasksTop += "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
+            $TasksTop += @{
+                Message  = "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
+                Priority = "Required"
+            }
         }
         else {
             Write-LogMessage -Type Error -MSG $AddAdminUserToTSResult.Error
@@ -2340,7 +2757,10 @@ If ($OperationsToPerform.PsmConfiguration) {
                 Write-LogMessage -Type Warning -MSG $AddAdminUserTSShadowPermissionResult.Error
                 Write-LogMessage -Type Warning -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
                 Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
-                $TasksTop += "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script"
+                $TasksTop += @{
+                    Message  = "Resolve issue preventing PSMAdminConnect user being granted permission to shadow sessions and rerun this script."
+                    Priority = "Required"
+                }
             }
             else {
                 Write-LogMessage -Type Error -MSG $AddAdminUserTSShadowPermissionResult.Error
@@ -2355,281 +2775,95 @@ If ($OperationsToPerform.PsmConfiguration) {
 }
 ## End Local Configuration Block
 
-## Post-Configuration Block
-
+# Post-configuration
+## Invoke hardening scripts and restart service
 If ($OperationsToPerform.Hardening) {
     Write-LogMessage -Type Info -MSG "Running PSM Hardening script"
     Write-LogMessage -Type Info -MSG "---"
-    Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation
+    Invoke-PSMHardening -psmRootInstallLocation $psmRootInstallLocation -DomainNetbiosName $DomainNetbiosName -PSMConnectUsername $PSMConnectUsername -PSMAdminConnectUsername $PSMAdminConnectUsername
     Write-LogMessage -Type Info -MSG "---"
     Write-LogMessage -Type Info -MSG "End of PSM Hardening script output"
 }
 else {
     Write-LogMessage -Type Warning -MSG "Skipping Hardening due to -DoNotHarden parameter"
-    $TasksTop += "Run script to perform server hardening (PSMHardening.ps1)"
+    $TasksTop += @{
+        Message  = "Run script to perform server hardening (PSMHardening.ps1)"
+        Priority = "Required"
+    }
 }
 If ($OperationsToPerform.ConfigureAppLocker) {
     Write-LogMessage -Type Info -MSG "Running PSM Configure AppLocker script"
     Write-LogMessage -Type Info -MSG "---"
-    Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation
+    Invoke-PSMConfigureAppLocker -psmRootInstallLocation $psmRootInstallLocation -DomainNetbiosName $DomainNetbiosName -PSMConnectUsername $PSMConnectUsername -PSMAdminConnectUsername $PSMAdminConnectUsername
     Write-LogMessage -Type Info -MSG "---"
     Write-LogMessage -Type Info -MSG "End of PSM Configure AppLocker script output"
 }
 else {
     Write-LogMessage -Type Warning -MSG "Skipping configuration of AppLocker due to -DoNotConfigureAppLocker parameter"
-    $TasksTop += "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
+    $TasksTop += @{
+        Message  = "Run script to configure AppLocker (PSMConfigureAppLocker.ps1)"
+        Priority = "Required"
+    }
 }
 Write-LogMessage -Type Verbose -MSG "Restarting CyberArk Privileged Session Manager Service"
-Restart-Service $REGKEY_PSMSERVICE
+If ($false -eq $NoPSMRestart) {
+    Restart-Service $REGKEY_PSMSERVICE
+}
+
 Write-LogMessage -Type Success -MSG "All tasks completed."
 
-Write-LogMessage -type Info -MSG "The following additional steps may be required:"
-$TasksBottom += "Restart Server"
-
-foreach ($Task in $TasksTop) {
-    Write-LogMessage -Type Info " - $Task"
-}
+$RequiredTasks = @()
 If ($SkipPSMObjectUpdate -or $LocalConfigurationOnly) {
-    Write-LogMessage -Type Info -MSG (" - Update the PSM Server configuration:")
-    Write-LogMessage -Type Info -MSG ("   - Log in to Privilege Cloud as an administrative user")
-    Write-LogMessage -Type Info -MSG ("   - Go to Administration -> Configuration Options")
-    Write-LogMessage -Type Info -MSG ("   - Expand Privileged Session Management -> Configured PSM Servers -> {0} -> " -f $PSMServerId)
-    Write-LogMessage -Type Info -MSG ("       Connection Details -> Server")
-    Write-LogMessage -Type Info -MSG ("   - Configure the following:")
-    Write-LogMessage -Type Info -MSG ("       Safe: {0}" -f $Safe)
-    Write-LogMessage -Type Info -MSG ("       Object: {0}" -f $PSMConnectAccountName)
-    Write-LogMessage -Type Info -MSG ("       AdminObject: {0}" -f $PSMAdminConnectAccountName)
+    $RequiredTasks += @(
+        @{ Message   = `
+            ("Update the PSM Server configuration:`n") + `
+            ("     a. Log in to Privilege Cloud as an administrative user`n") + `
+            ("     b. Go to Administration -> Configuration Options`n") + `
+            ("     c. Expand Privileged Session Management -> Configured PSM Servers -> {0} -> `n" -f $PSMServerId) + `
+            ("          Connection Details -> Server`n") + `
+            ("     d. Configure the following:`n") + `
+            ("          Safe: {0}`n" -f $Safe) + `
+            ("          Object: {0}`n" -f $PSMConnectAccountName) + `
+            ("          AdminObject: {0}" -f $PSMAdminConnectAccountName)
+            Priority = "Required"
+        }
+    )
 }
-foreach ($Task in $TasksBottom) {
-    Write-LogMessage -Type Info " - $Task"
-}
-## End Post-Configuration Block
 
-# SIG # Begin signature block
-# MIIqRgYJKoZIhvcNAQcCoIIqNzCCKjMCAQExDzANBglghkgBZQMEAgEFADB5Bgor
-# BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCWwLhv19GrTCGH
-# +7/hWIZGQCSMkdvVNjZOcuIfHpPY5qCCGFcwggROMIIDNqADAgECAg0B7l8Wnf+X
-# NStkZdZqMA0GCSqGSIb3DQEBCwUAMFcxCzAJBgNVBAYTAkJFMRkwFwYDVQQKExBH
-# bG9iYWxTaWduIG52LXNhMRAwDgYDVQQLEwdSb290IENBMRswGQYDVQQDExJHbG9i
-# YWxTaWduIFJvb3QgQ0EwHhcNMTgwOTE5MDAwMDAwWhcNMjgwMTI4MTIwMDAwWjBM
-# MSAwHgYDVQQLExdHbG9iYWxTaWduIFJvb3QgQ0EgLSBSMzETMBEGA1UEChMKR2xv
-# YmFsU2lnbjETMBEGA1UEAxMKR2xvYmFsU2lnbjCCASIwDQYJKoZIhvcNAQEBBQAD
-# ggEPADCCAQoCggEBAMwldpB5BngiFvXAg7aEyiie/QV2EcWtiHL8RgJDx7KKnQRf
-# JMsuS+FggkbhUqsMgUdwbN1k0ev1LKMPgj0MK66X17YUhhB5uzsTgHeMCOFJ0mpi
-# Lx9e+pZo34knlTifBtc+ycsmWQ1z3rDI6SYOgxXG71uL0gRgykmmKPZpO/bLyCiR
-# 5Z2KYVc3rHQU3HTgOu5yLy6c+9C7v/U9AOEGM+iCK65TpjoWc4zdQQ4gOsC0p6Hp
-# sk+QLjJg6VfLuQSSaGjlOCZgdbKfd/+RFO+uIEn8rUAVSNECMWEZXriX7613t2Sa
-# er9fwRPvm2L7DWzgVGkWqQPabumDk3F2xmmFghcCAwEAAaOCASIwggEeMA4GA1Ud
-# DwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBSP8Et/qC5FJK5N
-# UPpjmove4t0bvDAfBgNVHSMEGDAWgBRge2YaRQ2XyolQL30EzTSo//z9SzA9Bggr
-# BgEFBQcBAQQxMC8wLQYIKwYBBQUHMAGGIWh0dHA6Ly9vY3NwLmdsb2JhbHNpZ24u
-# Y29tL3Jvb3RyMTAzBgNVHR8ELDAqMCigJqAkhiJodHRwOi8vY3JsLmdsb2JhbHNp
-# Z24uY29tL3Jvb3QuY3JsMEcGA1UdIARAMD4wPAYEVR0gADA0MDIGCCsGAQUFBwIB
-# FiZodHRwczovL3d3dy5nbG9iYWxzaWduLmNvbS9yZXBvc2l0b3J5LzANBgkqhkiG
-# 9w0BAQsFAAOCAQEAI3Dpz+K+9VmulEJvxEMzqs0/OrlkF/JiBktI8UCIBheh/qvR
-# XzzGM/Lzjt0fHT7MGmCZggusx/x+mocqpX0PplfurDtqhdbevUBj+K2myIiwEvz2
-# Qd8PCZceOOpTn74F9D7q059QEna+CYvCC0h9Hi5R9o1T06sfQBuKju19+095VnBf
-# DNOOG7OncA03K5eVq9rgEmscQM7Fx37twmJY7HftcyLCivWGQ4it6hNu/dj+Qi+5
-# fV6tGO+UkMo9J6smlJl1x8vTe/fKTNOvUSGSW4R9K58VP3TLUeiegw4WbxvnRs4j
-# vfnkoovSOWuqeRyRLOJhJC2OKkhwkMQexejgcDCCBaIwggSKoAMCAQICEHgDGEJF
-# cIpBz28BuO60qVQwDQYJKoZIhvcNAQEMBQAwTDEgMB4GA1UECxMXR2xvYmFsU2ln
-# biBSb290IENBIC0gUjMxEzARBgNVBAoTCkdsb2JhbFNpZ24xEzARBgNVBAMTCkds
-# b2JhbFNpZ24wHhcNMjAwNzI4MDAwMDAwWhcNMjkwMzE4MDAwMDAwWjBTMQswCQYD
-# VQQGEwJCRTEZMBcGA1UEChMQR2xvYmFsU2lnbiBudi1zYTEpMCcGA1UEAxMgR2xv
-# YmFsU2lnbiBDb2RlIFNpZ25pbmcgUm9vdCBSNDUwggIiMA0GCSqGSIb3DQEBAQUA
-# A4ICDwAwggIKAoICAQC2LcUw3Xroq5A9A3KwOkuZFmGy5f+lZx03HOV+7JODqoT1
-# o0ObmEWKuGNXXZsAiAQl6fhokkuC2EvJSgPzqH9qj4phJ72hRND99T8iwqNPkY2z
-# BbIogpFd+1mIBQuXBsKY+CynMyTuUDpBzPCgsHsdTdKoWDiW6d/5G5G7ixAs0sdD
-# HaIJdKGAr3vmMwoMWWuOvPSrWpd7f65V+4TwgP6ETNfiur3EdaFvvWEQdESymAfi
-# dKv/aNxsJj7pH+XgBIetMNMMjQN8VbgWcFwkeCAl62dniKu6TjSYa3AR3jjK1L6h
-# wJzh3x4CAdg74WdDhLbP/HS3L4Sjv7oJNz1nbLFFXBlhq0GD9awd63cNRkdzzr+9
-# lZXtnSuIEP76WOinV+Gzz6ha6QclmxLEnoByPZPcjJTfO0TmJoD80sMD8IwM0kXW
-# LuePmJ7mBO5Cbmd+QhZxYucE+WDGZKG2nIEhTivGbWiUhsaZdHNnMXqR8tSMeW58
-# prt+Rm9NxYUSK8+aIkQIqIU3zgdhVwYXEiTAxDFzoZg1V0d+EDpF2S2kUZCYqaAH
-# N8RlGqocaxZ396eX7D8ZMJlvMfvqQLLn0sT6ydDwUHZ0WfqNbRcyvvjpfgP054d1
-# mtRKkSyFAxMCK0KA8olqNs/ITKDOnvjLja0Wp9Pe1ZsYp8aSOvGCY/EuDiRk3wID
-# AQABo4IBdzCCAXMwDgYDVR0PAQH/BAQDAgGGMBMGA1UdJQQMMAoGCCsGAQUFBwMD
-# MA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFB8Av0aACvx4ObeltEPZVlC7zpY7
-# MB8GA1UdIwQYMBaAFI/wS3+oLkUkrk1Q+mOai97i3Ru8MHoGCCsGAQUFBwEBBG4w
-# bDAtBggrBgEFBQcwAYYhaHR0cDovL29jc3AuZ2xvYmFsc2lnbi5jb20vcm9vdHIz
-# MDsGCCsGAQUFBzAChi9odHRwOi8vc2VjdXJlLmdsb2JhbHNpZ24uY29tL2NhY2Vy
-# dC9yb290LXIzLmNydDA2BgNVHR8ELzAtMCugKaAnhiVodHRwOi8vY3JsLmdsb2Jh
-# bHNpZ24uY29tL3Jvb3QtcjMuY3JsMEcGA1UdIARAMD4wPAYEVR0gADA0MDIGCCsG
-# AQUFBwIBFiZodHRwczovL3d3dy5nbG9iYWxzaWduLmNvbS9yZXBvc2l0b3J5LzAN
-# BgkqhkiG9w0BAQwFAAOCAQEArPfMFYsweagdCyiIGQnXHH/+hr17WjNuDWcOe2LZ
-# 4RhcsL0TXR0jrjlQdjeqRP1fASNZhlZMzK28ZBMUMKQgqOA/6Jxy3H7z2Awjuqgt
-# qjz27J+HMQdl9TmnUYJ14fIvl/bR4WWWg2T+oR1R+7Ukm/XSd2m8hSxc+lh30a6n
-# sQvi1ne7qbQ0SqlvPfTzDZVd5vl6RbAlFzEu2/cPaOaDH6n35dSdmIzTYUsvwyh+
-# et6TDrR9oAptksS0Zj99p1jurPfswwgBqzj8ChypxZeyiMgJAhn2XJoa8U1sMNSz
-# BqsAYEgNeKvPF62Sk2Igd3VsvcgytNxN69nfwZCWKb3BfzCCBugwggTQoAMCAQIC
-# EHe9DgW3WQu2HUdhUx4/de0wDQYJKoZIhvcNAQELBQAwUzELMAkGA1UEBhMCQkUx
-# GTAXBgNVBAoTEEdsb2JhbFNpZ24gbnYtc2ExKTAnBgNVBAMTIEdsb2JhbFNpZ24g
-# Q29kZSBTaWduaW5nIFJvb3QgUjQ1MB4XDTIwMDcyODAwMDAwMFoXDTMwMDcyODAw
-# MDAwMFowXDELMAkGA1UEBhMCQkUxGTAXBgNVBAoTEEdsb2JhbFNpZ24gbnYtc2Ex
-# MjAwBgNVBAMTKUdsb2JhbFNpZ24gR0NDIFI0NSBFViBDb2RlU2lnbmluZyBDQSAy
-# MDIwMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAyyDvlx65ATJDoFup
-# iiP9IF6uOBKLyizU/0HYGlXUGVO3/aMX53o5XMD3zhGj+aXtAfq1upPvr5Pc+OKz
-# GUyDsEpEUAR4hBBqpNaWkI6B+HyrL7WjVzPSWHuUDm0PpZEmKrODT3KxintkktDw
-# tFVflgsR5Zq1LLIRzyUbfVErmB9Jo1/4E541uAMC2qQTL4VK78QvcA7B1MwzEuy9
-# QJXTEcrmzbMFnMhT61LXeExRAZKC3hPzB450uoSAn9KkFQ7or+v3ifbfcfDRvqey
-# QTMgdcyx1e0dBxnE6yZ38qttF5NJqbfmw5CcxrjszMl7ml7FxSSTY29+EIthz5hV
-# oySiiDby+Z++ky6yBp8mwAwBVhLhsoqfDh7cmIsuz9riiTSmHyagqK54beyhiBU8
-# wurut9itYaWvcDaieY7cDXPA8eQsq5TsWAY5NkjWO1roIs50Dq8s8RXa0bSV6KzV
-# SW3lr92ba2MgXY5+O7JD2GI6lOXNtJizNxkkEnJzqwSwCdyF5tQiBO9AKh0ubcdp
-# 0263AWwN4JenFuYmi4j3A0SGX2JnTLWnN6hV3AM2jG7PbTYm8Q6PsD1xwOEyp4Lk
-# tjICMjB8tZPIIf08iOZpY/judcmLwqvvujr96V6/thHxvvA9yjI+bn3eD36blcQS
-# h+cauE7uLMHfoWXoJIPJKsL9uVMCAwEAAaOCAa0wggGpMA4GA1UdDwEB/wQEAwIB
-# hjATBgNVHSUEDDAKBggrBgEFBQcDAzASBgNVHRMBAf8ECDAGAQH/AgEAMB0GA1Ud
-# DgQWBBQlndD8WQmGY8Xs87ETO1ccA5I2ETAfBgNVHSMEGDAWgBQfAL9GgAr8eDm3
-# pbRD2VZQu86WOzCBkwYIKwYBBQUHAQEEgYYwgYMwOQYIKwYBBQUHMAGGLWh0dHA6
-# Ly9vY3NwLmdsb2JhbHNpZ24uY29tL2NvZGVzaWduaW5ncm9vdHI0NTBGBggrBgEF
-# BQcwAoY6aHR0cDovL3NlY3VyZS5nbG9iYWxzaWduLmNvbS9jYWNlcnQvY29kZXNp
-# Z25pbmdyb290cjQ1LmNydDBBBgNVHR8EOjA4MDagNKAyhjBodHRwOi8vY3JsLmds
-# b2JhbHNpZ24uY29tL2NvZGVzaWduaW5ncm9vdHI0NS5jcmwwVQYDVR0gBE4wTDBB
-# BgkrBgEEAaAyAQIwNDAyBggrBgEFBQcCARYmaHR0cHM6Ly93d3cuZ2xvYmFsc2ln
-# bi5jb20vcmVwb3NpdG9yeS8wBwYFZ4EMAQMwDQYJKoZIhvcNAQELBQADggIBACV1
-# oAnJObq3oTmJLxifq9brHUvolHwNB2ibHJ3vcbYXamsCT7M/hkWHzGWbTONYBgIi
-# ZtVhAsVjj9Si8bZeJQt3lunNcUAziCns7vOibbxNtT4GS8lzM8oIFC09TOiwunWm
-# dC2kWDpsE0n4pRUKFJaFsWpoNCVCr5ZW9BD6JH3xK3LBFuFr6+apmMc+WvTQGJ39
-# dJeGd0YqPSN9KHOKru8rG5q/bFOnFJ48h3HAXo7I+9MqkjPqV01eB17KwRisgS0a
-# Ifpuz5dhe99xejrKY/fVMEQ3Mv67Q4XcuvymyjMZK3dt28sF8H5fdS6itr81qjZj
-# yc5k2b38vCzzSVYAyBIrxie7N69X78TPHinE9OItziphz1ft9QpA4vUY1h7pkC/K
-# 04dfk4pIGhEd5TeFny5mYppegU6VrFVXQ9xTiyV+PGEPigu69T+m1473BFZeIbuf
-# 12pxgL+W3nID2NgiK/MnFk846FFADK6S7749ffeAxkw2V4SVp4QVSDAOUicIjY6i
-# vSLHGcmmyg6oejbbarphXxEklaTijmjuGalJmV7QtDS91vlAxxCXMVI5NSkRhyTT
-# xPupY8t3SNX6Yvwk4AR6TtDkbt7OnjhQJvQhcWXXCSXUyQcAerjH83foxdTiVdDT
-# HvZ/UuJJjbkRcgyIRCYzZgFE3+QzDiHeYolIB9r1MIIHbzCCBVegAwIBAgIMcE3E
-# /BY6leBdVXwMMA0GCSqGSIb3DQEBCwUAMFwxCzAJBgNVBAYTAkJFMRkwFwYDVQQK
-# ExBHbG9iYWxTaWduIG52LXNhMTIwMAYDVQQDEylHbG9iYWxTaWduIEdDQyBSNDUg
-# RVYgQ29kZVNpZ25pbmcgQ0EgMjAyMDAeFw0yMjAyMTUxMzM4MzVaFw0yNTAyMTUx
-# MzM4MzVaMIHUMR0wGwYDVQQPDBRQcml2YXRlIE9yZ2FuaXphdGlvbjESMBAGA1UE
-# BRMJNTEyMjkxNjQyMRMwEQYLKwYBBAGCNzwCAQMTAklMMQswCQYDVQQGEwJJTDEQ
-# MA4GA1UECBMHQ2VudHJhbDEUMBIGA1UEBxMLUGV0YWggVGlrdmExEzARBgNVBAkT
-# CjkgSGFwc2Fnb3QxHzAdBgNVBAoTFkN5YmVyQXJrIFNvZnR3YXJlIEx0ZC4xHzAd
-# BgNVBAMTFkN5YmVyQXJrIFNvZnR3YXJlIEx0ZC4wggIiMA0GCSqGSIb3DQEBAQUA
-# A4ICDwAwggIKAoICAQDys9frIBUzrj7+oxAS21ansV0C+r1R+DEGtb5HQ225eEqe
-# NXTnOYgvrOIBLROU2tCq7nKma5qA5bNgoO0hxYQOboC5Ir5B5mmtbr1zRdhF0h/x
-# f/E1RrBcsZ7ksbqeCza4ca1yH2W3YYsxFYgucq+JLqXoXToc4CjD5ogNw0Y66R13
-# Km94WuowRs/tgox6SQHpzb/CF0fMNCJbpXQrzZen1dR7Gtt2cWkpZct9DCTONwbX
-# GZKIdBSmRIfjDYDMHNyz42J2iifkUQgVcZLZvUJwIDz4+jkODv/++fa2GKte06po
-# L5+M/WlQbua+tlAyDeVMdAD8tMvvxHdTPM1vgj11zzK5qVxgrXnmFFTe9knf9S2S
-# 0C8M8L97Cha2F5sbvs24pTxgjqXaUyDuMwVnX/9usgIPREaqGY8wr0ysHd6VK4wt
-# o7nroiF2uWnOaPgFEMJ8+4fRB/CSt6OyKQYQyjSUSt8dKMvc1qITQ8+gLg1budzp
-# aHhVrh7dUUVn3N2ehOwIomqTizXczEFuN0siQJx+ScxLECWg4X2HoiHNY7KVJE4D
-# L9Nl8YvmTNCrHNwiF1ctYcdZ1vPgMPerFhzqDUbdnCAU9Z/tVspBTcWwDGCIm+Yo
-# 9V458g3iJhNXi2iKVFHwpf8hoDU0ys30SID/9mE3cc41L+zoDGOMclNHb0Y5CQID
-# AQABo4IBtjCCAbIwDgYDVR0PAQH/BAQDAgeAMIGfBggrBgEFBQcBAQSBkjCBjzBM
-# BggrBgEFBQcwAoZAaHR0cDovL3NlY3VyZS5nbG9iYWxzaWduLmNvbS9jYWNlcnQv
-# Z3NnY2NyNDVldmNvZGVzaWduY2EyMDIwLmNydDA/BggrBgEFBQcwAYYzaHR0cDov
-# L29jc3AuZ2xvYmFsc2lnbi5jb20vZ3NnY2NyNDVldmNvZGVzaWduY2EyMDIwMFUG
-# A1UdIAROMEwwQQYJKwYBBAGgMgECMDQwMgYIKwYBBQUHAgEWJmh0dHBzOi8vd3d3
-# Lmdsb2JhbHNpZ24uY29tL3JlcG9zaXRvcnkvMAcGBWeBDAEDMAkGA1UdEwQCMAAw
-# RwYDVR0fBEAwPjA8oDqgOIY2aHR0cDovL2NybC5nbG9iYWxzaWduLmNvbS9nc2dj
-# Y3I0NWV2Y29kZXNpZ25jYTIwMjAuY3JsMBMGA1UdJQQMMAoGCCsGAQUFBwMDMB8G
-# A1UdIwQYMBaAFCWd0PxZCYZjxezzsRM7VxwDkjYRMB0GA1UdDgQWBBTRWDsgBgAr
-# Xx8j10jVgqJYDQPVsTANBgkqhkiG9w0BAQsFAAOCAgEAU50DXmYXBEgzng8gv8EN
-# mr1FT0g75g6UCgBhMkduJNj1mq8DWKxLoS11gomB0/8zJmhbtFmZxjkgNe9cWPvR
-# NZa992pb9Bwwwe1KqGJFvgv3Yu1HiVL6FYzZ+m0QKmX0EofbwsFl6Z0pLSOvIESr
-# ICa4SgUk0OTDHNBUo+Sy9qm+ZJjA+IEK3M/IdNGjkecsFekr8tQEm7x6kCArPoug
-# mOetMgXhTxGjCu1QLQjp/i6P6wpgTSJXf9PPCxMmynsxBKGggs+vX/vl9CNT/s+X
-# Z9sz764AUEKwdAdi9qv0ouyUU9fiD5wN204fPm8h3xBhmeEJ25WDNQa8QuZddHUV
-# hXugk2eHd5hdzmCbu9I0qVkHyXsuzqHyJwFXbNBuiMOIfQk4P/+mHraq+cynx6/2
-# a+G8tdEIjFxpTsJgjSA1W+D0s+LmPX+2zCoFz1cB8dQb1lhXFgKC/KcSacnlO4SH
-# oZ6wZE9s0guXjXwwWfgQ9BSrEHnVIyKEhzKq7r7eo6VyjwOzLXLSALQdzH66cNk+
-# w3yT6uG543Ydes+QAnZuwQl3tp0/LjbcUpsDttEI5zp1Y4UfU4YA18QbRGPD1F9y
-# wjzg6QqlDtFeV2kohxa5pgyV9jOyX4/x0mu74qADxWHsZNVvlRLMUZ4zI4y3KvX8
-# vZsjJFVKIsvyCgyXgNMM5Z4xghFFMIIRQQIBATBsMFwxCzAJBgNVBAYTAkJFMRkw
-# FwYDVQQKExBHbG9iYWxTaWduIG52LXNhMTIwMAYDVQQDEylHbG9iYWxTaWduIEdD
-# QyBSNDUgRVYgQ29kZVNpZ25pbmcgQ0EgMjAyMAIMcE3E/BY6leBdVXwMMA0GCWCG
-# SAFlAwQCAQUAoHwwEAYKKwYBBAGCNwIBDDECMAAwGQYJKoZIhvcNAQkDMQwGCisG
-# AQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwGCisGAQQBgjcCARUwLwYJKoZIhvcN
-# AQkEMSIEIEmS7ivpDJl/svSn6fwrtlfxfUQyeJcjGTCjMaZcpbl/MA0GCSqGSIb3
-# DQEBAQUABIICAKsN9ZulrPYxS0pVUApILZNHBp41/zfFVh0VvmMrWte3MaEhlSmu
-# lhOBE+IGwmvpOiKTehvv3/JVtFiPwjcDIEY/ZGnzgtol+dmXIBWi4tyj9kf/VVvx
-# gwZh9tyNay0F6TrTC61G2Tz/twhWBDja3tMLewlR8s5+rZfnzBovaaEDzP5pKWxr
-# kTKu1sh3U473i4VxryxJyxbedbPQgHhcNjuRHvs8juRLxB9hn0oLRKekZvzBigbC
-# JqKheybS+0kf9xvmIczzlyj+bLR6If8NqtJKyiPKNEpEGafqrClRLFGu6PDA8nQA
-# bA/u6v+aG3w7iPCcJspO1ZLaznGsWP3x688f4gPJBYLAlvwvHOkVqs0bE+l2Zcee
-# to3+3TlEpchAxtlH5GsaPJ4d44ZYzUG6JYbW9tDQKZgsUFcxmXoBV4oYI3s7uaLr
-# vze88uAmsiwQBMW0gCmxarPApAGzl76EpPEPK6LRrRts1/Yplxt16cfHaVHdvszn
-# mtjLi5LMdCHOZbfVtgFb4wtZgIw2DP3l9LTeSpYJX/rfRs0Vi+kCAvrfTNNnF3Na
-# 6+ckpjYZxVF8Ifzlp4oJDuuU0otLqiht/pzDfTYH1B1MarYAktaa64Fhj7hFb1Kp
-# RfW60tcbQLOiy65skvxVBknG4B8QOflEBU+llcrrf040fwaFyZW6FfaooYIOLDCC
-# DigGCisGAQQBgjcDAwExgg4YMIIOFAYJKoZIhvcNAQcCoIIOBTCCDgECAQMxDTAL
-# BglghkgBZQMEAgEwgf8GCyqGSIb3DQEJEAEEoIHvBIHsMIHpAgEBBgtghkgBhvhF
-# AQcXAzAhMAkGBSsOAwIaBQAEFEhqC0aBM6xAThetPMjN7Gj43/NTAhUAsqUtd/Yf
-# V7zzk01YAyBatMGvblIYDzIwMjMxMTIxMTUxOTM4WjADAgEeoIGGpIGDMIGAMQsw
-# CQYDVQQGEwJVUzEdMBsGA1UEChMUU3ltYW50ZWMgQ29ycG9yYXRpb24xHzAdBgNV
-# BAsTFlN5bWFudGVjIFRydXN0IE5ldHdvcmsxMTAvBgNVBAMTKFN5bWFudGVjIFNI
-# QTI1NiBUaW1lU3RhbXBpbmcgU2lnbmVyIC0gRzOgggqLMIIFODCCBCCgAwIBAgIQ
-# ewWx1EloUUT3yYnSnBmdEjANBgkqhkiG9w0BAQsFADCBvTELMAkGA1UEBhMCVVMx
-# FzAVBgNVBAoTDlZlcmlTaWduLCBJbmMuMR8wHQYDVQQLExZWZXJpU2lnbiBUcnVz
-# dCBOZXR3b3JrMTowOAYDVQQLEzEoYykgMjAwOCBWZXJpU2lnbiwgSW5jLiAtIEZv
-# ciBhdXRob3JpemVkIHVzZSBvbmx5MTgwNgYDVQQDEy9WZXJpU2lnbiBVbml2ZXJz
-# YWwgUm9vdCBDZXJ0aWZpY2F0aW9uIEF1dGhvcml0eTAeFw0xNjAxMTIwMDAwMDBa
-# Fw0zMTAxMTEyMzU5NTlaMHcxCzAJBgNVBAYTAlVTMR0wGwYDVQQKExRTeW1hbnRl
-# YyBDb3Jwb3JhdGlvbjEfMB0GA1UECxMWU3ltYW50ZWMgVHJ1c3QgTmV0d29yazEo
-# MCYGA1UEAxMfU3ltYW50ZWMgU0hBMjU2IFRpbWVTdGFtcGluZyBDQTCCASIwDQYJ
-# KoZIhvcNAQEBBQADggEPADCCAQoCggEBALtZnVlVT52Mcl0agaLrVfOwAa08cawy
-# jwVrhponADKXak3JZBRLKbvC2Sm5Luxjs+HPPwtWkPhiG37rpgfi3n9ebUA41JEG
-# 50F8eRzLy60bv9iVkfPw7mz4rZY5Ln/BJ7h4OcWEpe3tr4eOzo3HberSmLU6Hx45
-# ncP0mqj0hOHE0XxxxgYptD/kgw0mw3sIPk35CrczSf/KO9T1sptL4YiZGvXA6TMU
-# 1t/HgNuR7v68kldyd/TNqMz+CfWTN76ViGrF3PSxS9TO6AmRX7WEeTWKeKwZMo8j
-# wTJBG1kOqT6xzPnWK++32OTVHW0ROpL2k8mc40juu1MO1DaXhnjFoTcCAwEAAaOC
-# AXcwggFzMA4GA1UdDwEB/wQEAwIBBjASBgNVHRMBAf8ECDAGAQH/AgEAMGYGA1Ud
-# IARfMF0wWwYLYIZIAYb4RQEHFwMwTDAjBggrBgEFBQcCARYXaHR0cHM6Ly9kLnN5
-# bWNiLmNvbS9jcHMwJQYIKwYBBQUHAgIwGRoXaHR0cHM6Ly9kLnN5bWNiLmNvbS9y
-# cGEwLgYIKwYBBQUHAQEEIjAgMB4GCCsGAQUFBzABhhJodHRwOi8vcy5zeW1jZC5j
-# b20wNgYDVR0fBC8wLTAroCmgJ4YlaHR0cDovL3Muc3ltY2IuY29tL3VuaXZlcnNh
-# bC1yb290LmNybDATBgNVHSUEDDAKBggrBgEFBQcDCDAoBgNVHREEITAfpB0wGzEZ
-# MBcGA1UEAxMQVGltZVN0YW1wLTIwNDgtMzAdBgNVHQ4EFgQUr2PWyqNOhXLgp7xB
-# 8ymiOH+AdWIwHwYDVR0jBBgwFoAUtnf6aUhHn1MS1cLqBzJ2B9GXBxkwDQYJKoZI
-# hvcNAQELBQADggEBAHXqsC3VNBlcMkX+DuHUT6Z4wW/X6t3cT/OhyIGI96ePFeZA
-# Ka3mXfSi2VZkhHEwKt0eYRdmIFYGmBmNXXHy+Je8Cf0ckUfJ4uiNA/vMkC/WCmxO
-# M+zWtJPITJBjSDlAIcTd1m6JmDy1mJfoqQa3CcmPU1dBkC/hHk1O3MoQeGxCbvC2
-# xfhhXFL1TvZrjfdKer7zzf0D19n2A6gP41P3CnXsxnUuqmaFBJm3+AZX4cYO9uiv
-# 2uybGB+queM6AL/OipTLAduexzi7D1Kr0eOUA2AKTaD+J20UMvw/l0Dhv5mJ2+Q5
-# FL3a5NPD6itas5VYVQR9x5rsIwONhSrS/66pYYEwggVLMIIEM6ADAgECAhB71OWv
-# uswHP6EBIwQiQU0SMA0GCSqGSIb3DQEBCwUAMHcxCzAJBgNVBAYTAlVTMR0wGwYD
-# VQQKExRTeW1hbnRlYyBDb3Jwb3JhdGlvbjEfMB0GA1UECxMWU3ltYW50ZWMgVHJ1
-# c3QgTmV0d29yazEoMCYGA1UEAxMfU3ltYW50ZWMgU0hBMjU2IFRpbWVTdGFtcGlu
-# ZyBDQTAeFw0xNzEyMjMwMDAwMDBaFw0yOTAzMjIyMzU5NTlaMIGAMQswCQYDVQQG
-# EwJVUzEdMBsGA1UEChMUU3ltYW50ZWMgQ29ycG9yYXRpb24xHzAdBgNVBAsTFlN5
-# bWFudGVjIFRydXN0IE5ldHdvcmsxMTAvBgNVBAMTKFN5bWFudGVjIFNIQTI1NiBU
-# aW1lU3RhbXBpbmcgU2lnbmVyIC0gRzMwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAw
-# ggEKAoIBAQCvDoqq+Ny/aXtUF3FHCb2NPIH4dBV3Z5Cc/d5OAp5LdvblNj5l1SQg
-# bTD53R2D6T8nSjNObRaK5I1AjSKqvqcLG9IHtjy1GiQo+BtyUT3ICYgmCDr5+kMj
-# dUdwDLNfW48IHXJIV2VNrwI8QPf03TI4kz/lLKbzWSPLgN4TTfkQyaoKGGxVYVfR
-# 8QIsxLWr8mwj0p8NDxlsrYViaf1OhcGKUjGrW9jJdFLjV2wiv1V/b8oGqz9KtyJ2
-# ZezsNvKWlYEmLP27mKoBONOvJUCbCVPwKVeFWF7qhUhBIYfl3rTTJrJ7QFNYeY5S
-# MQZNlANFxM48A+y3API6IsW0b+XvsIqbAgMBAAGjggHHMIIBwzAMBgNVHRMBAf8E
-# AjAAMGYGA1UdIARfMF0wWwYLYIZIAYb4RQEHFwMwTDAjBggrBgEFBQcCARYXaHR0
-# cHM6Ly9kLnN5bWNiLmNvbS9jcHMwJQYIKwYBBQUHAgIwGRoXaHR0cHM6Ly9kLnN5
-# bWNiLmNvbS9ycGEwQAYDVR0fBDkwNzA1oDOgMYYvaHR0cDovL3RzLWNybC53cy5z
-# eW1hbnRlYy5jb20vc2hhMjU2LXRzcy1jYS5jcmwwFgYDVR0lAQH/BAwwCgYIKwYB
-# BQUHAwgwDgYDVR0PAQH/BAQDAgeAMHcGCCsGAQUFBwEBBGswaTAqBggrBgEFBQcw
-# AYYeaHR0cDovL3RzLW9jc3Aud3Muc3ltYW50ZWMuY29tMDsGCCsGAQUFBzAChi9o
-# dHRwOi8vdHMtYWlhLndzLnN5bWFudGVjLmNvbS9zaGEyNTYtdHNzLWNhLmNlcjAo
-# BgNVHREEITAfpB0wGzEZMBcGA1UEAxMQVGltZVN0YW1wLTIwNDgtNjAdBgNVHQ4E
-# FgQUpRMBqZ+FzBtuFh5fOzGqeTYAex0wHwYDVR0jBBgwFoAUr2PWyqNOhXLgp7xB
-# 8ymiOH+AdWIwDQYJKoZIhvcNAQELBQADggEBAEaer/C4ol+imUjPqCdLIc2yuaZy
-# cGMv41UpezlGTud+ZQZYi7xXipINCNgQujYk+gp7+zvTYr9KlBXmgtuKVG3/KP5n
-# z3E/5jMJ2aJZEPQeSv5lzN7Ua+NSKXUASiulzMub6KlN97QXWZJBw7c/hub2wH9E
-# PEZcF1rjpDvVaSbVIX3hgGd+Yqy3Ti4VmuWcI69bEepxqUH5DXk4qaENz7Sx2j6a
-# escixXTN30cJhsT8kSWyG5bphQjo3ep0YG5gpVZ6DchEWNzm+UgUnuW/3gC9d7GY
-# FHIUJN/HESwfAD/DSxTGZxzMHgajkF9cVIs+4zNbgg/Ft4YCTnGf6WZFP3YxggJa
-# MIICVgIBATCBizB3MQswCQYDVQQGEwJVUzEdMBsGA1UEChMUU3ltYW50ZWMgQ29y
-# cG9yYXRpb24xHzAdBgNVBAsTFlN5bWFudGVjIFRydXN0IE5ldHdvcmsxKDAmBgNV
-# BAMTH1N5bWFudGVjIFNIQTI1NiBUaW1lU3RhbXBpbmcgQ0ECEHvU5a+6zAc/oQEj
-# BCJBTRIwCwYJYIZIAWUDBAIBoIGkMBoGCSqGSIb3DQEJAzENBgsqhkiG9w0BCRAB
-# BDAcBgkqhkiG9w0BCQUxDxcNMjMxMTIxMTUxOTM4WjAvBgkqhkiG9w0BCQQxIgQg
-# xUwllbivADrkHGtLU4fl4lPOpJ/KBH++rFqpEED13H0wNwYLKoZIhvcNAQkQAi8x
-# KDAmMCQwIgQgxHTOdgB9AjlODaXk3nwUxoD54oIBPP72U+9dtx/fYfgwCwYJKoZI
-# hvcNAQEBBIIBAGJsp0BOaNixF9GrTopTd0vNdLQXZGVd6SbX2oVLNYK0T4EJiXtU
-# 94GhLeKjDf9fp7DVQGUriWivz7VKb/WJsn27ZU5Cgt1eOJDG6tRpuDoWvrQleJwq
-# xSp++zgXjGFyJkZfwldltyCON3nI+/zSWLzcxrdD0JFEviXJuQdAcugl7qr57f2G
-# K0Xq/KhXCmsWVoeQBafyusEhzyQlwvpm01dnbWGYl/3D3seb0g0BlnIMBJr2vUYt
-# Bl7JpRSkNKkf6IjX3+4uhVrY9RvdMm3uL5zPBCCwSbaasgNJud1uugCFtMugQEyC
-# Pl0Pn+aXWB7TymizjDDwqOUiGS1qgjvDlYU=
-# SIG # End signature block
+$TasksTop += @{
+    Message  = ("Enable automatic password management for the PSM accounts")
+    Priority = "Recommended"
+}
+
+# Display summary and additional tasks
+$RequiredTasks += $TasksTop | Where-Object Priority -eq "Required"
+$RequiredTasks += @{ Message = "Restart Server"; Priority = "Required" }
+$RecommendedTasks = $TasksTop | Where-Object Priority -ne "Required"
+
+# Print recommended tasks
+
+Write-LogMessage -type Info -MSG $SectionSeparator
+$string = "The following additional steps are recommended:"
+Write-LogMessage -type Info -MSG ($string)
+
+$i = 1
+foreach ($Task in $RecommendedTasks) {
+    Write-LogMessage -Type Info -MSG (" {0:D2}. {1}" -f $i, $Task.Message)
+    $i++
+}
+
+Write-LogMessage -type Info -MSG " " # Print a gap
+
+# Print required tasks
+
+Write-LogMessage -type Info -MSG $SectionSeparator
+$string = "The following additional tasks MUST be completed:"
+Write-LogMessage -type Info -MSG ($string)
+
+$i = 1
+foreach ($Task in $RequiredTasks) {
+    Write-LogMessage -Type Info -MSG (" {0:D2}. {1}" -f $i, $Task.Message)
+    $i++
+}
+
+Write-LogMessage -type Info -MSG " "
