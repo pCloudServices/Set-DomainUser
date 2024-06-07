@@ -41,7 +41,7 @@
  Do not update Local Security Policy to allow PSM users to log on with Remote Desktop
 .PARAMETER SkipAddingUsersToRduGroup
  Do not add PSM users to the Remote Desktop Users group
-.VERSION 14.2.0
+.VERSION 14.2.1
 .AUTHOR CyberArk
 #>
 
@@ -563,7 +563,8 @@ Function ValidateCredentials {
             $Directory = New-Object System.DirectoryServices.AccountManagement.PrincipalContext([System.DirectoryServices.AccountManagement.ContextType]::Domain, $domain)
             if ($Directory.ValidateCredentials($Credential.UserName, $Credential.GetNetworkCredential().Password)) {
                 return "Success"
-            } else {
+            }
+            else {
                 return "InvalidCredentials"
             }
         }
@@ -2262,18 +2263,18 @@ If ($pvwaToken) {
                         Username    = $VaultedAccountUsername
                         Address     = $VaultedAccountAddress
                     }
-                    )
-                    $NewError += ($ExistingAccountObj | Format-List | Out-String).Trim()
-                    $NewError += "`n"
-                    $ArrayOfUserOnboardingConflictErrors += $NewError
-                    $ValidationFailed = $true
-                }
+                )
+                $NewError += ($ExistingAccountObj | Format-List | Out-String).Trim()
+                $NewError += "`n"
+                $ArrayOfUserOnboardingConflictErrors += $NewError
+                $ValidationFailed = $true
             }
-            else {
-                ## If accounts do not exist, ask the user for credentials or get them from parameters
-                If (($AccountType -eq "PSMConnect") -and ($psmConnectCredentials)) {
-                    $Credentials = $psmConnectCredentials
-                }
+        }
+        else {
+            ## If accounts do not exist, ask the user for credentials or get them from parameters
+            If (($AccountType -eq "PSMConnect") -and ($psmConnectCredentials)) {
+                $Credentials = $psmConnectCredentials
+            }
             ElseIf (($AccountType -eq "PSMAdminConnect") -and ($psmAdminCredentials)) {
                 $Credentials = $psmAdminCredentials
             }
@@ -2386,7 +2387,7 @@ If (($AccountsToOnboard) -and ($OperationsToPerform.UserTests)) {
             $ValidationFailed = $true
         }
         elseIf ($TestResult -match "ErrorOccurred.*") {
-            $CaughtError = $TestResult -replace "^ErrorOccurred:",""
+            $CaughtError = $TestResult -replace "^ErrorOccurred:", ""
             Write-LogMessage -Type Verbose -MSG ("Error occurred while validating $Username user credentials: {0}" -f $CaughtError)
             $NewError = ""
             $NewError += ("The following error occurred while validating credentials for $Username against the domain: {0}" -f $CaughtError)
