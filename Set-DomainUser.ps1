@@ -239,6 +239,33 @@ Function Get-RestMethodError {
     }
 }
 
+Function Add-PsmConnectToMsLicensingKeys {
+    param(
+        [Parameter(Mandatory = $true)][PSCredential]$PSMConnectUser
+    )
+    $Paths = @(
+        "HKLM:SOFTWARE\Wow6432Node\Microsoft\MSLicensing",
+        "HKLM:SOFTWARE\Wow6432Node\Microsoft\MSLicensing"
+    )
+    $Paths | ForEach-Object {
+        $FSPath = $_
+        If ($false -eq (Test-Path -PathType Container -Path $FSPath)) {
+            $null = New-Item -ItemType Directory -Path $FSPath
+        }
+        $NewAcl = Get-Acl -Path $FSPath
+        # Set properties
+        $identity = "PCLOUD-LDN\Bod-PSMConnect"
+        $RegistryRights = "FullControl"
+        $type = "Allow"
+        # Create new rule
+        $RegistryAccessRuleArgumentList = $identity, $RegistryRights, $type
+        $RegistryAccessRule = New-Object -TypeName System.Security.AccessControl.RegistryAccessRule -ArgumentList $RegistryAccessRuleArgumentList
+        # Apply new rule
+        $NewAcl.SetAccessRule($RegistryAccessRule)
+        Set-Acl -Path $FSPath -AclObject $NewAcl
+    }
+}
+
 Function Get-DifferencePosition {
     param(
         [Parameter(Mandatory = $true)][string]$String1,
