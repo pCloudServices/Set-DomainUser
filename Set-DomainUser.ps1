@@ -2307,6 +2307,7 @@ If (!($pvwaToken)) {
         $Username = Read-Host -Prompt "Please provide the pre-Windows 2000 username of the $UserType account"
         $Password = ConvertTo-SecureString -String "NoPassword" -AsPlainText -Force
         $AccountObj = [PSCustomObject]@{
+            Username    = $Username
             AccountName = $AccountName
             UserType    = $UserType
             Credentials = New-Object System.Management.Automation.PSCredential($userName, $Password)
