@@ -41,7 +41,7 @@
  Do not update Local Security Policy to allow PSM users to log on with Remote Desktop
 .PARAMETER SkipAddingUsersToRduGroup
  Do not add PSM users to the Remote Desktop Users group
-.VERSION 14.2.0
+.VERSION 14.2.1
 .AUTHOR CyberArk
 #>
 
@@ -236,6 +236,33 @@ Function Get-RestMethodError {
             ErrorCode    = "Unknown"
             ErrorMessage = $ErrorRecord.Exception.Message
         }
+    }
+}
+
+Function Add-PsmConnectToMsLicensingKeys {
+    param(
+        [Parameter(Mandatory = $true)][PSCredential]$PSMConnectUser
+    )
+    $Paths = @(
+        "HKLM:SOFTWARE\Wow6432Node\Microsoft\MSLicensing",
+        "HKLM:SOFTWARE\Wow6432Node\Microsoft\MSLicensing"
+    )
+    $Paths | ForEach-Object {
+        $FSPath = $_
+        If ($false -eq (Test-Path -PathType Container -Path $FSPath)) {
+            $null = New-Item -ItemType Directory -Path $FSPath
+        }
+        $NewAcl = Get-Acl -Path $FSPath
+        # Set properties
+        $identity = "PCLOUD-LDN\Bod-PSMConnect"
+        $RegistryRights = "FullControl"
+        $type = "Allow"
+        # Create new rule
+        $RegistryAccessRuleArgumentList = $identity, $RegistryRights, $type
+        $RegistryAccessRule = New-Object -TypeName System.Security.AccessControl.RegistryAccessRule -ArgumentList $RegistryAccessRuleArgumentList
+        # Apply new rule
+        $NewAcl.SetAccessRule($RegistryAccessRule)
+        Set-Acl -Path $FSPath -AclObject $NewAcl
     }
 }
 
@@ -563,7 +590,8 @@ Function ValidateCredentials {
             $Directory = New-Object System.DirectoryServices.AccountManagement.PrincipalContext([System.DirectoryServices.AccountManagement.ContextType]::Domain, $domain)
             if ($Directory.ValidateCredentials($Credential.UserName, $Credential.GetNetworkCredential().Password)) {
                 return "Success"
-            } else {
+            }
+            else {
                 return "InvalidCredentials"
             }
         }
@@ -2262,18 +2290,18 @@ If ($pvwaToken) {
                         Username    = $VaultedAccountUsername
                         Address     = $VaultedAccountAddress
                     }
-                    )
-                    $NewError += ($ExistingAccountObj | Format-List | Out-String).Trim()
-                    $NewError += "`n"
-                    $ArrayOfUserOnboardingConflictErrors += $NewError
-                    $ValidationFailed = $true
-                }
+                )
+                $NewError += ($ExistingAccountObj | Format-List | Out-String).Trim()
+                $NewError += "`n"
+                $ArrayOfUserOnboardingConflictErrors += $NewError
+                $ValidationFailed = $true
             }
-            else {
-                ## If accounts do not exist, ask the user for credentials or get them from parameters
-                If (($AccountType -eq "PSMConnect") -and ($psmConnectCredentials)) {
-                    $Credentials = $psmConnectCredentials
-                }
+        }
+        else {
+            ## If accounts do not exist, ask the user for credentials or get them from parameters
+            If (($AccountType -eq "PSMConnect") -and ($psmConnectCredentials)) {
+                $Credentials = $psmConnectCredentials
+            }
             ElseIf (($AccountType -eq "PSMAdminConnect") -and ($psmAdminCredentials)) {
                 $Credentials = $psmAdminCredentials
             }
@@ -2306,6 +2334,7 @@ If (!($pvwaToken)) {
         $Username = Read-Host -Prompt "Please provide the pre-Windows 2000 username of the $UserType account"
         $Password = ConvertTo-SecureString -String "NoPassword" -AsPlainText -Force
         $AccountObj = [PSCustomObject]@{
+            Username    = $Username
             AccountName = $AccountName
             UserType    = $UserType
             Credentials = New-Object System.Management.Automation.PSCredential($userName, $Password)
@@ -2386,7 +2415,7 @@ If (($AccountsToOnboard) -and ($OperationsToPerform.UserTests)) {
             $ValidationFailed = $true
         }
         elseIf ($TestResult -match "ErrorOccurred.*") {
-            $CaughtError = $TestResult -replace "^ErrorOccurred:",""
+            $CaughtError = $TestResult -replace "^ErrorOccurred:", ""
             Write-LogMessage -Type Verbose -MSG ("Error occurred while validating $Username user credentials: {0}" -f $CaughtError)
             $NewError = ""
             $NewError += ("The following error occurred while validating credentials for $Username against the domain: {0}" -f $CaughtError)
