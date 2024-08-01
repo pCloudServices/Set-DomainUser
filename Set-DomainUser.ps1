@@ -2334,13 +2334,12 @@ If (!($pvwaToken)) {
         $Username = Read-Host -Prompt "Please provide the pre-Windows 2000 username of the $UserType account"
         $Password = ConvertTo-SecureString -String "NoPassword" -AsPlainText -Force
         $AccountObj = [PSCustomObject]@{
-            Username    = $Username
             AccountName = $AccountName
             UserType    = $UserType
             Credentials = New-Object System.Management.Automation.PSCredential($userName, $Password)
             Onboard     = $false
         }
-        If (-not ($AccountObj.Username)) {
+        If (-not ($AccountObj.Credentials.Username)) {
             Write-LogMessage -type Error -MSG "$UserType username not provided. Exiting."
             exit 1
         }
@@ -2363,7 +2362,6 @@ $ArrayOfUserErrors = @()
 
 ## Test PSM user credential format
 foreach ($CurrentUser in $PSMAccountDetailsArray) {
-    $Username = $CurrentUser.UserName
     $UserType = $CurrentUser.UserType
     $Credential = $CurrentUser.Credentials
     Write-LogMessage -type Verbose -MSG "Testing $UserType credential format"
@@ -2380,6 +2378,7 @@ foreach ($CurrentUser in $PSMAccountDetailsArray) {
 
     # Check for invalid characters in password
     If (!(Test-PasswordCharactersValid -Credential $Credential)) {
+        $Username = $Credential.username
         $NewError = ""
         $NewError += "Password provided for $Username user contained invalid characters.`n"
         $NewError += '  Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
