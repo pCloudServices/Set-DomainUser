@@ -41,7 +41,7 @@
  Do not update Local Security Policy to allow PSM users to log on with Remote Desktop
 .PARAMETER SkipAddingUsersToRduGroup
  Do not add PSM users to the Remote Desktop Users group
-.VERSION 14.2.1
+.VERSION 14.2.2
 .AUTHOR CyberArk
 #>
 
@@ -2027,6 +2027,7 @@ $BackupPath = "$psmRootInstallLocation\Backup\Set-DomainUser\$BackupSubDirectory
 $ValidationFailed = $false
 $PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
 $pvwaToken = ""
+$PSMAccountDetailsArray = @()
 $TasksTop = @()
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -2250,7 +2251,6 @@ $PSMAccountSearchPropertiesArray = @(
 If ($pvwaToken) {
     # Search backend for account details using the AccountName property
     $ArrayOfUserOnboardingConflictErrors = @()
-    $PSMAccountDetailsArray = @()
     Write-LogMessage -Type Verbose -MSG "Retrieving stored accounts in `"$safe`" safe from vault"
     $ExistingAccountsObj = Get-VaultAccountDetails -pvwaAddress $PrivilegeCloudUrl -pvwaToken $pvwaToken -safe $Safe
     # Narrow results to accounts with account names matching the account names we're searching for
