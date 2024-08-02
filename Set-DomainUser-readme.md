@@ -41,8 +41,8 @@ If your PSM servers are spread across multiple environments, you may need multip
 
 By default, Set-DomainUser assumes that:
 - Accounts will be stored in the `PSM` safe
-- The PSMConnect account will have an account name of PSMConnect
-- The PSMAdminConnect account will have an account name of PSMAdminConnect
+- The PSMConnect account will have an account name of `PSMConnect`
+- The PSMAdminConnect account will have an account name of `PSMAdminConnect`
 
 You may need to use the options in the following scenarios to change this behaviour, depending on exact requirements. These options can be combined if required.
 
