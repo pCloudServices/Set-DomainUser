@@ -10,6 +10,8 @@ Set-DomainUser is provided as part of the Privilege Cloud Tools package, and dep
    3. https://docs.cyberark.com/PrivCloud-SS/Latest/en/Content/PAS%20INST/Optional-Moving-the-PSMConnec-and-PSMAdminConnect-users-to-your-Domain.htm#HardentheActiveDirectorysettingsforthenewdomainusersoptional
 2. Open an Admin Powershell in the `PSM Convert local2domain Users` subdirectory of Privilege Cloud Tools and run the script, e.g. `.\Set-DomainUser.ps1`
 
+Set-DomainUser will prompt for inputs as required. At a minimum, you will need to confirm your domain details and provide the installer user details.
+
 Set-DomainUser will perform the following actions:
 - Confirm domain name details
 - Request installer user details
@@ -29,11 +31,6 @@ Set-DomainUser will perform the following actions:
 - Run PSMHardening and PSMConfigureAppLocker scripts to correct permissions
 - Display a list of any remaining tasks to perform
 
-Set-DomainUser will prompt for inputs as required. At a minimum, you will need to confirm your domain details and provide the installer user details.
-
-If this is the first time Set-DomainUser is used in your environment, Set-DomainUser will ask you for the usernames and passwords of the PSMConnect and PSMAdminConnect users, and onboard them in Privilege Cloud.
-
-If those accounts are already present in Privilege Cloud, they will be retrieved automatically, and the remaining configuration will be done automatically.
 
 # Additional parameters and configuration
 The default execution method (without any parameters) should fit most use cases, but behaviour can be adjusted in a few ways, as outlined here.
