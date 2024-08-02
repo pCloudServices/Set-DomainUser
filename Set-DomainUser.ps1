@@ -2334,7 +2334,7 @@ If (!($pvwaToken)) {
     $PSMAccountSearchPropertiesArray | ForEach-Object {
         $UserType = $_.UserType
         $AccountName = $_.AccountName
-        $Username = Read-Host -Prompt "Please provide the pre-Windows 2000 username of the $UserType account"
+        $Username = Read-Host -Prompt "Please provide the pre-Windows 2000 username of the $UserType account (samAccountName without domain, e.g. `"PSMConnect`"):"
         $Password = ConvertTo-SecureString -String "NoPassword" -AsPlainText -Force
         $AccountObj = [PSCustomObject]@{
             Username    = $Username
@@ -2375,7 +2375,7 @@ foreach ($CurrentUser in $PSMAccountDetailsArray) {
     If (!(Test-CredentialFormat -Credential $Credential)) {
         $NewError = ""
         $NewError += "Username provided for PSMConnect user contained invalid characters or is too long.`n"
-        $NewError += "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain, and ensure"
+        $NewError += "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain, and ensure`n"
         $NewError += "the username is no more than 20 characters long"
         $ArrayOfUserErrors += $NewError
     }

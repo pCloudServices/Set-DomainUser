@@ -17,7 +17,7 @@ Set-DomainUser will perform the following actions:
 - Request installer user details
 - Attempt to retrieve PSM user details from Privilege Cloud
   - If users exist, review their details to ensure they match the environment
-  - If users do not exist, request their details
+  - If users do not exist, request their details (pre-Windows 2000 usernames (samAccountNames) and passwords)
 - Test PSM user credentials and configuration
 - As required:
   - Create PSM safe
