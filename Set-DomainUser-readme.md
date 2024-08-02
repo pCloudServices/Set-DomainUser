@@ -10,6 +10,25 @@ Set-DomainUser is provided as part of the Privilege Cloud Tools package, and dep
    3. https://docs.cyberark.com/PrivCloud-SS/Latest/en/Content/PAS%20INST/Optional-Moving-the-PSMConnec-and-PSMAdminConnect-users-to-your-Domain.htm#HardentheActiveDirectorysettingsforthenewdomainusersoptional
 2. Open an Admin Powershell in the `PSM Convert local2domain Users` subdirectory of Privilege Cloud Tools and run the script, e.g. `.\Set-DomainUser.ps1`
 
+Set-DomainUser will perform the following actions:
+- Confirm domain name details
+- Request installer user details
+- Attempt to retrieve PSM user details from Privilege Cloud
+  - If users exist, review their details to ensure they match the environment
+  - If users do not exist, request their details
+- Test PSM user credentials and configuration
+- As required:
+  - Create PSM safe
+  - Create account platform
+  - Onboard PSM accounts
+- Adjust local PSM server configuration
+- Configure PSM server object in Privilege Cloud with new PSM user details
+- Add PSM users to the Remote Desktop Users group
+- Grant PSM users the "Allow log on through Remote Desktop Services" user right in security policy
+- Grant the PSMAdminConnect user permission to monitor sessions
+- Run PSMHardening and PSMConfigureAppLocker scripts to correct permissions
+- Display a list of any remaining tasks to perform
+
 Set-DomainUser will prompt for inputs as required. At a minimum, you will need to confirm your domain details and provide the installer user details.
 
 If this is the first time Set-DomainUser is used in your environment, Set-DomainUser will ask you for the usernames and passwords of the PSMConnect and PSMAdminConnect users, and onboard them in Privilege Cloud.
@@ -70,27 +89,27 @@ Some of the automated actions performed by Set-DomainUser may be prevented by sy
 There are some less-used parameters not covered above. The following table contains all available parameters.
 
 
-| Parameter                       | Purpose                                                                                                          | Notes                                                                                                           |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| InstallUser                     | Installeruser credentials.                                                                                       | If not provided you will be prompted for them.                                                                  |
-| PSMConnectCredentials           | PSMConnect user credentials. If not provided you will be prompted for them.                                      |                                                                                                                 |
-| PSMAdminConnectCredentials      | PSMAdminConnect credentials. If not provided you will be prompted for them.                                      |                                                                                                                 |
-| PrivilegeCloudUrl               | The full address of the Privilege Cloud API host, e.g.: https://tenantname.privilegecloud.cyberark.cloud.        | Should be detected automatically, only use this option if auto-detection fails.                                 |
-| VaultAddress                    | FQDN or IP address of the vault. Should be detected automatically, only use this option if auto-detection fails. |                                                                                                                 |
-| DomainDNSName                   | The DNS name of the domain of the created accounts e.g.: "lab.net".                                              | If this and DomainNetbiosName are both provided, Set-DomainUser will skip the domain names confirmation prompt. |
-| DomainNetbiosName               | The NETBIOS name of the domain of the created accounts e.g.: "LAB".                                              | If this and DomainDNSName are both provided, Set-DomainUser will skip the domain names confirmation prompt.     |
-| Safe                            | The safe in which to save the domain accounts. f safe does not exists it will be created.                        | Default: `PSM`. If it does not exist it will be created.                                                        |
-| PlatformName                    | The name of the platform which will be used by the PSM accounts                                                  | Default: `WIN-DOM-PSMADMIN-ACCOUNT`. If it does not exist it will be created.                                   |
-| IgnoreShadowPermissionErrors    | Continue running if the script is unable to grant the PSMAdminConnect user permission to shadow sessions         |                                                                                                                 |
-| PSMConnectAccountName           | The Account Name of the object in the vault which will contain the PSMConnect user details.                      | Default: `PSMConnect`                                                                                           |
-| PSMAdminConnectAccountName      | The Account Name of the object in the vault which will contain the PSMAdminConnect user details.                 | Default: `PSMAdminConnect`                                                                                      |
-| DoNotHarden                     | Skip running the PSMHardening.ps1 script to speed up execution if step has already been completed.               |                                                                                                                 |
-| DoNotConfigureAppLocker         | Skip running the PSMConfigureAppLocker.ps1 script to speed up execution if step has already been completed.      |                                                                                                                 |
-| LocalConfigurationOnly          | Perform only the local configuration of PSM - do not onboard accounts or do any backend configuration.           |                                                                                                                 |
-| SkipPSMUserTests                | Do not check PSM users for configuration errors.                                                                 |                                                                                                                 |
-| SkipPSMObjectUpdate             | Do not configure the PSM server object with the updated PSM user details.                                        |                                                                                                                 |
-| SkipSecurityPolicyConfiguration | Do not update Local Security Policy to allow PSM users to log on with Remote Desktop.                            |                                                                                                                 |
-| SkipAddingUsersToRduGroup       | Do not add PSM users to the Remote Desktop Users group.                                                          |                                                                                                                 |
-| Verbose                         | Show detailed progress messages to assist with troubleshooting.                                                  |                                                                                                                 |
+| Parameter                       | Purpose                                                                                                  | Notes                                                                                                                                     |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| InstallUser                     | Installeruser credentials.                                                                               | If not provided you will be prompted for them.                                                                                            |
+| PSMConnectCredentials           | PSMConnect user credentials.                                                                             | If not provided you will be prompted for them.                                                                                            |
+| PSMAdminConnectCredentials      | PSMAdminConnect credentials.                                                                             | If not provided you will be prompted for them.                                                                                            |
+| PrivilegeCloudUrl               | The full address of the Privilege Cloud API host.                                                        | e.g.: `https://tenantname.privilegecloud.cyberark.cloud`. Should be detected automatically, only use this option if auto-detection fails. |
+| VaultAddress                    | FQDN or IP address of the vault.                                                                         | Should be detected automatically, only use this option if auto-detection fails.                                                           |
+| DomainDNSName                   | The DNS name of the domain of the created accounts e.g.: "lab.net".                                      | If this and DomainNetbiosName are both provided, Set-DomainUser will skip the domain names confirmation prompt.                           |
+| DomainNetbiosName               | The NETBIOS name of the domain of the created accounts e.g.: "LAB".                                      | If this and DomainDNSName are both provided, Set-DomainUser will skip the domain names confirmation prompt.                               |
+| Safe                            | The safe in which to save the domain accounts.                                                           | Default: `PSM`. If it does not exist it will be created.                                                                                  |
+| PlatformName                    | The name of the platform which will be used by the PSM accounts                                          | Default: `WIN-DOM-PSMADMIN-ACCOUNT`. If it does not exist it will be created.                                                             |
+| IgnoreShadowPermissionErrors    | Continue running if the script is unable to grant the PSMAdminConnect user permission to shadow sessions |                                                                                                                                           |
+| PSMConnectAccountName           | The Account Name of the PSMConnect account in the vault.                                                 | Default: `PSMConnect`. Will be onboarded if required.                                                                                     |
+| PSMAdminConnectAccountName      | The Account Name of the PSMAdminConnect account in the vault.                                            | Default: `PSMAdminConnect`. Will be onboarded if required.                                                                                |
+| DoNotHarden                     | Skip running the PSMHardening.ps1 script.                                                                | Intended to reduce execution time if step has already been completed.                                                                     |
+| DoNotConfigureAppLocker         | Skip running the PSMConfigureAppLocker.ps1 script.                                                       | Intended to reduce execution time if step has already been completed.                                                                     |
+| LocalConfigurationOnly          | Perform only the local configuration of PSM.                                                             | Skips account onboarding and other backend configuration.                                                                                 |
+| SkipPSMUserTests                | Do not check PSM users for configuration errors.                                                         |                                                                                                                                           |
+| SkipPSMObjectUpdate             | Do not configure the PSM server object with the updated PSM user details.                                |                                                                                                                                           |
+| SkipSecurityPolicyConfiguration | Do not update Local Security Policy to allow PSM users to log on with Remote Desktop.                    |                                                                                                                                           |
+| SkipAddingUsersToRduGroup       | Do not add PSM users to the Remote Desktop Users group.                                                  |                                                                                                                                           |
+| Verbose                         | Show detailed progress messages to assist with troubleshooting.                                          |                                                                                                                                           |
 
 	
