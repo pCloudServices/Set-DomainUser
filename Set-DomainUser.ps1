@@ -2032,6 +2032,7 @@ $PSMServerId = Get-PSMServerId -psmRootInstallLocation $psmRootInstallLocation
 $pvwaToken = ""
 $PSMAccountDetailsArray = @()
 $TasksTop = @()
+$ArrayOfTinaErrors = @()
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -2176,7 +2177,6 @@ If ($OperationsToPerform.GetInstallerUserCredentials) {
 
 ## Test InstallerUser/Tina user credentials
 If ($OperationsToPerform.TestInstallerUserCredentials) {
-    $ArrayOfTinaErrors = @()
     Write-LogMessage -type Info -MSG "Validating Installer user details"
     try {
         # for each section, check that the previous section succeeded.
