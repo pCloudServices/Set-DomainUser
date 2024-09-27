@@ -2732,10 +2732,20 @@ If ($OperationsToPerform.RemoteDesktopUsersGroupAddition) {
     try {
         $Members = (Get-LocalGroupMember -Group "Remote Desktop Users").Name
         If ($PSMConnectDomainBSUser -notin $Members) {
-            Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PSMConnectDomainBSUser
+            try {
+                Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PSMConnectDomainBSUser
+            }
+            catch {
+                Write-LogMessage -type Error -MSG "An error occured while adding $PSMConnectDomainBSUser to the `"Remote Desktop Users`" group. Please add it manually."
+            }
         }
         If ($PSMAdminConnectDomainBSUser -notin $Members) {
-            Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PSMAdminConnectDomainBSUser
+            try {
+                Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PSMAdminConnectDomainBSUser
+            }
+            catch {
+                Write-LogMessage -type Error -MSG "An error occured while adding $PSMAdminConnectDomainBSUser to the `"Remote Desktop Users`" group. Please add it manually."
+            }
         }
     }
     catch {
