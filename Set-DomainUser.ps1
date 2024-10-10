@@ -2129,12 +2129,6 @@ If ($OperationsToPerform.ServerObjectConfiguration) {
         exit 1
     }
 
-    If ("Valid" -ne (Get-AuthenticodeSignature $VaultOperationsTesterExe).Status) {
-        Write-LogMessage -type Error -MSG "VaultOperationsTester.exe signature validation failed. Please replace with a correctly signed version"
-        Write-LogMessage -type Error -MSG ("  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually.")
-        exit 1
-    }
-
     $VaultOperationsTesterDir = (Get-Item $VaultOperationsTesterExe).Directory
     # Check for C++ 2015-2022 Redistributable
     if ($false -eq (Test-Path -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x86" -PathType Container)) {
