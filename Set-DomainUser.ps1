@@ -2139,7 +2139,6 @@ If ($OperationsToPerform.ServerObjectConfiguration) {
     }
 }
 
-
 # Validate detected AD domain details
 If ($DomainNameAutodetected) {
     Write-LogMessage -Type Verbose -MSG "Confirming auto-detected domain details"
