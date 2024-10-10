@@ -67,7 +67,6 @@ param(
         Mandatory = $false,
         HelpMessage = "Please enter the account credentials for the PSMAdminConnect domain account.")]
     [Alias("psmAdminCredentials")]
-
     [PSCredential]$PSMAdminConnectCredentials,
 
     [Parameter(
