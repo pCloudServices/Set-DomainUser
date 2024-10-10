@@ -2138,7 +2138,7 @@ If ($OperationsToPerform.ServerObjectConfiguration) {
     $VaultOperationsTesterDir = (Get-Item $VaultOperationsTesterExe).Directory
     # Check for C++ 2015-2022 Redistributable
     if ($false -eq (Test-Path -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x86" -PathType Container)) {
-        $RedistLocation = ($VaultOperationsTesterDir.ToString() + "\vcredist_x86.exe")
+        $RedistLocation = ($VaultOperationsTesterDir.ToString() + "\vc_redist.x86.exe")
         Write-LogMessage -type Error -MSG "Visual Studio 2015-2022 x86 Runtime not installed."
         Write-LogMessage -type Error -MSG ("Please install from `"{0}`" and run this script again." -f $RedistLocation)
         exit 1
