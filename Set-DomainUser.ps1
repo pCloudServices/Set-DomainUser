@@ -1112,7 +1112,7 @@ Function Add-AdminUserToTS {
     $username = "{0}\{1}" -f $NETBIOS, $Credentials.username
     try {
         $CimInstance = Get-CimInstance -Namespace root/cimv2/terminalservices -Query "SELECT * FROM Win32_TSPermissionsSetting WHERE TerminalName = 'RDP-Tcp'"
-        $result = $CimInstance | Invoke-CimMethod -MethodName AddAccount -Arguments @{AccountName = "$username"; PermissionPreSet = 0 }
+        $result = $CimInstance | Invoke-CimMethod -MethodName AddAccount -Arguments @{AccountName = "$username"; PermissionPreSet = 0 } -ErrorAction Stop
         return $result
     }
     catch {
@@ -1142,7 +1142,7 @@ Function Add-AdminUserTSShadowPermission {
     )
     $username = "{0}\{1}" -f $NETBIOS, $Credentials.username
     try {
-        $CimInstance = Get-CimInstance -Namespace root/cimv2/terminalservices -Query "SELECT * FROM Win32_TSAccount WHERE TerminalName = 'RDP-Tcp'" | Where-Object AccountName -eq $username
+        $CimInstance = Get-CimInstance -Namespace root/cimv2/terminalservices -Query "SELECT * FROM Win32_TSAccount WHERE TerminalName = 'RDP-Tcp'" -ErrorAction Stop | Where-Object AccountName -eq $username
         $result = $CimInstance | Invoke-CimMethod -MethodName ModifyPermissions -Arguments @{PermissionMask = 4; Allow = $true }
         return $result
     }
@@ -2332,7 +2332,7 @@ If (!($pvwaToken)) {
     $PSMAccountSearchPropertiesArray | ForEach-Object {
         $UserType = $_.UserType
         $AccountName = $_.AccountName
-        $Username = Read-Host -Prompt "Please provide the pre-Windows 2000 username of the $UserType account (samAccountName without domain, e.g. `"PSMConnect`"):"
+        $Username = Read-Host -Prompt ("Pre-Windows 2000 username of the {0} account (without domain, e.g. `"{0}`")" -f $UserType)
         $Password = ConvertTo-SecureString -String "NoPassword" -AsPlainText -Force
         $AccountObj = [PSCustomObject]@{
             Username    = $Username
@@ -2714,7 +2714,7 @@ If ($OperationsToPerform.RemoteDesktopUsersGroupAddition) {
         $Members = (Get-LocalGroupMember -Group "Remote Desktop Users").Name
         If ($PSMConnectDomainBSUser -notin $Members) {
             try {
-                Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PSMConnectDomainBSUser
+                Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PSMConnectDomainBSUser -ErrorAction Stop
             }
             catch {
                 Write-LogMessage -type Error -MSG "An error occured while adding $PSMConnectDomainBSUser to the `"Remote Desktop Users`" group. Please add it manually."
@@ -2722,7 +2722,7 @@ If ($OperationsToPerform.RemoteDesktopUsersGroupAddition) {
         }
         If ($PSMAdminConnectDomainBSUser -notin $Members) {
             try {
-                Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PSMAdminConnectDomainBSUser
+                Add-LocalGroupMember -Group "Remote Desktop Users" -Member $PSMAdminConnectDomainBSUser -ErrorAction Stop
             }
             catch {
                 Write-LogMessage -type Error -MSG "An error occured while adding $PSMAdminConnectDomainBSUser to the `"Remote Desktop Users`" group. Please add it manually."
@@ -2768,8 +2768,8 @@ If ($OperationsToPerform.PsmLocalConfiguration) {
     else {
         # Failed to add user (1st command)
         if ($IgnoreShadowPermissionErrors) {
-            Write-LogMessage -Type Warning -MSG $AddAdminUserToTSResult.Error
-            Write-LogMessage -Type Warning -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration."
+            Write-LogMessage -Type Warning -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration with error:"
+            Write-LogMessage -Type Warning -MSG ("  {0}" -f $AddAdminUserToTSResult.Error)
             Write-LogMessage -Type Warning -MSG "Continuing because `"-IgnoreShadowPermissionErrors`" switch enabled"
             $TasksTop += @{
                 Message  = "Resolve issue preventing PSMAdminConnect user being added to Terminal Services configuration and rerun this script"
@@ -2777,8 +2777,8 @@ If ($OperationsToPerform.PsmLocalConfiguration) {
             }
         }
         else {
-            Write-LogMessage -Type Error -MSG $AddAdminUserToTSResult.Error
-            Write-LogMessage -Type Error -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration."
+            Write-LogMessage -Type Error -MSG "Failed to add PSMAdminConnect user to Terminal Services configuration with error:"
+            Write-LogMessage -Type Error -MSG ("  {0}" -f $AddAdminUserToTSResult.Error)
             Write-LogMessage -Type Error -MSG "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
             Write-LogMessage -Type Error -MSG "Exiting."
             exit 1
