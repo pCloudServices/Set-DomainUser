@@ -646,53 +646,12 @@ Function IsUserDomainJoined {
     }
 }
 
-Function Get-ServiceInstallPath {
-    <#
-    .SYNOPSIS
-    Get the installation path of a service
-    .DESCRIPTION
-    The function receive the service name and return the path or returns NULL if not found
-    .EXAMPLE
-    (Get-ServiceInstallPath $<ServiceName>) -ne $NULL
-    .PARAMETER ServiceName
-    The service name to query. Just one.
-    #>
-    param ($ServiceName)
-    Begin {
-
-    }
-    Process {
-        $retInstallPath = $null
-        try {
-            Set-Variable -Name m_ServiceList -Value $(Get-ChildItem "HKLM:\System\CurrentControlSet\Services" | ForEach-Object { Get-ItemProperty $_.pspath }) -Scope Script
-            $regPath = $m_ServiceList | Where-Object { $_.PSChildName -eq $ServiceName }
-            If ($Null -ne $regPath) {
-                $retInstallPath = $regPath.ImagePath.Substring($regPath.ImagePath.IndexOf('"'), $regPath.ImagePath.LastIndexOf('"') + 1)
-            }
-            else {
-                Write-LogMessage -type Error -MSG "Could not find PSM installation. Exiting."
-                exit 1
-            }
-        }
-        catch {
-            Throw $(New-Object System.Exception ("Cannot get Service Install path for $ServiceName", $_.Exception))
-        }
-
-        return $retInstallPath
-    }
-    End {
-
-    }
-}
-
 Function New-ConnectionToRestAPI {
     <#
     .SYNOPSIS
     Get the installation path of a service
     .DESCRIPTION
     The function receive the service name and return the path or returns NULL if not found
-    .EXAMPLE
-    (Get-ServiceInstallPath $<ServiceName>) -ne $NULL
     .PARAMETER pvwaAddress
     The PVWA server address (e.g. https://subdomain.privilegecloud.cyberark.cloud)
     .PARAMETER InstallUser
