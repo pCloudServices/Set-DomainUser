@@ -267,6 +267,14 @@ Function Add-PsmConnectToMsLicensingKeys {
     }
 }
 
+Function Stop-ScriptExecutionWithError {
+    Write-LogMessage -type Error -MSG "An error occurred and the script has stopped."
+    If ($false -eq $InVerbose) {
+        Write-LogMessage -type Error -MSG "If the reason for the error is not clear, please rerun the script with the -Verbose flag to get more information."
+    }
+    exit 1
+}
+
 Function Get-DifferencePosition {
     param(
         [Parameter(Mandatory = $true)][string]$String1,
