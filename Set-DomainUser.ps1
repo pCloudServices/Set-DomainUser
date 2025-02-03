@@ -407,7 +407,7 @@ Function Get-DomainDnsName {
     }
     else {
         Write-LogMessage -Type Error -MSG "Unable to determine domain DNS name. Please provide it on the command line with the -DomainDNSName parameter."
-        exit 1
+        Stop-ScriptExecutionWithError
     }
 }
 
@@ -417,7 +417,7 @@ Function Get-DomainNetbiosName {
     }
     else {
         Write-LogMessage -Type Error -MSG "Unable to determine domain NETBIOS name. Please provide it on the command line with the -DomainNetbiosName parameter."
-        exit 1
+        Stop-ScriptExecutionWithError
     }
 }
 
@@ -576,7 +576,7 @@ Function Get-VaultAddress {
     }
     catch {
         Write-LogMessage -Type Error -MSG "Unable to detect vault address automatically. Please rerun script and provide it using the -VaultAddress parameter."
-        exit 1
+        Stop-ScriptExecutionWithError
     }
 }
 
@@ -972,7 +972,7 @@ Function New-VaultAdminObject {
         }
         catch {
             Write-LogMessage -Type Error -MSG ("Error creating user: {0}" -f $ResultError.Message)
-            exit 1
+            Stop-ScriptExecutionWithError
         }
     }
 }
@@ -1013,7 +1013,7 @@ Function Get-VaultAccountDetails {
         }
         catch {
             Write-LogMessage -Type Error -MSG ("Error retrieving account details: {0}" -f $ResultError.Message)
-            exit 1
+            Stop-ScriptExecutionWithError
         }
     }
 }
@@ -1053,7 +1053,7 @@ Function Get-VaultAccountPassword {
         }
         catch {
             Write-LogMessage -Type Error -MSG ("Error retrieving account password: {0}" -f $ResultError.Message)
-            exit 1
+            Stop-ScriptExecutionWithError
         }
     }
 }
@@ -1155,7 +1155,7 @@ Function Copy-Platform {
     catch {
         Write-LogMessage -Type Error -MSG "Error duplicating platform"
         Write-LogMessage -Type Error -MSG $_.Exception.Message
-        exit 1
+        Stop-ScriptExecutionWithError
     }
 }
 
@@ -1196,7 +1196,7 @@ Function Get-PlatformStatus {
     catch {
         Write-LogMessage -Type Error -MSG "Error getting platform status."
         Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
-        exit 1
+        Stop-ScriptExecutionWithError
     }
 }
 
@@ -1237,7 +1237,7 @@ Function Get-PlatformStatusById {
     catch {
         Write-LogMessage -Type Error -MSG "Error getting platform status."
         Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
-        exit 1
+        Stop-ScriptExecutionWithError
     }
 }
 
@@ -1278,7 +1278,7 @@ Function Get-SafeStatus {
     catch {
         Write-LogMessage -Type Error -MSG "Error getting safe status."
         Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
-        exit 1
+        Stop-ScriptExecutionWithError
     }
 }
 
@@ -1310,7 +1310,7 @@ Function Enable-Platform {
     catch {
         Write-LogMessage -Type Error -MSG "Error activating platform"
         Write-LogMessage -Type Error -MSG $_.ErrorDetails.Message
-        exit 1
+        Stop-ScriptExecutionWithError
     }
 }
 
@@ -2047,18 +2047,18 @@ if (IsUserDomainJoined) {
 }
 else {
     Write-LogMessage -Type Error -MSG "Stopping. Please run this script as a domain user"
-    exit 1
+    Stop-ScriptExecutionWithError
 }
 
 ## Get Privilege Cloud URL
 if ($OperationsToPerform.GetPrivilegeCloudUrl) {
     Write-LogMessage -Type Verbose -MSG "Getting PVWA address"
     $PrivilegeCloudUrl = Get-PvwaAddress -psmRootInstallLocation $psmRootInstallLocation
-    Write-LogMessage -type Info "Detected Privilege Cloud URL from PSM vault.ini: $PrivilegeCloudUrl"
+    Write-LogMessage -type Verbose "Detected Privilege Cloud URL from PSM vault.ini: $PrivilegeCloudUrl"
 }
 If ($false -eq $PrivilegeCloudUrl) {
     Write-LogMessage -Type Error -MSG "Unable to detect PVWA address automatically. Please rerun script and provide it using the -PrivilegeCloudUrl parameter."
-    exit 1
+    Stop-ScriptExecutionWithError
 }
 
 ## Identify AD domain
@@ -2093,7 +2093,7 @@ If ($OperationsToPerform.ServerObjectConfiguration) {
         Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation\..).FullName) + "\VaultOperationsTester"))
         Write-LogMessage -type Error -MSG ("  - " + (((Get-Item $ScriptLocation).FullName) + "\VaultOperationsTester"))
         Write-LogMessage -type Error -MSG ("  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually.")
-        exit 1
+        Stop-ScriptExecutionWithError
     }
 
     $VaultOperationsTesterDir = (Get-Item $VaultOperationsTesterExe).Directory
@@ -2102,7 +2102,7 @@ If ($OperationsToPerform.ServerObjectConfiguration) {
         $RedistLocation = ($VaultOperationsTesterDir.ToString() + "\vc_redist.x86.exe")
         Write-LogMessage -type Error -MSG "Visual Studio 2015-2022 x86 Runtime not installed."
         Write-LogMessage -type Error -MSG ("Please install from `"{0}`" and run this script again." -f $RedistLocation)
-        exit 1
+        Stop-ScriptExecutionWithError
     }
 }
 
@@ -2136,7 +2136,7 @@ If ($OperationsToPerform.GetInstallerUserCredentials) {
     $InstallUser = Get-Credential -Message ("Please enter installer user credentials")
     if (!($InstallUser)) {
         Write-LogMessage -Type Error -MSG "No install user credentials provided. Exiting."
-        exit 1
+        Stop-ScriptExecutionWithError
     }
 }
 
@@ -2145,14 +2145,14 @@ If ($OperationsToPerform.TestInstallerUserCredentials) {
     Write-LogMessage -type Info -MSG "Validating Installer user details"
     try {
         # for each section, check that the previous section succeeded.
-        Write-LogMessage -type Verbose -MSG "Testing install user credentials"
+        Write-LogMessage -type Verbose -MSG "Testing install user credentials on $PrivilegeCloudUrl"
         $pvwaTokenResponse = New-ConnectionToRestAPI -pvwaAddress $PrivilegeCloudUrl -InstallUser $InstallUser
         if ($pvwaTokenResponse.ErrorCode -ne "Success") {
             # ErrorCode will always be "Success" if Invoke-RestMethod got a 200 response from server.
             # If it's anything else, it will have been caught by New-ConnectionToRestAPI error handler and an error response generated.
             # The error message shown could be from a JSON response, e.g. wrong password, or a connection error.
             $NewError = ""
-            $NewError += "Logon to PVWA failed. Result:`n"
+            $NewError += "Logon to PVWA failed while authenticating to $PrivilegeCloudUrl. Result:`n"
             $NewError += ("Error code: {0}`n" -f $pvwaTokenResponse.ErrorCode)
             $NewError += ("Error message: {0}" -f $pvwaTokenResponse.ErrorMessage)
             $ArrayOfTinaErrors += $NewError
@@ -2199,7 +2199,7 @@ If ($ArrayOfTinaErrors) {
 
 If ($ValidationFailed) {
     Write-LogMessage -type Info -MSG "Some tests failed, and details are shown above. Please correct these and rerun Set-DomainUser."
-    exit 1
+    Stop-ScriptExecutionWithError
 }
 
 Write-LogMessage -type Info -MSG "Validating PSM user details"
@@ -2278,7 +2278,7 @@ If ($pvwaToken) {
             }
             If (!($Credentials)) {
                 Write-LogMessage -type Error -MSG "No $AccountType credentials provided. Exiting."
-                exit 1
+                Stop-ScriptExecutionWithError
             }
             $AccountObj = [PSCustomObject]@{
                 AccountName = $AccountName
@@ -2310,7 +2310,7 @@ If (!($pvwaToken)) {
         }
         If (-not ($AccountObj.Credentials.Username)) {
             Write-LogMessage -type Error -MSG "$UserType username not provided. Exiting."
-            exit 1
+            Stop-ScriptExecutionWithError
         }
         $PSMAccountDetailsArray += $AccountObj
     }
@@ -2496,7 +2496,7 @@ If ($ArrayOfUserOnboardingConflictErrors) {
 
 If ($ValidationFailed) {
     Write-LogMessage -type Info -MSG "Some tests failed, and details are shown above. Please correct these and rerun Set-DomainUser."
-    exit 1
+    Stop-ScriptExecutionWithError
 }
 
 Write-LogMessage -type Verbose -MSG "All inputs successfully passed validation"
@@ -2527,7 +2527,7 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
         else {
             # Get-PlatformStatus returns false if platform not found
             Write-LogMessage -type Error -MSG "Could not find Windows Domain platform to duplicate. Please import it from the marketplace."
-            exit 1
+            Stop-ScriptExecutionWithError
         }
         # Creating Platform
         Write-LogMessage -Type Verbose -MSG "Creating new platform"
@@ -2555,7 +2555,7 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
         }
         else {
             Write-LogMessage -Type Error -MSG "Creating PSM safe $Safe failed. Please resolve the error and try again."
-            exit 1
+            Stop-ScriptExecutionWithError
         }
     }
     # Giving Permission on the safe if we are using UM, The below will give full permission to vault admins
@@ -2590,7 +2590,7 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
         }
         Else {
             Write-LogMessage -Type Error -MSG ("Error onboarding account: {0}" -f $OnboardResult)
-            exit 1
+            Stop-ScriptExecutionWithError
         }
     }
 }
@@ -2612,14 +2612,14 @@ If ($OperationsToPerform.ServerObjectConfiguration) {
     catch {
         Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
         Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
-        exit 1
+        Stop-ScriptExecutionWithError
     }
     If ($true -ne $VotProcess.Result) {
         Write-LogMessage -type Error -MSG "Failed to configure PSM Server object in vault. Please review the VaultOperationsTester log and resolve any errors"
         Write-LogMessage -type Error -MSG "  or run this script with the -SkipPSMObjectUpdate option and perform the required configuration manually."
         Write-LogMessage -type Error -MSG ("Error Code:    {0}" -f $VotProcess.ErrorCode)
         Write-LogMessage -type Error -MSG ("Error Details: {0}" -f $VotProcess.ErrorDetails)
-        exit 1
+        Stop-ScriptExecutionWithError
     }
 }
 
@@ -2748,7 +2748,7 @@ If ($OperationsToPerform.PsmLocalConfiguration) {
             Write-LogMessage -Type Error -MSG ("  {0}" -f $AddAdminUserToTSResult.Error)
             Write-LogMessage -Type Error -MSG "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
             Write-LogMessage -Type Error -MSG "Exiting."
-            exit 1
+            Stop-ScriptExecutionWithError
         }
     }
     If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
@@ -2775,7 +2775,7 @@ If ($OperationsToPerform.PsmLocalConfiguration) {
                 Write-LogMessage -Type Error -MSG "Please see the following article for information on resolving this error"
                 Write-LogMessage -Type Error -MSG "https://cyberark-customers.force.com/s/article/PSM-Unable-to-run-WMIC-command"
                 Write-LogMessage -Type Error -MSG "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
-                exit 1
+                Stop-ScriptExecutionWithError
             }
         }
     }
