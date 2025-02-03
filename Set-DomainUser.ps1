@@ -2046,6 +2046,7 @@ else {
 if ($OperationsToPerform.GetPrivilegeCloudUrl) {
     Write-LogMessage -Type Verbose -MSG "Getting PVWA address"
     $PrivilegeCloudUrl = Get-PvwaAddress -psmRootInstallLocation $psmRootInstallLocation
+    Write-LogMessage -type Info "Detected Privilege Cloud URL from PSM vault.ini: $PrivilegeCloudUrl"
 }
 If ($false -eq $PrivilegeCloudUrl) {
     Write-LogMessage -Type Error -MSG "Unable to detect PVWA address automatically. Please rerun script and provide it using the -PrivilegeCloudUrl parameter."
