@@ -2330,66 +2330,76 @@ $ArrayOfUserErrors = @()
 ### Search for user
 ### ONLY IF FOUND, check user configuration
 
+$UsersWithInvalidPasswordCharacters = @()
 ## Test PSM user credential format
 foreach ($CurrentUser in $PSMAccountDetailsArray) {
     $UserType = $CurrentUser.UserType
     $Credential = $CurrentUser.Credentials
+    $Username = $Credential.Username
     Write-LogMessage -type Verbose -MSG "Testing $UserType credential format"
     Write-LogMessage -Type Verbose -MSG "Verifying PSM credentials were provided in expected format"
 
     # Check for invalid username format
     If (!(Test-CredentialFormat -Credential $Credential)) {
         $NewError = ""
-        $NewError += "Username provided for PSMConnect user contained invalid characters or is too long.`n"
+        $NewError += "Username provided for $Username user contained invalid characters or is too long.`n"
         $NewError += "Please provide the pre-Windows 2000 username without DOMAIN\ or @domain, and ensure`n"
         $NewError += "the username is no more than 20 characters long"
         $ArrayOfUserErrors += $NewError
+        $ValidationFailed = $true
+        $OperationsToPerform.UserTests = $false
+        # Skip user tests because with an invalid username we won't be able to do them anyway
     }
 
     # Check for invalid characters in password
     If (!(Test-PasswordCharactersValid -Credential $Credential)) {
-        $Username = $Credential.username
         $NewError = ""
         $NewError += "Password provided for $Username user contained invalid characters.`n"
-        $NewError += '  Please include only alphanumeric and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
+        $NewError += '  Please include only alphanumeric characters, spaces and the following characters: ~!@#$%^&*_-+=`|(){}[]:;"''<>,.?\/'
         $ArrayOfUserErrors += $NewError
-        Write-Host ""
-        Throw
+        $ValidationFailed = $true
+        $UsersWithInvalidPasswordCharacters += $Username
     }
 }
 
 # Test PSM user configuration before onboarding
 $AccountsToOnboard = $PSMAccountDetailsArray | Where-Object Onboard -eq $true
-# If accounts are to be onboarded, check them first
+# If accounts are to be onboarded, and user tests not skipped, check them first
 If (($AccountsToOnboard) -and ($OperationsToPerform.UserTests)) {
+    # for each account
     foreach ($Account in $AccountsToOnboard) {
         $UserDN = $false
         $UserObject = $false
         $UserType = $Account.UserType
         $Credential = $Account.Credentials
         $Username = $Credential.Username
-        # If performing user tests
-        Write-LogMessage -type Verbose -MSG "Testing $Username credentials"
-        # User has a password set, so it can be tested
-        # Test PSM user credentials
-        $TestResult = ValidateCredentials -domain $DomainDNSName -Credential $Credential
-        if ("Success" -eq $TestResult) {
-            Write-LogMessage -Type Verbose -MSG "$Username user credentials validated"
+        # Exclude users with passwords containing invalid characters, because we can't check them anyway
+        If ($Username -in $UsersWithInvalidPasswordCharacters) {
+            Write-LogMessage -type Verbose -MSG "Skipping password test for user $Username because it contained invalid characters"
         }
-        elseIf ("InvalidCredentials" -eq $TestResult) {
-            Write-LogMessage -Type Verbose -MSG "$Username user credentials incorrect"
-            $NewError = ""
-            $NewError += "Incorrect credentials provided for $Username."
-            $ArrayOfUserErrors += $NewError
-            $ValidationFailed = $true
-        }
-        elseIf ($TestResult -match "ErrorOccurred.*") {
-            $CaughtError = $TestResult -replace "^ErrorOccurred:", ""
-            Write-LogMessage -Type Verbose -MSG ("Error occurred while validating $Username user credentials: {0}" -f $CaughtError)
-            $NewError = ""
-            $NewError += ("The following error occurred while validating credentials for $Username against the domain: {0}" -f $CaughtError)
-            $ArrayOfUserErrors += $NewError
-            $ValidationFailed = $true
+        else {
+            Write-LogMessage -type Verbose -MSG "Testing $Username credentials"
+            # User has a password set, so it can be tested
+            # Test PSM user credentials
+            $TestResult = ValidateCredentials -domain $DomainDNSName -Credential $Credential
+            if ("Success" -eq $TestResult) {
+                Write-LogMessage -Type Verbose -MSG "$Username user credentials validated"
+            }
+            elseIf ("InvalidCredentials" -eq $TestResult) {
+                Write-LogMessage -Type Verbose -MSG "$Username user credentials incorrect"
+                $NewError = ""
+                $NewError += "Incorrect credentials provided for $Username."
+                $ArrayOfUserErrors += $NewError
+                $ValidationFailed = $true
+            }
+            elseIf ($TestResult -match "ErrorOccurred.*") {
+                $CaughtError = $TestResult -replace "^ErrorOccurred:", ""
+                Write-LogMessage -Type Verbose -MSG ("Error occurred while validating $Username user credentials: {0}" -f $CaughtError)
+                $NewError = ""
+                $NewError += ("The following error occurred while validating credentials for $Username against the domain: {0}" -f $CaughtError)
+                $ArrayOfUserErrors += $NewError
+                $ValidationFailed = $true
+            }
         }
         # Search for user by name
         Write-LogMessage -Type Verbose -MSG ("Searching AD for $Username")
