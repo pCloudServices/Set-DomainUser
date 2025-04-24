@@ -1266,6 +1266,7 @@ Function Get-SafeStatus {
     try {
         $url = $pvwaAddress + "/PasswordVault/api/safes?search=$SafeName"
         $SafeRequest = Invoke-RestMethod -Method 'Get' -Uri $url -Headers @{ 'Authorization' = $pvwaToken } -ErrorAction SilentlyContinue
+        Write-LogMessage -type Verbose -MSG ("Safe request result: " + $SafeRequest | Format-List)
         # This query returns a list of safes where the name contains the search string. Find and return just the one with an exactly matching name.
         $Safe = $SafeRequest.Value | Where-Object safeName -eq $SafeName
         if ($Safe) {
