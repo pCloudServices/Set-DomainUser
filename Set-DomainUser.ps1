@@ -606,7 +606,7 @@ Function ValidateCredentials {
         }
         catch {
             If ($_.Exception.Message -like "*The server cannot handle directory requests.*") {
-                Write-LogMessage -type Info -MSG "A bind error occurred validating credentials. Trying with other ContextOptions."
+                Write-LogMessage -type Verbose -MSG "A bind error occurred validating credentials. Trying with other ContextOptions."
             }
             else {
                 return ("ErrorOccurred:" + $_.Exception.Message)
