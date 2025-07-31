@@ -2512,13 +2512,13 @@ If ($ValidationFailed) {
 
 Write-LogMessage -type Verbose -MSG "All inputs successfully passed validation"
 
-$psmConnectCredentials = ($PSMAccountDetailsArray | Where-Object UserType -eq "PSMConnect").Credentials
-$PSMConnectUsername = $psmConnectCredentials.UserName
-$PSMConnectDomainBSUser = ("{0}\{1}" -f $DomainNetbiosName, $psmConnectCredentials.UserName)
+$WorkingPSMConnectCredentials = ($PSMAccountDetailsArray | Where-Object UserType -eq "PSMConnect").Credentials
+$PSMConnectUsername = $WorkingPSMConnectCredentials.UserName
+$PSMConnectDomainBSUser = ("{0}\{1}" -f $DomainNetbiosName, $WorkingPSMConnectCredentials.UserName)
 
-$psmAdminCredentials = ($PSMAccountDetailsArray | Where-Object UserType -eq "PSMAdminConnect").Credentials
-$PSMAdminConnectUsername = $psmAdminCredentials.UserName
-$PSMAdminConnectDomainBSUser = ("{0}\{1}" -f $DomainNetbiosName, $psmAdminCredentials.UserName)
+$WorkingPSMAdminConnectCredentials = ($PSMAccountDetailsArray | Where-Object UserType -eq "PSMAdminConnect").Credentials
+$PSMAdminConnectUsername = $WorkingPSMAdminConnectCredentials.UserName
+$PSMAdminConnectDomainBSUser = ("{0}\{1}" -f $DomainNetbiosName, $WorkingPSMAdminConnectCredentials.UserName)
 
 # Perform Remote Configuration
 If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
@@ -2736,10 +2736,10 @@ If ($OperationsToPerform.PsmLocalConfiguration) {
     Backup-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -BackupPath $BackupPath
     # Update PSM configuration and scripts
     Write-LogMessage -Type Verbose -MSG "Updating PSM configuration files and scripts"
-    Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $DomainDNSName -PSMAdminConnectAccountName $PSMAdminConnectAccountName -PsmConnectUsername $psmConnectCredentials.username.Replace('\', '') -PsmAdminUsername $psmAdminCredentials.username.Replace('\', '')
+    Update-PSMConfig -psmRootInstallLocation $psmRootInstallLocation -domain $DomainDNSName -PSMAdminConnectAccountName $PSMAdminConnectAccountName -PsmConnectUsername $WorkingPSMConnectCredentials.username.Replace('\', '') -PsmAdminUsername $WorkingPSMAdminConnectCredentials.username.Replace('\', '')
     Write-LogMessage -Type Verbose -MSG "Adding PSMAdminConnect user to Terminal Services configuration"
     # Adding PSMAdminConnect user to Terminal Services configuration
-    $AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $DomainNetbiosName -Credentials $psmAdminCredentials
+    $AddAdminUserToTSResult = Add-AdminUserToTS -NETBIOS $DomainNetbiosName -Credentials $WorkingPSMAdminConnectCredentials
     If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
         Write-LogMessage -Type Verbose -MSG "Successfully added PSMAdminConnect user to Terminal Services configuration"
     }
@@ -2765,7 +2765,7 @@ If ($OperationsToPerform.PsmLocalConfiguration) {
     If ($AddAdminUserToTSResult.ReturnValue -eq 0) {
         # Grant shadow permission only if first command was succesful
         Write-LogMessage -Type Verbose -MSG "Granting PSMAdminConnect user permission to shadow sessions"
-        $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $DomainNetbiosName -Credentials $psmAdminCredentials
+        $AddAdminUserTSShadowPermissionResult = Add-AdminUserTSShadowPermission -NETBIOS $DomainNetbiosName -Credentials $WorkingPSMAdminConnectCredentials
         If ($AddAdminUserTSShadowPermissionResult.ReturnValue -eq 0) {
             Write-LogMessage -Type Verbose -MSG "Successfully granted PSMAdminConnect permission to shadow sessions"
         }
