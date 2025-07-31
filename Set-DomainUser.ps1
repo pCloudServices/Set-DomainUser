@@ -2565,7 +2565,9 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
             Write-LogMessage -type Verbose "Successfully created safe $safe"
         }
         else {
-            Write-LogMessage -Type Error -MSG "Creating PSM safe $Safe failed. Please resolve the error and try again."
+            Write-LogMessage -Type Error -MSG "Creating PSM safe $Safe failed."
+            Write-LogMessage -Type Error -MSG ("If the error indicates that the safe already exists, grant {0} full permisisons to the safe" -f $InstallUser.username)
+            Write-LogMessage -Type Error -MSG "Please resolve the error and try again."
             Stop-ScriptExecutionWithError
         }
     }
