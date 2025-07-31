@@ -2271,8 +2271,8 @@ If ($pvwaToken) {
             If (($AccountType -eq "PSMConnect") -and ($psmConnectCredentials)) {
                 $Credentials = $psmConnectCredentials
             }
-            ElseIf (($AccountType -eq "PSMAdminConnect") -and ($psmAdminCredentials)) {
-                $Credentials = $psmAdminCredentials
+            ElseIf (($AccountType -eq "PSMAdminConnect") -and ($PSMAdminConnectCredentials)) {
+                $Credentials = $PSMAdminConnectCredentials
             }
             Else {
                 $Credentials = Get-Credential -Message "$AccountType account"
