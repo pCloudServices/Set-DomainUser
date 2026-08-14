@@ -115,12 +115,12 @@ param(
 
     [Parameter(
         Mandatory = $false,
-        HelpMessage = "Account name in CyberArk of the PSMConnect user")]
+        HelpMessage = "Account name in Idira Platform of the PSMConnect user")]
     [String]$PSMConnectAccountName = "PSMConnect",
 
     [Parameter(
         Mandatory = $false,
-        HelpMessage = "Account name in CyberArk of the PSMAdminConnect user")]
+        HelpMessage = "Account name in Idira Platform of the PSMAdminConnect user")]
     [String]$PSMAdminConnectAccountName = "PSMAdminConnect",
 
     [Parameter(
@@ -2579,7 +2579,7 @@ If ($OperationsToPerform.CreateSafePlatformAndAccounts) {
         }
         else {
             Write-LogMessage -Type Error -MSG "Creating PSM safe $Safe failed."
-            Write-LogMessage -Type Error -MSG ("If the error indicates that the safe already exists, grant {0} full permisisons to the safe" -f $InstallUser.username)
+            Write-LogMessage -Type Error -MSG ("If the error indicates that the safe already exists, grant {0} full permissions to the safe" -f $InstallUser.username)
             Write-LogMessage -Type Error -MSG "Please resolve the error and try again."
             Stop-ScriptExecutionWithError
         }
@@ -2799,7 +2799,7 @@ If ($OperationsToPerform.PsmLocalConfiguration) {
                 Write-LogMessage -Type Error -MSG $AddAdminUserTSShadowPermissionResult.Error
                 Write-LogMessage -Type Error -MSG "Failed to grant PSMAdminConnect permission to shadow sessions."
                 Write-LogMessage -Type Error -MSG "Please see the following article for information on resolving this error"
-                Write-LogMessage -Type Error -MSG "https://cyberark-customers.force.com/s/article/PSM-Unable-to-run-WMIC-command"
+                Write-LogMessage -Type Error -MSG "https://community.cyberark.com/s/article/PSM-Unable-to-run-WMIC-command"
                 Write-LogMessage -Type Error -MSG "Run this script with the `"-IgnoreShadowPermissionErrors`" switch to ignore this error"
                 Stop-ScriptExecutionWithError
             }
