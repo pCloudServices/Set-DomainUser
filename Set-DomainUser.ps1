@@ -751,20 +751,20 @@ Function Backup-PSMConfig {
         If (!(Test-Path -Path $BackupPath -PathType Container)) {
             $null = New-Item -ItemType Directory -Path $BackupPath
         }
-        $PSMHardeningBackupFileName = ("{0}\PSMHardening.ps1" -f $BackupPath)
-        $PSMConfigureAppLockerBackupFileName = ("{0}\PSMConfigureAppLocker.ps1" -f $BackupPath)
+        #$PSMHardeningBackupFileName = ("{0}\PSMHardening.ps1" -f $BackupPath)
+        #$PSMConfigureAppLockerBackupFileName = ("{0}\PSMConfigureAppLocker.ps1" -f $BackupPath)
         $BasicPSMBackupFileName = ("{0}\basic_psm.ini" -f $BackupPath)
 
-        Copy-Item -path "$psmRootInstallLocation\Hardening\PSMHardening.ps1" -Destination $PSMHardeningBackupFileName
-        Copy-Item -path "$psmRootInstallLocation\Hardening\PSMConfigureAppLocker.ps1" -Destination $PSMConfigureAppLockerBackupFileName
+        #Copy-Item -path "$psmRootInstallLocation\Hardening\PSMHardening.ps1" -Destination $PSMHardeningBackupFileName
+        #Copy-Item -path "$psmRootInstallLocation\Hardening\PSMConfigureAppLocker.ps1" -Destination $PSMConfigureAppLockerBackupFileName
         Copy-Item -Path "$psmRootInstallLocation\basic_psm.ini" -Destination $BasicPSMBackupFileName
 
-        If (!(Test-Path $PSMHardeningBackupFileName)) {
-            Write-LogMessage -Type Error -MSG "Failed to backup PSMHardening.ps1" -ErrorAction Stop
-        }
-        If (!(Test-Path $PSMConfigureAppLockerBackupFileName)) {
-            Write-LogMessage -Type Error -MSG "Failed to backup PSMConfigureAppLocker.ps1" -ErrorAction Stop
-        }
+        #If (!(Test-Path $PSMHardeningBackupFileName)) {
+        #    Write-LogMessage -Type Error -MSG "Failed to backup PSMHardening.ps1" -ErrorAction Stop
+        #}
+        #If (!(Test-Path $PSMConfigureAppLockerBackupFileName)) {
+        #    Write-LogMessage -Type Error -MSG "Failed to backup PSMConfigureAppLocker.ps1" -ErrorAction Stop
+        #}
         If (!(Test-Path $BasicPSMBackupFileName )) {
             Write-LogMessage -Type Error -MSG "Failed to backup basic_psm.ini" -ErrorAction Stop
         }
@@ -808,20 +808,20 @@ Function Update-PSMConfig {
     try {
         #PSMHardening
         #-------------------------
-        $psmHardeningContent = Get-Content -Path $psmRootInstallLocation\Hardening\PSMHardening.ps1
+        #$psmHardeningContent = Get-Content -Path $psmRootInstallLocation\Hardening\PSMHardening.ps1
 
-        $newPsmHardeningContent = $psmHardeningContent -replace '^(\$(Global:)?PSM_CONNECT_USER\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmConnectUsername)
-        $newPsmHardeningContent = $newPsmHardeningContent -replace '^(\$(Global:)?PSM_ADMIN_CONNECT_USER\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmAdminUsername)
-        $newPsmHardeningContent | Set-Content -Path "$psmRootInstallLocation\Hardening\test-psmhardening.ps1"
+        #$newPsmHardeningContent = $psmHardeningContent -replace '^(\$(Global:)?PSM_CONNECT_USER\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmConnectUsername)
+        #$newPsmHardeningContent = $newPsmHardeningContent -replace '^(\$(Global:)?PSM_ADMIN_CONNECT_USER\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmAdminUsername)
+        #$newPsmHardeningContent | Set-Content -Path "$psmRootInstallLocation\Hardening\test-psmhardening.ps1"
 
         #PSMApplocker
         #-------------------------
-        $psmApplockerContent = Get-Content -Path $psmRootInstallLocation\Hardening\PSMConfigureApplocker.ps1
+        #$psmApplockerContent = Get-Content -Path $psmRootInstallLocation\Hardening\PSMConfigureApplocker.ps1
 
-        $newPsmApplockerContent = $psmApplockerContent -replace '^(\$(Global:)?PSM_CONNECT\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmConnectUsername)
-        $newPsmApplockerContent = $newPsmApplockerContent -replace '^(\$(Global:)?PSM_ADMIN_CONNECT\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmAdminUsername)
+        #$newPsmApplockerContent = $psmApplockerContent -replace '^(\$(Global:)?PSM_CONNECT\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmConnectUsername)
+        #$newPsmApplockerContent = $newPsmApplockerContent -replace '^(\$(Global:)?PSM_ADMIN_CONNECT\s*=).*', ('$1 "{0}\{1}"' -f $domain, $PsmAdminUsername)
 
-        $newPsmApplockerContent | Set-Content -Path "$psmRootInstallLocation\Hardening\test-psm-applocker.ps1"
+        #$newPsmApplockerContent | Set-Content -Path "$psmRootInstallLocation\Hardening\test-psm-applocker.ps1"
 
 
         #basic_psm.ini
@@ -836,8 +836,8 @@ Function Update-PSMConfig {
 
         # Write corrected contents out to correct file(s)
         #-------------------------
-        Copy-Item -Path "$psmRootInstallLocation\Hardening\test-psm-applocker.ps1" -Destination "$psmRootInstallLocation\Hardening\PSMConfigureApplocker.ps1" -Force
-        Copy-Item -Path "$psmRootInstallLocation\Hardening\test-psmhardening.ps1" -Destination "$psmRootInstallLocation\Hardening\PSMHardening.ps1" -Force
+        #Copy-Item -Path "$psmRootInstallLocation\Hardening\test-psm-applocker.ps1" -Destination "$psmRootInstallLocation\Hardening\PSMConfigureApplocker.ps1" -Force
+        #Copy-Item -Path "$psmRootInstallLocation\Hardening\test-psmhardening.ps1" -Destination "$psmRootInstallLocation\Hardening\PSMHardening.ps1" -Force
         Copy-Item -Path "$psmRootInstallLocation\test_basic_psm.ini" -Destination "$psmRootInstallLocation\basic_psm.ini" -Force
     }
     catch {
@@ -874,7 +874,13 @@ Function Invoke-PSMHardening {
     $CurrentLocation = Get-Location
     Set-Location $hardeningScriptRoot
     Set-PSDebug -Strict:$False
-    & "$hardeningScriptRoot\PSMHardening.ps1"
+    $Params = @{
+        connectionUserName        = $PSMConnectUsername
+        connectionUserDomain      = $DomainNetbiosName
+        connectionAdminUserName   = $PSMAdminConnectUsername
+        connectionAdminUserDomain = $DomainNetbiosName
+    }
+    & "$hardeningScriptRoot\PSMHardening.ps1" @Params
     Set-PSDebug -Strict:$False
     Set-Location $CurrentLocation
 }
@@ -906,7 +912,13 @@ Function Invoke-PSMConfigureAppLocker {
     $CurrentLocation = Get-Location
     Set-Location $hardeningScriptRoot
     Set-PSDebug -Strict:$False
-    & "$hardeningScriptRoot\PSMConfigureAppLocker.ps1"
+    $Params = @{
+        connectionUserName        = $PSMConnectUsername
+        connectionUserDomain      = $DomainNetbiosName
+        connectionAdminUserName   = $PSMAdminConnectUsername
+        connectionAdminUserDomain = $DomainNetbiosName
+    }
+    & "$hardeningScriptRoot\PSMConfigureAppLocker.ps1" @Params
     Set-PSDebug -Strict:$False
     Set-Location $CurrentLocation
 }
@@ -2887,5 +2899,17 @@ foreach ($Task in $RequiredTasks) {
     $i++
 }
 
-Write-LogMessage -type Info -MSG " "
+Write-LogMessage -type Info -MSG " " # Print a gap
 
+$strings = @(
+    ("NOTE: Set-DomainUser 15+ no longer modifies the PSMConfigureAppLocker.ps1 and PSMHardening.ps1 files, so")
+    ("  the user details of the domain-based PSM users must be specified on each execution, e.g.")
+    (".\PSMConfigureAppLocker.ps1 -connectionUserName {0} -connectionUserDomain {1} -connectionAdminUserName {2} -connectionAdminUserDomain {1}" -f $PSMConnectUsername, $DomainNetbiosName, $PSMAdminConnectUsername)
+    (".\PSMHardening.ps1 -connectionUserName {0} -connectionUserDomain {1} -connectionAdminUserName {2} -connectionAdminUserDomain {1}" -f $PSMConnectUsername, $DomainNetbiosName, $PSMAdminConnectUsername)
+)
+
+foreach ($String in $strings) {
+    Write-LogMessage -type Warning -MSG ($string)
+}
+
+Write-LogMessage -type Info -MSG " " # Print a gap
