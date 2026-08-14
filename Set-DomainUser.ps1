@@ -42,8 +42,8 @@
  Do not update Local Security Policy to allow PSM users to log on with Remote Desktop
 .PARAMETER SkipAddingUsersToRduGroup
  Do not add PSM users to the Remote Desktop Users group
-.VERSION 14.5
-.AUTHOR CyberArk
+.VERSION 15.0.0
+.AUTHOR Palo Alto Networks Idira Professional Services
 #>
 
 [CmdletBinding()]
