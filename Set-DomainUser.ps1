@@ -1,3 +1,4 @@
+#Requires -Version 5.1
 <#
 .SYNOPSIS
  This script will update the connector server to a domain user setup. It will also onboard the domain users into the portal inside the PSM safe.
