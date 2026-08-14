@@ -1753,14 +1753,14 @@ function Test-PSMUserConfiguration {
             }
             If (
                 (
-                ($SettingType -in "Value", "StringCompare") -and
-                ($SettingCurrentValue -notin $SettingExpectedValue)
+                    ($SettingType -in "Value", "StringCompare") -and
+                    ($SettingCurrentValue -notin $SettingExpectedValue)
                     # For Value and StringCompare setting types, we check if the current value is one of the expected values
                 ) -or
                 (
-                ($SettingType -eq "LogOnTo") -and (
-                    ($SettingCurrentValue) -and
-                    ($SettingExpectedValue -notin $SettingCurrentValue)
+                    ($SettingType -eq "LogOnTo") -and (
+                        ($SettingCurrentValue) -and
+                        ($SettingExpectedValue -notin $SettingCurrentValue)
                     )
                     # but for Log On To, it's the other way round - the expected value must be in the current value (or be empty - "all workstations")
                 )
